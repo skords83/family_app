@@ -14,6 +14,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Ensure public directory exists
+RUN mkdir -p /app/public
+
 # Build the Next.js app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
