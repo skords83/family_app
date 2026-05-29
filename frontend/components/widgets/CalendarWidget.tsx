@@ -73,7 +73,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
     <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[10px] font-sans font-semibold uppercase tracking-widest" style={{ color: '#a09d99' }}>
+        <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
           Kalender
         </h3>
         <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
       </div>
 
       {!hasEvents ? (
-        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine diese Woche</p>
+        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine heute</p>
       ) : (
         <div className="space-y-4">
           {days.map(day => {
@@ -117,7 +117,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                       </span>
                       {/* Title + calendar name */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>
+                        <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>
                           {event.title}
                         </p>
                         {event.calendarName && (

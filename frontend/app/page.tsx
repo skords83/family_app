@@ -24,7 +24,7 @@ function Clock() {
   const hm = time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   return (
     <div className="text-right">
-      <div className="text-5xl font-bold tracking-tight tabular-nums" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
+      <div className="text-5xl font-light tracking-tight tabular-nums" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
         {hm}
       </div>
     </div>
@@ -86,7 +86,7 @@ export default function HomePage() {
       {/* Header: greeting + clock */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
+          <h1 className="text-3xl font-normal" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
             {(() => {
               const h = new Date().getHours();
               if (h < 12) return 'Guten Morgen 👋';
