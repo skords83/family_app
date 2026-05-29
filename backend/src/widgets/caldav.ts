@@ -22,17 +22,14 @@ function parseICSEvents(icsData: string, weeksAhead = 4): CalendarEvent[] {
 
   for (const key of Object.keys(parsed)) {
     const component = parsed[key];
-
     if (component.type !== 'VEVENT') continue;
 
     const event = component as ical.VEvent;
-
     if (!event.start) continue;
 
     const startDate = new Date(event.start);
     const endDate = event.end ? new Date(event.end) : startDate;
 
-    // Include events that overlap with [now, futureLimit]
     if (endDate < now || startDate > futureLimit) continue;
 
     const allDay =
@@ -55,31 +52,71 @@ function parseICSEvents(icsData: string, weeksAhead = 4): CalendarEvent[] {
   return events;
 }
 
-async function fetchCalDAV(): Promise<CalendarEvent[]> {
-  const caldavUrl = process.env.CALDAV_URL;
-  const caldavUser = process.env.CALDAV_USER;
-  const caldavPass = process.env.CALDAV_PASS;
+// Step 1: PROPFIND to discover all calendar collections under the user's calendar home
+async function discoverCalendarUrls(baseUrl: string, auth: string): Promise<string[]> {
+  const propfindBody = `<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop>
+    <D:resourcetype/>
+    <D:displayname/>
+  </D:prop>
+</D:propfind>`;
 
-  if (!caldavUrl || !caldavUser || !caldavPass) {
-    throw new Error('CalDAV configuration missing');
+  const response = await fetch(baseUrl, {
+    method: 'PROPFIND',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/xml',
+      Depth: '1',
+    },
+    body: propfindBody,
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok && response.status !== 207) {
+    throw new Error(`PROPFIND failed with status ${response.status}`);
   }
 
-  const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+  const xml = await response.text();
 
-  // Try to fetch the calendar ICS directly
-  // First try the well-known CalDAV endpoint approach: fetch user principal
-  const calendarUrls = [
-    `${caldavUrl}/calendars/${caldavUser}/personal/`,
-    `${caldavUrl}/calendars/${caldavUser}/`,
-    caldavUrl,
-  ];
+  // Extract <D:href> values from responses that contain <cal:calendar> resourcetype
+  // Split by <D:response> blocks and check each one
+  const calendarUrls: string[] = [];
+  const responseBlocks = xml.split(/<\/?[^>]*:response>/i).filter(Boolean);
 
-  let icsContent: string | null = null;
+  // Simpler approach: find all hrefs, then filter blocks containing "calendar" resourcetype
+  const hrefMatches = xml.matchAll(/<[^>]*:href[^>]*>([^<]+)<\/[^>]*:href>/gi);
+  const allHrefs = [...hrefMatches].map(m => m[1].trim());
 
-  for (const url of calendarUrls) {
-    try {
-      // Try REPORT request to get all calendar events
-      const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
+  // Find which blocks have calendar resourcetype
+  const calendarBlocks = xml.match(/<D:response[\s\S]*?<\/D:response>/gi) ?? [];
+
+  for (const block of calendarBlocks) {
+    // Must contain calendar resourcetype
+    if (!block.includes('calendar') || block.includes('schedule-inbox') || block.includes('schedule-outbox')) {
+      continue;
+    }
+    // Extract href from this block
+    const hrefMatch = block.match(/<[^>]*:href[^>]*>([^<]+)<\/[^>]*:href>/i);
+    if (!hrefMatch) continue;
+
+    const href = hrefMatch[1].trim();
+    // Skip the root itself (exact match to baseUrl path)
+    const basePath = new URL(baseUrl).pathname.replace(/\/?$/, '/');
+    const hrefPath = href.replace(/\/?$/, '/');
+    if (hrefPath === basePath) continue;
+
+    // Build full URL
+    const fullUrl = href.startsWith('http') ? href : `${new URL(baseUrl).origin}${href}`;
+    calendarUrls.push(fullUrl);
+  }
+
+  return calendarUrls;
+}
+
+// Step 2: REPORT on a single calendar URL to get all VEVENTs
+async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<string[]> {
+  const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
   <D:prop>
     <D:getetag/>
@@ -92,72 +129,74 @@ async function fetchCalDAV(): Promise<CalendarEvent[]> {
   </C:filter>
 </C:calendar-query>`;
 
-      const response = await fetch(url, {
-        method: 'REPORT',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/xml',
-          Depth: '1',
-        },
-        body: reportBody,
-        signal: AbortSignal.timeout(15000),
-      });
+  const response = await fetch(calendarUrl, {
+    method: 'REPORT',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/xml',
+      Depth: '1',
+    },
+    body: reportBody,
+    signal: AbortSignal.timeout(15000),
+  });
 
-      if (response.ok || response.status === 207) {
-        const xmlText = await response.text();
+  if (!response.ok && response.status !== 207) {
+    return [];
+  }
 
-        // Extract calendar-data from XML response
-        const calDataMatches = xmlText.match(/<.*?calendar-data[^>]*>([\s\S]*?)<\/.*?calendar-data>/g);
+  const xml = await response.text();
+  const vevents: string[] = [];
 
-        if (calDataMatches && calDataMatches.length > 0) {
-          // Combine all VEVENT blocks into one VCALENDAR
-          const vevents: string[] = [];
+  const calDataMatches = xml.match(/<[^>]*:?calendar-data[^>]*>([\s\S]*?)<\/[^>]*:?calendar-data>/gi) ?? [];
 
-          for (const match of calDataMatches) {
-            const innerMatch = match.match(/<.*?calendar-data[^>]*>([\s\S]*?)<\/.*?calendar-data>/);
-            if (innerMatch && innerMatch[1]) {
-              const icsBlock = innerMatch[1].trim();
-              // Extract VEVENT from full VCALENDAR blocks
-              const veventMatches = icsBlock.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g);
-              if (veventMatches) {
-                vevents.push(...veventMatches);
-              }
-            }
-          }
+  for (const match of calDataMatches) {
+    const innerMatch = match.match(/<[^>]*:?calendar-data[^>]*>([\s\S]*?)<\/[^>]*:?calendar-data>/i);
+    if (!innerMatch?.[1]) continue;
+    const icsBlock = innerMatch[1].trim();
+    const veventMatches = icsBlock.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g);
+    if (veventMatches) vevents.push(...veventMatches);
+  }
 
-          if (vevents.length > 0) {
-            icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${vevents.join('\r\n')}\r\nEND:VCALENDAR`;
-            break;
-          }
-        }
+  return vevents;
+}
 
-        // Fallback: try direct ICS fetch
-        const icsResponse = await fetch(url, {
-          headers: {
-            Authorization: `Basic ${auth}`,
-            Accept: 'text/calendar',
-          },
-          signal: AbortSignal.timeout(15000),
-        });
+async function fetchCalDAV(): Promise<CalendarEvent[]> {
+  const caldavUrl = process.env.CALDAV_URL;
+  const caldavUser = process.env.CALDAV_USER;
+  const caldavPass = process.env.CALDAV_PASS;
 
-        if (icsResponse.ok) {
-          const text = await icsResponse.text();
-          if (text.includes('BEGIN:VCALENDAR')) {
-            icsContent = text;
-            break;
-          }
-        }
+  if (!caldavUrl || !caldavUser || !caldavPass) {
+    throw new Error('CalDAV configuration missing');
+  }
+
+  const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+
+  // Discover all calendars
+  const calendarUrls = await discoverCalendarUrls(caldavUrl, auth);
+  console.log(`Discovered ${calendarUrls.length} calendars:`, calendarUrls);
+
+  if (calendarUrls.length === 0) {
+    throw new Error('No calendars found via PROPFIND');
+  }
+
+  // Fetch events from all calendars in parallel
+  const allVevents: string[] = [];
+  await Promise.all(
+    calendarUrls.map(async (url) => {
+      try {
+        const vevents = await fetchCalendarEvents(url, auth);
+        allVevents.push(...vevents);
+      } catch (err) {
+        console.warn(`Failed to fetch calendar ${url}:`, err);
       }
-    } catch (_err) {
-      // Try next URL
-      continue;
-    }
+    })
+  );
+
+  if (allVevents.length === 0) {
+    throw new Error('No events found in any calendar');
   }
 
-  if (!icsContent) {
-    throw new Error('Could not fetch any calendar data from CalDAV server');
-  }
-
+  const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${allVevents.join('\r\n')}\r\nEND:VCALENDAR`;
   return parseICSEvents(icsContent);
 }
 
