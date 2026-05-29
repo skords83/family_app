@@ -12,16 +12,19 @@ interface ShopItem {
   done: boolean;
   category: string;
   source: 'manual' | 'norish';
-  /** Norish-interne ID, falls vorhanden */
-  noriishId?: string | number;
+  /** Norish-interne ID (UUID) */
+  noriishId?: string;
+  /** Norish-Version für optimistic locking */
+  noriishVersion?: number;
 }
 
 interface NoriishGroceryItem {
-  id?: string | number;
-  name: string;
-  unit?: string;
-  amount?: number;
-  checked?: boolean;
+  id: string;
+  name: string | null;
+  unit: string | null;
+  amount: number | null;
+  isDone: boolean;
+  version: number;
 }
 
 // ── Konstanten ───────────────────────────────────────────────────────────────
@@ -37,7 +40,6 @@ const CATEGORIES = [
 ];
 
 const NORISH_CATEGORY = 'Norish';
-
 const LS_KEY = 'family_shopping';
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -47,7 +49,6 @@ function loadLocal(): ShopItem[] {
     const stored = localStorage.getItem(LS_KEY);
     if (stored) {
       const parsed: ShopItem[] = JSON.parse(stored);
-      // Nur manuelle Items aus localStorage (Norish-Items kommen immer frisch vom Backend)
       return parsed.filter(i => i.source === 'manual');
     }
   } catch { /* ignore */ }
@@ -56,8 +57,7 @@ function loadLocal(): ShopItem[] {
 
 function saveLocal(items: ShopItem[]) {
   try {
-    const manual = items.filter(i => i.source === 'manual');
-    localStorage.setItem(LS_KEY, JSON.stringify(manual));
+    localStorage.setItem(LS_KEY, JSON.stringify(items.filter(i => i.source === 'manual')));
   } catch { /* ignore */ }
 }
 
@@ -65,18 +65,17 @@ function noriishToShopItem(ni: NoriishGroceryItem): ShopItem {
   const label = [
     ni.amount != null ? ni.amount : null,
     ni.unit ?? null,
-    ni.name,
-  ]
-    .filter(Boolean)
-    .join(' ');
+    ni.name ?? 'Unbekannt',
+  ].filter(Boolean).join(' ');
 
   return {
-    id: `norish-${ni.id ?? ni.name}`,
+    id: `norish-${ni.id}`,
     name: label,
-    done: ni.checked ?? false,
+    done: ni.isDone,
     category: NORISH_CATEGORY,
     source: 'norish',
     noriishId: ni.id,
+    noriishVersion: ni.version,
   };
 }
 
@@ -90,6 +89,8 @@ export default function ShoppingPage() {
   const [noriishError, setNoriishError] = useState(false);
   const [addingToNoriish, setAddingToNoriish] = useState(false);
   const [sendToNoriish, setSendToNoriish] = useState(false);
+  // IDs die gerade per API verarbeitet werden (verhindert Doppelklicks)
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ── Norish laden ──────────────────────────────────────────────────────────
@@ -128,16 +129,68 @@ export default function ShoppingPage() {
     saveLocal(newItems);
   }
 
-  function toggle(id: string) {
-    applyAndSave(items.map(i => (i.id === id ? { ...i, done: !i.done } : i)));
+  // ── Toggle abhaken ────────────────────────────────────────────────────────
+
+  async function toggle(id: string) {
+    const item = items.find(i => i.id === id);
+    if (!item || pendingIds.has(id)) return;
+
+    // Optimistisch sofort umschalten
+    applyAndSave(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
+
+    if (item.source === 'norish' && item.noriishId && item.noriishVersion != null) {
+      setPendingIds(prev => new Set(prev).add(id));
+      try {
+        const res = await fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: item.noriishVersion, isDone: !item.done }),
+        });
+        if (!res.ok) throw new Error('toggle failed');
+      } catch {
+        // Rollback
+        applyAndSave(items.map(i => i.id === id ? { ...i, done: item.done } : i));
+        setNoriishError(true);
+      } finally {
+        setPendingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+      }
+    }
   }
 
-  function remove(id: string) {
+  // ── Löschen ──────────────────────────────────────────────────────────────
+
+  async function remove(id: string) {
+    const item = items.find(i => i.id === id);
+    if (!item || pendingIds.has(id)) return;
+
+    // Optimistisch sofort entfernen
     applyAndSave(items.filter(i => i.id !== id));
+
+    if (item.source === 'norish' && item.noriishId && item.noriishVersion != null) {
+      setPendingIds(prev => new Set(prev).add(id));
+      try {
+        const res = await fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: item.noriishVersion }),
+        });
+        if (!res.ok) throw new Error('delete failed');
+      } catch {
+        // Rollback: Item wieder einfügen
+        applyAndSave([...items]);
+        setNoriishError(true);
+      } finally {
+        setPendingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+      }
+    }
   }
 
   function clearDone() {
-    applyAndSave(items.filter(i => !i.done));
+    // Nur manuelle erledigte Items lokal löschen;
+    // Norish-Items einzeln über API löschen
+    const doneNorish = items.filter(i => i.done && i.source === 'norish');
+    doneNorish.forEach(i => remove(i.id));
+    applyAndSave(items.filter(i => !i.done || i.source === 'norish'));
   }
 
   // ── Item hinzufügen ───────────────────────────────────────────────────────
@@ -147,7 +200,6 @@ export default function ShoppingPage() {
     if (!name) return;
 
     if (sendToNoriish) {
-      // → Norish-Backend
       setAddingToNoriish(true);
       try {
         const res = await fetch(`${API_BASE}/api/widgets/meals/groceries`, {
@@ -156,36 +208,30 @@ export default function ShoppingPage() {
           body: JSON.stringify({ name }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Liste neu laden damit Norish-ID korrekt gesetzt ist
+        // Liste neu laden damit version/id korrekt gesetzt ist
         const fresh = await fetchNoriish();
-        applyAndSave([
-          ...items.filter(i => i.source === 'manual'),
-          ...fresh,
-        ]);
+        applyAndSave([...items.filter(i => i.source === 'manual'), ...fresh]);
       } catch {
         setNoriishError(true);
         // Fallback: lokal speichern
-        const fallback: ShopItem = {
+        applyAndSave([...items, {
           id: crypto.randomUUID(),
           name,
           done: false,
           category,
           source: 'manual',
-        };
-        applyAndSave([...items, fallback]);
+        }]);
       } finally {
         setAddingToNoriish(false);
       }
     } else {
-      // → lokal
-      const newItem: ShopItem = {
+      applyAndSave([...items, {
         id: crypto.randomUUID(),
         name,
         done: false,
         category,
         source: 'manual',
-      };
-      applyAndSave([...items, newItem]);
+      }]);
     }
 
     setInput('');
@@ -204,11 +250,8 @@ export default function ShoppingPage() {
   const pending = items.filter(i => !i.done);
   const done = items.filter(i => i.done);
 
-  // Kategorien in fester Reihenfolge: zuerst Norish, dann manuelle Kategorien
-  const allCats = [
-    NORISH_CATEGORY,
-    ...CATEGORIES,
-  ].filter(c => items.some(i => i.category === c));
+  const allCats = [NORISH_CATEGORY, ...CATEGORIES]
+    .filter(c => items.some(i => i.category === c));
 
   // ── JSX ───────────────────────────────────────────────────────────────────
 
@@ -226,7 +269,6 @@ export default function ShoppingPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Norish-Refresh */}
           <button
             onClick={refreshNoriish}
             title="Norish-Liste neu laden"
@@ -255,7 +297,7 @@ export default function ShoppingPage() {
         >
           <i className="ti ti-alert-circle" style={{ fontSize: 15, color: '#e85d3a' }} />
           <span className="text-xs font-sans" style={{ color: '#e85d3a' }}>
-            Norish konnte nicht geladen werden. Manuelle Items sind trotzdem verfügbar.
+            Norish konnte nicht erreicht werden. Manuelle Items sind weiterhin verfügbar.
           </span>
         </div>
       )}
@@ -275,7 +317,6 @@ export default function ShoppingPage() {
             className="flex-1 text-sm font-sans outline-none bg-transparent"
             style={{ color: '#1a1814' }}
           />
-          {/* Kategorie nur sichtbar wenn nicht an Norish */}
           {!sendToNoriish && (
             <select
               value={category}
@@ -303,9 +344,7 @@ export default function ShoppingPage() {
           <button
             onClick={() => setSendToNoriish(v => !v)}
             className="w-8 h-4 rounded-full relative transition-all flex-shrink-0"
-            style={{
-              background: sendToNoriish ? '#e85d3a' : 'rgba(0,0,0,0.12)',
-            }}
+            style={{ background: sendToNoriish ? '#e85d3a' : 'rgba(0,0,0,0.12)' }}
           >
             <span
               className="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all"
@@ -365,49 +404,54 @@ export default function ShoppingPage() {
                 </div>
 
                 {/* Items */}
-                {catItems.map((item, idx) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-3 px-5 py-3.5 transition-all"
-                    style={{
-                      borderBottom:
-                        idx < catItems.length - 1 ? '0.5px solid rgba(0,0,0,0.05)' : 'none',
-                      opacity: item.done ? 0.55 : 1,
-                    }}
-                  >
-                    {/* Checkbox */}
-                    <button
-                      onClick={() => toggle(item.id)}
-                      className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all"
+                {catItems.map((item, idx) => {
+                  const isPending = pendingIds.has(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 px-5 py-3.5 transition-all"
                       style={{
-                        border: item.done ? 'none' : '1.5px solid rgba(0,0,0,0.2)',
-                        background: item.done ? '#e85d3a' : 'transparent',
+                        borderBottom: idx < catItems.length - 1 ? '0.5px solid rgba(0,0,0,0.05)' : 'none',
+                        opacity: item.done ? 0.55 : 1,
                       }}
                     >
-                      {item.done && (
-                        <i className="ti ti-check" style={{ fontSize: 11, color: '#fff' }} />
-                      )}
-                    </button>
+                      {/* Checkbox */}
+                      <button
+                        onClick={() => toggle(item.id)}
+                        disabled={isPending}
+                        className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all"
+                        style={{
+                          border: item.done ? 'none' : '1.5px solid rgba(0,0,0,0.2)',
+                          background: item.done ? '#e85d3a' : 'transparent',
+                          opacity: isPending ? 0.4 : 1,
+                        }}
+                      >
+                        {item.done && (
+                          <i className="ti ti-check" style={{ fontSize: 11, color: '#fff' }} />
+                        )}
+                      </button>
 
-                    <span
-                      className="flex-1 text-sm font-sans"
-                      style={{
-                        color: '#1a1814',
-                        textDecoration: item.done ? 'line-through' : 'none',
-                      }}
-                    >
-                      {item.name}
-                    </span>
+                      <span
+                        className="flex-1 text-sm font-sans"
+                        style={{
+                          color: '#1a1814',
+                          textDecoration: item.done ? 'line-through' : 'none',
+                        }}
+                      >
+                        {item.name}
+                      </span>
 
-                    <button
-                      onClick={() => remove(item.id)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center opacity-0 hover:opacity-100 transition-all"
-                      style={{ color: '#a09d99' }}
-                    >
-                      <i className="ti ti-x" style={{ fontSize: 14 }} />
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        onClick={() => remove(item.id)}
+                        disabled={isPending}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center opacity-0 hover:opacity-100 transition-all"
+                        style={{ color: '#a09d99' }}
+                      >
+                        <i className="ti ti-x" style={{ fontSize: 14 }} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

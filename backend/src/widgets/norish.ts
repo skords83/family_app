@@ -99,6 +99,29 @@ async function fetchGroceries(): Promise<GroceryItem[]> {
   return res.json() as Promise<GroceryItem[]>;
 }
 
+async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
+  const path = done ? `/groceries/${id}/done` : `/groceries/${id}/undone`;
+  const res: FetchResponse = await norishFetch(path, {
+    method: 'POST',
+    body: JSON.stringify({ id, version }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Norish POST ${path} → ${res.status}: ${body}`);
+  }
+}
+
+async function deleteGroceryItem(id: string, version: number): Promise<void> {
+  const res: FetchResponse = await norishFetch(`/groceries/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ id, version }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Norish DELETE /groceries/${id} → ${res.status}: ${body}`);
+  }
+}
+
 async function addGroceryItem(item: GroceryCreateInput): Promise<GroceryItem> {
   const res: FetchResponse = await norishFetch('/groceries', {
     method: 'POST',
@@ -221,11 +244,50 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
 });
 
 /**
- * POST /api/widgets/meals/groceries
+ * PATCH /api/widgets/meals/groceries/:id
  *
- * Fügt einen Eintrag zur Einkaufsliste hinzu.
- * Body: { name, unit?, amount?, storeId? }
+ * Setzt den checked-Status eines Eintrags.
+ * Body: { version, isDone }
  */
+norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { version, isDone } = req.body as { version?: number; isDone?: boolean };
+
+  if (typeof version !== 'number' || typeof isDone !== 'boolean') {
+    return res.status(400).json({ error: 'version (number) and isDone (boolean) are required' });
+  }
+
+  try {
+    await toggleGroceryDone(id, version, isDone);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error toggling grocery item:', err);
+    res.status(502).json({ error: 'Failed to update item in Norish' });
+  }
+});
+
+/**
+ * DELETE /api/widgets/meals/groceries/:id
+ *
+ * Löscht einen Eintrag aus der Einkaufsliste.
+ * Body: { version }
+ */
+norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { version } = req.body as { version?: number };
+
+  if (typeof version !== 'number') {
+    return res.status(400).json({ error: 'version (number) is required' });
+  }
+
+  try {
+    await deleteGroceryItem(id, version);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting grocery item:', err);
+    res.status(502).json({ error: 'Failed to delete item in Norish' });
+  }
+});
 norishRouter.post('/groceries', async (req: Request, res: Response) => {
   const { name, unit, amount, storeId } = req.body as Partial<GroceryCreateInput>;
 
