@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 
+// Alias für das globale Fetch-Response, damit kein Konflikt mit Express' Response entsteht
+type FetchResponse = Awaited<ReturnType<typeof fetch>>;
+
 // ─── Types (1:1 aus der Norish OpenAPI-Spec) ────────────────────────────────
 
 type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
@@ -60,7 +63,7 @@ function resolveImageUrl(recipeImage: string | null): string | null {
   return `${base}${path}`;
 }
 
-function norishFetch(path: string, init?: RequestInit): Promise<Response> {
+function norishFetch(path: string, init?: RequestInit): Promise<FetchResponse> {
   const base = process.env.NORISH_URL?.replace(/\/$/, '');
   const apiKey = process.env.NORISH_API_KEY;
 
@@ -81,7 +84,7 @@ function norishFetch(path: string, init?: RequestInit): Promise<Response> {
 // ─── Norish API calls ────────────────────────────────────────────────────────
 
 async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<PlannedRecipe[]> {
-  const res = await norishFetch(`/planned-recipes/${range}`);
+  const res: FetchResponse = await norishFetch(`/planned-recipes/${range}`);
   if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
   const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
   return raw.map(item => ({
@@ -91,13 +94,13 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
 }
 
 async function fetchGroceries(): Promise<GroceryItem[]> {
-  const res = await norishFetch('/groceries');
+  const res: FetchResponse = await norishFetch('/groceries');
   if (!res.ok) throw new Error(`Norish /groceries → ${res.status}`);
   return res.json() as Promise<GroceryItem[]>;
 }
 
 async function addGroceryItem(item: GroceryCreateInput): Promise<GroceryItem> {
-  const res = await norishFetch('/groceries', {
+  const res: FetchResponse = await norishFetch('/groceries', {
     method: 'POST',
     body: JSON.stringify(item),
   });
