@@ -26,7 +26,8 @@ interface CalendarEvent {
   id: string; title: string; start: string; end: string;
   allDay: boolean; color?: string; calendarName?: string;
 }
-interface MealDay { date: string; lunch: string; dinner: string; }
+type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
+interface PlannedRecipe { id: string; date: string; slot: MealSlot; recipeName: string | null; }
 interface ImmichData {
   id: string; url: string; thumbnailUrl: string; fileName: string;
   createdAt: string; description?: string; location?: string;
@@ -59,7 +60,7 @@ export default function HomePage() {
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [weather, setWeather] = useState<{ data?: WeatherData; fetched_at?: string }>({});
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
-  const [meals, setMeals] = useState<{ days?: MealDay[]; fetched_at?: string }>({});
+  const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
   const [loading, setLoading] = useState(true);
 
@@ -78,7 +79,7 @@ export default function HomePage() {
       if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value)) setTasks(tasksRes.value);
       if (weatherRes.status === 'fulfilled' && weatherRes.value?.data) setWeather({ data: weatherRes.value.data, fetched_at: weatherRes.value.fetched_at });
       if (calendarRes.status === 'fulfilled' && calendarRes.value?.events) setCalendar({ events: calendarRes.value.events, fetched_at: calendarRes.value.fetched_at });
-      if (mealsRes.status === 'fulfilled' && mealsRes.value?.data) setMeals({ days: mealsRes.value.data.days, fetched_at: mealsRes.value.fetched_at });
+      if (mealsRes.status === 'fulfilled' && mealsRes.value?.byDate) setMeals({ byDate: mealsRes.value.byDate, fetched_at: mealsRes.value.fetched_at });
       if (immichRes.status === 'fulfilled' && immichRes.value?.data) setImmich({ data: immichRes.value.data, fetched_at: immichRes.value.fetched_at });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -139,7 +140,7 @@ export default function HomePage() {
         {/* Right: Weather + Meals + Photo */}
         <div className="flex flex-col gap-5">
           <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
-          <MealsWidget days={meals.days} fetched_at={meals.fetched_at} loading={loading} />
+          <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
           <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
         </div>
       </div>

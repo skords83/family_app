@@ -4,11 +4,38 @@ import { useState, useEffect } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
-interface MealDay {
+type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
+
+interface PlannedRecipe {
+  id: string;
   date: string;
-  lunch: string;
-  dinner: string;
+  slot: Slot;
+  recipeName: string | null;
+  recipeImage: string | null;
+  servings: number | null;
+  calories: number | null;
 }
+
+const SLOT_LABELS: Record<Slot, string> = {
+  Breakfast: 'Frühstück',
+  Lunch: 'Mittag',
+  Dinner: 'Abend',
+  Snack: 'Snack',
+};
+
+const SLOT_ICONS: Record<Slot, string> = {
+  Breakfast: '🌅',
+  Lunch: '🍽️',
+  Dinner: '🌙',
+  Snack: '🍎',
+};
+
+const SLOT_BG: Record<Slot, string> = {
+  Breakfast: '#fef9e3',
+  Lunch: '#fff5f3',
+  Dinner: '#f0f7ff',
+  Snack: '#f2fbf2',
+};
 
 function formatDateLabel(dateStr: string): string {
   const date = new Date(dateStr + 'T12:00:00');
@@ -26,18 +53,22 @@ function isToday(dateStr: string): boolean {
   return dateStr === new Date().toISOString().split('T')[0];
 }
 
+const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
 export default function MealsPage() {
-  const [days, setDays] = useState<MealDay[]>([]);
+  const [byDate, setByDate] = useState<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>({});
   const [fetchedAt, setFetchedAt] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    fetch(`${API_BASE}/api/widgets/meals`)
+  function load() {
+    setLoading(true);
+    setError(false);
+    fetch(`${API_BASE}/api/widgets/meals?range=week`)
       .then(r => r.json())
       .then(data => {
-        if (data?.data?.days) {
-          setDays(data.data.days);
+        if (data?.byDate) {
+          setByDate(data.byDate);
           setFetchedAt(data.fetched_at);
         } else {
           setError(true);
@@ -45,10 +76,15 @@ export default function MealsPage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
 
   const today = new Date().toISOString().split('T')[0];
-  const upcoming = days.filter(d => d.date >= today).slice(0, 7);
+  const sortedDates = Object.keys(byDate)
+    .filter(d => d >= today)
+    .sort()
+    .slice(0, 7);
 
   return (
     <div className="p-6 max-w-2xl">
@@ -65,7 +101,7 @@ export default function MealsPage() {
           </p>
         </div>
         <button
-          onClick={() => { setLoading(true); setError(false); window.location.reload(); }}
+          onClick={load}
           className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-black/5"
           style={{ border: '0.5px solid rgba(0,0,0,0.1)', color: '#6b6760' }}
           title="Aktualisieren"
@@ -84,38 +120,35 @@ export default function MealsPage() {
       )}
 
       {/* Error / no data */}
-      {!loading && (error || upcoming.length === 0) && (
-        <div
-          className="rounded-2xl p-8 text-center"
-          style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
-        >
+      {!loading && (error || sortedDates.length === 0) && (
+        <div className="rounded-2xl p-8 text-center" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
           <div className="text-4xl mb-3">🍽️</div>
           <p className="text-sm font-sans font-medium mb-1" style={{ color: '#1a1814' }}>
             Kein Essensplan verfügbar
           </p>
-          <p className="text-xs font-sans" style={{ color: '#a09d99' }}>
-            Norish ist noch nicht verbunden oder liefert keine Daten.
+          <p className="text-xs font-sans mb-4" style={{ color: '#a09d99' }}>
+            Norish liefert noch keine Daten für diese Woche.
           </p>
-          <div
-            className="mt-4 rounded-xl px-4 py-3 flex items-center gap-2 text-left"
-            style={{ background: '#fff5f3', border: '0.5px solid #e85d3a30' }}
-          >
-            <i className="ti ti-plug" style={{ fontSize: 15, color: '#e85d3a', flexShrink: 0 }} />
+          <div className="rounded-xl px-4 py-3 flex items-start gap-2 text-left" style={{ background: '#fff5f3', border: '0.5px solid #e85d3a30' }}>
+            <i className="ti ti-plug" style={{ fontSize: 15, color: '#e85d3a', flexShrink: 0, marginTop: 1 }} />
             <span className="text-xs font-sans" style={{ color: '#e85d3a' }}>
-              Trage die Norish-API-URL in den Einstellungen ein um den Essensplan zu synchronisieren.
+              Stelle sicher dass <strong>NORISH_URL</strong> und <strong>NORISH_API_KEY</strong> in den Umgebungsvariablen gesetzt sind.
             </span>
           </div>
         </div>
       )}
 
       {/* Meal days */}
-      {!loading && !error && upcoming.length > 0 && (
+      {!loading && !error && sortedDates.length > 0 && (
         <div className="space-y-3">
-          {upcoming.map(day => {
-            const tod = isToday(day.date);
+          {sortedDates.map(date => {
+            const tod = isToday(date);
+            const daySlots = byDate[date] ?? {};
+            const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
+
             return (
               <div
-                key={day.date}
+                key={date}
                 className="rounded-2xl overflow-hidden"
                 style={{
                   background: '#fff',
@@ -130,52 +163,54 @@ export default function MealsPage() {
                     borderBottom: '0.5px solid rgba(0,0,0,0.07)',
                   }}
                 >
-                  <span
-                    className="text-sm font-sans font-semibold"
-                    style={{ color: tod ? '#e85d3a' : '#1a1814' }}
-                  >
-                    {formatDateLabel(day.date)}
+                  <span className="text-sm font-sans font-semibold" style={{ color: tod ? '#e85d3a' : '#1a1814' }}>
+                    {formatDateLabel(date)}
                   </span>
                   <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-                    {new Date(day.date + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}
+                    {new Date(date + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}
                   </span>
                 </div>
 
-                {/* Meals */}
-                <div className="px-5 py-3 space-y-2">
-                  {day.lunch ? (
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
-                        style={{ background: '#fff5f3' }}
-                      >
-                        🍽️
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: '#a09d99' }}>Mittag</div>
-                        <div className="text-sm font-sans" style={{ color: '#1a1814' }}>{day.lunch}</div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {day.dinner ? (
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
-                        style={{ background: '#f0f7ff' }}
-                      >
-                        🌙
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: '#a09d99' }}>Abend</div>
-                        <div className="text-sm font-sans" style={{ color: '#1a1814' }}>{day.dinner}</div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {!day.lunch && !day.dinner && (
-                    <p className="text-sm font-sans py-1" style={{ color: '#a09d99' }}>Keine Einträge</p>
+                {/* Slots */}
+                <div className="px-5 py-3 space-y-2.5">
+                  {presentSlots.length === 0 && (
+                    <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Einträge</p>
                   )}
+                  {presentSlots.map(slot => {
+                    const recipes = daySlots[slot]!;
+                    return (
+                      <div key={slot} className="flex items-start gap-3">
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
+                          style={{ background: SLOT_BG[slot] }}
+                        >
+                          {SLOT_ICONS[slot]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[10px] font-sans font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a09d99' }}>
+                            {SLOT_LABELS[slot]}
+                          </div>
+                          {recipes.map(r => (
+                            <div key={r.id} className="flex items-center gap-2">
+                              <span className="text-sm font-sans" style={{ color: '#1a1814' }}>
+                                {r.recipeName ?? 'Unbekanntes Rezept'}
+                              </span>
+                              {r.calories && (
+                                <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
+                                  {r.calories} kcal
+                                </span>
+                              )}
+                              {r.servings && (
+                                <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
+                                  · {r.servings} Port.
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

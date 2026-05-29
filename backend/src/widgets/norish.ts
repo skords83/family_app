@@ -1,13 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response as ExpressResponse } from 'express';
 import { pool } from '../db/pool';
-
-// ─── Types (1:1 aus der Norish OpenAPI-Spec) ────────────────────────────────
 
 type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 
 interface PlannedRecipe {
   id: string;
-  date: string;         // 'YYYY-MM-DD'
+  date: string;
   slot: Slot;
   sortOrder: number;
   recipeId: string;
@@ -36,15 +34,11 @@ interface GroceryCreateInput {
   storeId?: string | null;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function norishFetch(path: string, init?: RequestInit): Promise<Response> {
+function norishFetch(path: string, init?: RequestInit): Promise<globalThis.Response> {
   const base = process.env.NORISH_URL?.replace(/\/$/, '');
   const apiKey = process.env.NORISH_API_KEY;
-
   if (!base) throw new Error('NORISH_URL not configured');
   if (!apiKey) throw new Error('NORISH_API_KEY not configured');
-
   return fetch(`${base}/api/v1${path}`, {
     ...init,
     signal: AbortSignal.timeout(10_000),
@@ -55,8 +49,6 @@ function norishFetch(path: string, init?: RequestInit): Promise<Response> {
     },
   });
 }
-
-// ─── Norish API calls ────────────────────────────────────────────────────────
 
 async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<PlannedRecipe[]> {
   const res = await norishFetch(`/planned-recipes/${range}`);
@@ -82,8 +74,6 @@ async function addGroceryItem(item: GroceryCreateInput): Promise<GroceryItem> {
   return res.json() as Promise<GroceryItem>;
 }
 
-// ─── Cache helpers ───────────────────────────────────────────────────────────
-
 async function getCache<T>(widgetType: string): Promise<{ data: T; fetched_at: string } | null> {
   const result = await pool.query(
     `SELECT data, fetched_at FROM widget_cache WHERE widget_type = $1`,
@@ -105,21 +95,12 @@ async function setCache<T>(widgetType: string, data: T): Promise<string> {
   return result.rows[0].fetched_at;
 }
 
-// ─── Router ──────────────────────────────────────────────────────────────────
-
 export const norishRouter = Router();
 
-/**
- * GET /api/widgets/meals?range=today|week|month
- *
- * Gibt geplante Rezepte zurück, gruppiert nach Datum und Slot.
- * Fällt bei Fehler auf den DB-Cache zurück.
- */
-norishRouter.get('/', async (req: Request, res: Response) => {
+norishRouter.get('/', async (req: Request, res: ExpressResponse) => {
   const range = (['today', 'week', 'month'].includes(req.query.range as string)
     ? req.query.range
     : 'week') as 'today' | 'week' | 'month';
-
   const cacheKey = `meals_${range}`;
 
   try {
@@ -141,7 +122,6 @@ norishRouter.get('/', async (req: Request, res: Response) => {
       from_cache = true;
     }
 
-    // Gruppieren nach Datum für einfacheres Rendering im Frontend
     const byDate = items.reduce<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>(
       (acc, item) => {
         if (!acc[item.date]) acc[item.date] = {};
@@ -159,12 +139,7 @@ norishRouter.get('/', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/widgets/meals/groceries
- *
- * Gibt die aktuelle Einkaufsliste zurück.
- */
-norishRouter.get('/groceries', async (_req: Request, res: Response) => {
+norishRouter.get('/groceries', async (_req: Request, res: ExpressResponse) => {
   try {
     let items: GroceryItem[];
     let fetched_at: string;
@@ -191,13 +166,7 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /api/widgets/meals/groceries
- *
- * Fügt einen Eintrag zur Einkaufsliste hinzu.
- * Body: { name, unit?, amount?, storeId? }
- */
-norishRouter.post('/groceries', async (req: Request, res: Response) => {
+norishRouter.post('/groceries', async (req: Request, res: ExpressResponse) => {
   const { name, unit, amount, storeId } = req.body as Partial<GroceryCreateInput>;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -212,7 +181,6 @@ norishRouter.post('/groceries', async (req: Request, res: Response) => {
       isDone: false,
       storeId: storeId ?? null,
     });
-
     res.status(201).json({ item });
   } catch (err) {
     console.error('Error adding grocery item:', err);
