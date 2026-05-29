@@ -15,15 +15,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.x/dist/tabler-icons.min.css"
+        />
+      </head>
       <body className={`${inter.className} bg-[#f5f2ee] text-[#1a1814] min-h-screen flex flex-col`}>
-        {/* Topbar */}
         <Topbar />
-
         <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 68px)' }}>
-          {/* Sidebar */}
           <Sidebar />
-
-          {/* Page content */}
           <main className="flex-1 overflow-y-auto">
             {children}
           </main>
