@@ -1,0 +1,82 @@
+version: '3.9'
+
+networks:
+  family_net:
+    driver: bridge
+  traefik:
+    external: true
+
+volumes:
+  postgres_data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: family_organizer
+      POSTGRES_USER: family
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - family_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U family -d family_organizer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://family:password@postgres:5432/family_organizer
+      CALDAV_URL: ${CALDAV_URL}
+      CALDAV_USER: ${CALDAV_USER}
+      CALDAV_PASS: ${CALDAV_PASS}
+      NORISH_URL: ${NORISH_URL}
+      IMMICH_URL: ${IMMICH_URL}
+      IMMICH_API_KEY: ${IMMICH_API_KEY}
+      WEATHER_LAT: ${WEATHER_LAT}
+      WEATHER_LON: ${WEATHER_LON}
+      ADMIN_PIN: ${ADMIN_PIN}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - family_net
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.family-backend.rule=Host(`family.skords.de`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.family-backend.entrypoints=websecure"
+      - "traefik.http.routers.family-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.family-backend.loadbalancer.server.port=3001"
+      - "traefik.docker.network=traefik"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: https://family.skords.de/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - family_net
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.family-frontend.rule=Host(`family.skords.de`)"
+      - "traefik.http.routers.family-frontend.entrypoints=websecure"
+      - "traefik.http.routers.family-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.family-frontend.loadbalancer.server.port=3000"
+      - "traefik.docker.network=traefik"

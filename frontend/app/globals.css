@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Task complete animation */
+@keyframes completeTask {
+  0% {
+    transform: scale(1);
+    background-color: transparent;
+  }
+  30% {
+    transform: scale(1.05);
+    background-color: #10b98133;
+  }
+  100% {
+    transform: scale(1);
+    background-color: transparent;
+  }
+}
+
+.task-complete-animation {
+  animation: completeTask 0.5s ease-out forwards;
+}
+
+/* Fade overlay for immich widget */
+.immich-gradient {
+  background: linear-gradient(
+    to top,
+    rgba(15, 23, 42, 0.9) 0%,
+    rgba(15, 23, 42, 0.4) 40%,
+    transparent 100%
+  );
+}
+
+/* Touch-friendly tap targets */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Smooth transitions */
+.transition-smooth {
+  transition: all 0.2s ease-in-out;
+}
