@@ -14,19 +14,28 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de">
+    <html lang="de" style={{ height: '100%' }}>
       <head>
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.x/dist/tabler-icons.min.css"
         />
       </head>
-      <body className={`${inter.className} min-h-screen flex flex-col`} style={{ background: '#f5f2ee', color: '#1a1814' }}>
+      <body
+        className={inter.className}
+        style={{
+          background: '#f5f2ee',
+          color: '#1a1814',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          margin: 0,
+        }}
+      >
         <Topbar />
-        {/* flex-1 + min-h-0 so sidebar stretches full height */}
-        <div className="flex flex-1 min-h-0" style={{ height: 'calc(100vh - 68px)' }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           <Sidebar />
-          <main className="flex-1 overflow-y-auto min-h-0">
+          <main style={{ flex: 1, overflowY: 'auto' }}>
             {children}
           </main>
         </div>
