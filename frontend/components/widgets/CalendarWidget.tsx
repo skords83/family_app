@@ -7,6 +7,7 @@ interface CalendarEvent {
   end: string;
   allDay: boolean;
   color?: string;
+  calendarName?: string;
 }
 
 interface CalendarWidgetProps {
@@ -30,9 +31,7 @@ function groupEventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]>
     if (startDate > sevenDaysLater) continue;
 
     const dateKey = startDate.toISOString().split('T')[0];
-    if (!map.has(dateKey)) {
-      map.set(dateKey, []);
-    }
+    if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
 
@@ -75,7 +74,6 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
   const stale = isStale(fetched_at);
   const grouped = groupEventsByDay(events);
 
-  // Get next 7 days
   const days: string[] = [];
   const today = new Date();
   for (let i = 0; i < 7; i++) {
@@ -101,7 +99,6 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
         </div>
       </div>
 
-      {/* Events */}
       {!hasEvents ? (
         <p className="text-slate-500 text-sm py-4 text-center">Keine Termine diese Woche</p>
       ) : (
@@ -120,14 +117,22 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
                     <div
                       key={event.id}
                       className="flex items-start gap-2 bg-slate-700/50 rounded-lg px-3 py-2"
-                      style={{
-                        borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
-                      }}
+                      style={{ borderLeft: `3px solid ${event.color ?? '#6366f1'}` }}
                     >
                       <span className="text-xs text-slate-400 flex-shrink-0 mt-0.5 w-14">
                         {formatEventTime(event)}
                       </span>
-                      <span className="text-sm text-slate-200 font-medium">{event.title}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-200 font-medium truncate">{event.title}</p>
+                        {event.calendarName && (
+                          <p
+                            className="text-xs mt-0.5 truncate"
+                            style={{ color: event.color ?? '#6366f1', opacity: 0.8 }}
+                          >
+                            {event.calendarName}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

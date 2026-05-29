@@ -9,11 +9,24 @@ interface CalendarEvent {
   end: string;
   allDay: boolean;
   color?: string;
+  calendarName?: string;
+}
+
+interface CalendarMeta {
+  url: string;
+  color: string;
+  name: string;
 }
 
 export const caldavRouter = Router();
 
-function parseICSEvents(icsData: string, weeksAhead = 4): CalendarEvent[] {
+// Fallback colors if Nextcloud doesn't return one
+const FALLBACK_COLORS = [
+  '#6366f1', '#f59e0b', '#10b981', '#ef4444',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
+];
+
+function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 4): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
 
@@ -45,20 +58,24 @@ function parseICSEvents(icsData: string, weeksAhead = 4): CalendarEvent[] {
       start: startDate.toISOString(),
       end: endDate.toISOString(),
       allDay,
+      color,
+      calendarName,
     });
   }
 
-  events.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
   return events;
 }
 
-// Step 1: PROPFIND to discover all calendar collections under the user's calendar home
-async function discoverCalendarUrls(baseUrl: string, auth: string): Promise<string[]> {
+// PROPFIND to discover all calendar collections with their color and displayname
+async function discoverCalendars(baseUrl: string, auth: string): Promise<CalendarMeta[]> {
   const propfindBody = `<?xml version="1.0" encoding="UTF-8"?>
-<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+<D:propfind xmlns:D="DAV:"
+            xmlns:C="urn:ietf:params:xml:ns:caldav"
+            xmlns:A="http://apple.com/ns/ical/">
   <D:prop>
     <D:resourcetype/>
     <D:displayname/>
+    <A:calendar-color/>
   </D:prop>
 </D:propfind>`;
 
@@ -78,43 +95,48 @@ async function discoverCalendarUrls(baseUrl: string, auth: string): Promise<stri
   }
 
   const xml = await response.text();
+  const calendars: CalendarMeta[] = [];
+  const basePath = new URL(baseUrl).pathname.replace(/\/?$/, '/');
 
-  // Extract <D:href> values from responses that contain <cal:calendar> resourcetype
-  // Split by <D:response> blocks and check each one
-  const calendarUrls: string[] = [];
-  const responseBlocks = xml.split(/<\/?[^>]*:response>/i).filter(Boolean);
-
-  // Simpler approach: find all hrefs, then filter blocks containing "calendar" resourcetype
-  const hrefMatches = xml.matchAll(/<[^>]*:href[^>]*>([^<]+)<\/[^>]*:href>/gi);
-  const allHrefs = [...hrefMatches].map(m => m[1].trim());
-
-  // Find which blocks have calendar resourcetype
   const calendarBlocks = xml.match(/<D:response[\s\S]*?<\/D:response>/gi) ?? [];
 
   for (const block of calendarBlocks) {
-    // Must contain calendar resourcetype
+    // Must be a calendar collection, skip inbox/outbox
     if (!block.includes('calendar') || block.includes('schedule-inbox') || block.includes('schedule-outbox')) {
       continue;
     }
-    // Extract href from this block
-    const hrefMatch = block.match(/<[^>]*:href[^>]*>([^<]+)<\/[^>]*:href>/i);
+
+    const hrefMatch = block.match(/<D:href[^>]*>([^<]+)<\/D:href>/i);
     if (!hrefMatch) continue;
 
     const href = hrefMatch[1].trim();
-    // Skip the root itself (exact match to baseUrl path)
-    const basePath = new URL(baseUrl).pathname.replace(/\/?$/, '/');
     const hrefPath = href.replace(/\/?$/, '/');
     if (hrefPath === basePath) continue;
 
-    // Build full URL
     const fullUrl = href.startsWith('http') ? href : `${new URL(baseUrl).origin}${href}`;
-    calendarUrls.push(fullUrl);
+
+    // Extract displayname
+    const nameMatch = block.match(/<D:displayname[^>]*>([^<]*)<\/D:displayname>/i);
+    const name = nameMatch?.[1]?.trim() || href.split('/').filter(Boolean).pop() || 'Kalender';
+
+    // Extract apple calendar-color (may include alpha suffix like #FF0000FF)
+    const colorMatch = block.match(/<[^>]*:?calendar-color[^>]*>([^<]+)<\/[^>]*:?calendar-color>/i);
+    let color = colorMatch?.[1]?.trim() ?? '';
+    // Strip alpha channel if present (#RRGGBBAA → #RRGGBB)
+    if (color.match(/^#[0-9a-fA-F]{8}$/)) {
+      color = color.slice(0, 7);
+    }
+    if (!color.match(/^#[0-9a-fA-F]{6}$/)) {
+      color = FALLBACK_COLORS[calendars.length % FALLBACK_COLORS.length];
+    }
+
+    calendars.push({ url: fullUrl, color, name });
   }
 
-  return calendarUrls;
+  return calendars;
 }
 
-// Step 2: REPORT on a single calendar URL to get all VEVENTs
+// REPORT on a single calendar to get raw VEVENT strings
 async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<string[]> {
   const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -140,9 +162,7 @@ async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<s
     signal: AbortSignal.timeout(15000),
   });
 
-  if (!response.ok && response.status !== 207) {
-    return [];
-  }
+  if (!response.ok && response.status !== 207) return [];
 
   const xml = await response.text();
   const vevents: string[] = [];
@@ -171,33 +191,37 @@ async function fetchCalDAV(): Promise<CalendarEvent[]> {
 
   const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
 
-  // Discover all calendars
-  const calendarUrls = await discoverCalendarUrls(caldavUrl, auth);
-  console.log(`Discovered ${calendarUrls.length} calendars:`, calendarUrls);
+  const calendars = await discoverCalendars(caldavUrl, auth);
+  console.log(`Discovered ${calendars.length} calendars:`, calendars.map(c => `${c.name} (${c.color})`));
 
-  if (calendarUrls.length === 0) {
+  if (calendars.length === 0) {
     throw new Error('No calendars found via PROPFIND');
   }
 
-  // Fetch events from all calendars in parallel
-  const allVevents: string[] = [];
+  // Fetch all calendars in parallel, parse each with its own color+name
+  const allEvents: CalendarEvent[] = [];
+
   await Promise.all(
-    calendarUrls.map(async (url) => {
+    calendars.map(async (cal) => {
       try {
-        const vevents = await fetchCalendarEvents(url, auth);
-        allVevents.push(...vevents);
+        const vevents = await fetchCalendarEvents(cal.url, auth);
+        if (vevents.length === 0) return;
+
+        const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${vevents.join('\r\n')}\r\nEND:VCALENDAR`;
+        const events = parseICSEvents(icsContent, cal.color, cal.name);
+        allEvents.push(...events);
       } catch (err) {
-        console.warn(`Failed to fetch calendar ${url}:`, err);
+        console.warn(`Failed to fetch calendar ${cal.url}:`, err);
       }
     })
   );
 
-  if (allVevents.length === 0) {
+  if (allEvents.length === 0) {
     throw new Error('No events found in any calendar');
   }
 
-  const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${allVevents.join('\r\n')}\r\nEND:VCALENDAR`;
-  return parseICSEvents(icsContent);
+  allEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  return allEvents;
 }
 
 async function getCachedCalendar(): Promise<{ data: CalendarEvent[]; fetched_at: string } | null> {
