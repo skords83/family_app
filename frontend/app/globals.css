@@ -3,81 +3,36 @@
 @tailwind utilities;
 
 :root {
-  --background: #0f172a;
-  --foreground: #f1f5f9;
+  --family-bg: #f5f2ee;
+  --family-surface: #ffffff;
+  --family-surface2: #f0ede8;
+  --family-border: rgba(0, 0, 0, 0.07);
+  --family-text: #1a1814;
+  --family-text2: #6b6760;
+  --family-text3: #a09d99;
+  --family-accent: #e85d3a;
 }
 
-html,
+html {
+  background: var(--family-bg);
+  color: var(--family-text);
+}
+
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  min-height: 100vh;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--family-bg);
+  color: var(--family-text);
 }
 
+/* Smooth scrolling */
 * {
-  box-sizing: border-box;
+  scroll-behavior: smooth;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Hide scrollbars but keep functionality */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-::-webkit-scrollbar-track {
-  background: #1e293b;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
-
-/* Task complete animation */
-@keyframes completeTask {
-  0% {
-    transform: scale(1);
-    background-color: transparent;
-  }
-  30% {
-    transform: scale(1.05);
-    background-color: #10b98133;
-  }
-  100% {
-    transform: scale(1);
-    background-color: transparent;
-  }
-}
-
-.task-complete-animation {
-  animation: completeTask 0.5s ease-out forwards;
-}
-
-/* Fade overlay for immich widget */
+/* Immich gradient */
 .immich-gradient {
-  background: linear-gradient(
-    to top,
-    rgba(15, 23, 42, 0.9) 0%,
-    rgba(15, 23, 42, 0.4) 40%,
-    transparent 100%
-  );
-}
-
-/* Touch-friendly tap targets */
-.touch-target {
-  min-height: 48px;
-  min-width: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Smooth transitions */
-.transition-smooth {
-  transition: all 0.2s ease-in-out;
+  background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%);
 }

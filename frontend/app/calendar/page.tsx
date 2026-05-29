@@ -1,229 +1,200 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 interface CalendarEvent {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  allDay: boolean;
-  color?: string;
+  id: string; title: string; start: string; end: string;
+  allDay: boolean; color?: string; calendarName?: string;
 }
 
-function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
+const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const SLOT_H = 52;
+const START_H = 7;
+const HOURS = 15;
+
+function getWeekStart(offset: number): Date {
+  const now = new Date();
+  const day = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
 }
 
-function getFirstDayOfMonth(year: number, month: number): number {
-  // 0=Sunday -> adjust to Monday-first
-  const day = new Date(year, month, 1).getDay();
-  return day === 0 ? 6 : day - 1;
-}
-
-function formatEventTime(event: CalendarEvent): string {
-  if (event.allDay) return 'Ganztags';
-  const start = new Date(event.start);
-  return start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+function toMinutes(isoStr: string): number {
+  const d = new Date(isoStr);
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 export default function CalendarPage() {
-  const router = useRouter();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetched_at, setFetchedAt] = useState<string>();
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [weekOffset, setWeekOffset] = useState(0);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/widgets/calendar`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.events) setEvents(data.events);
-        if (data.fetched_at) setFetchedAt(data.fetched_at);
-      })
+      .then(r => r.json())
+      .then(data => { if (data.events) setEvents(data.events); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  const daysInMonth = getDaysInMonth(viewYear, viewMonth);
-  const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
-  const todayStr = today.toISOString().split('T')[0];
+  // Scroll to 8:00 on mount
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = (8 - START_H) * SLOT_H;
+    }
+  }, [loading]);
 
-  const monthName = new Date(viewYear, viewMonth, 1).toLocaleDateString('de-DE', {
-    month: 'long',
-    year: 'numeric',
+  const weekStart = getWeekStart(weekOffset);
+  const days: Date[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    return d;
   });
 
-  const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(days[6]); weekEnd.setHours(23, 59, 59);
 
-  function getEventsForDay(day: number): CalendarEvent[] {
-    const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter((e) => e.start.startsWith(dateStr));
+  const fmt = (d: Date) => `${d.getDate()}. ${MONTHS[d.getMonth()]}`;
+  const weekLabel = `${fmt(days[0])} – ${fmt(days[6])} ${days[6].getFullYear()}`;
+
+  function eventsForDay(day: Date, allDay: boolean): CalendarEvent[] {
+    const dayStr = day.toISOString().split('T')[0];
+    return events.filter(e => {
+      const eDay = e.start.split('T')[0];
+      return eDay === dayStr && e.allDay === allDay;
+    });
   }
 
-  function getDateStr(day: number): string {
-    return `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  function eventStyle(ev: CalendarEvent): React.CSSProperties {
+    const startMin = toMinutes(ev.start);
+    const endMin = toMinutes(ev.end);
+    const top = ((startMin / 60) - START_H) * SLOT_H;
+    const height = Math.max(SLOT_H * 0.5, ((endMin - startMin) / 60) * SLOT_H);
+    return {
+      position: 'absolute',
+      top: Math.max(0, top),
+      height,
+      left: 3,
+      right: 3,
+      background: `${ev.color ?? '#6366f1'}20`,
+      borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
+      borderRadius: 6,
+      padding: '3px 6px',
+      overflow: 'hidden',
+      zIndex: 2,
+      cursor: 'default',
+    };
   }
-
-  const selectedEvents = selectedDate
-    ? events.filter((e) => e.start.startsWith(selectedDate))
-    : [];
 
   return (
-    <main className="min-h-screen bg-slate-900 p-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6 max-w-2xl mx-auto">
+    <div className="flex flex-col h-full p-6 gap-4">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 flex-shrink-0">
         <button
-          onClick={() => router.push('/')}
-          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-all active:scale-95"
+          onClick={() => setWeekOffset(w => w - 1)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:bg-black/5"
+          style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
+        >‹</button>
+        <button
+          onClick={() => setWeekOffset(w => w + 1)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:bg-black/5"
+          style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
+        >›</button>
+        <span className="text-sm font-medium font-sans" style={{ color: '#1a1814', minWidth: 200 }}>
+          {weekLabel}
+        </span>
+        <button
+          onClick={() => setWeekOffset(0)}
+          className="px-3 py-1 rounded-lg text-xs font-sans transition-all hover:bg-black/5"
+          style={{ border: '0.5px solid rgba(0,0,0,0.12)', color: '#6b6760' }}
         >
-          ←
+          Heute
         </button>
-        <h1 className="text-xl font-bold text-white flex-1">Kalender</h1>
-        {fetched_at && (
-          <span className="text-xs text-slate-500">
-            Aktualisiert: {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        )}
       </div>
 
-      <div className="max-w-2xl mx-auto">
-        {/* Month navigation */}
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={() => {
-              if (viewMonth === 0) {
-                setViewMonth(11);
-                setViewYear((y) => y - 1);
-              } else {
-                setViewMonth((m) => m - 1);
-              }
-            }}
-            className="min-h-[44px] min-w-[44px] rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all active:scale-95"
-          >
-            ←
-          </button>
-          <h2 className="text-lg font-bold text-white capitalize">{monthName}</h2>
-          <button
-            onClick={() => {
-              if (viewMonth === 11) {
-                setViewMonth(0);
-                setViewYear((y) => y + 1);
-              } else {
-                setViewMonth((m) => m + 1);
-              }
-            }}
-            className="min-h-[44px] min-w-[44px] rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all active:scale-95"
-          >
-            →
-          </button>
+      {/* Calendar grid */}
+      <div
+        className="flex-1 overflow-hidden rounded-2xl flex flex-col"
+        style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
+      >
+        {/* Day headers */}
+        <div className="grid flex-shrink-0" style={{ gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
+          <div />
+          {days.map(d => {
+            const isToday = d.getTime() === today.getTime();
+            return (
+              <div key={d.toISOString()} className="py-2 text-center" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
+                <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#a09d99' }}>
+                  {DAYS_SHORT[d.getDay()]}
+                </div>
+                <div className={`text-lg font-[Georgia] mt-0.5 mx-auto leading-tight ${isToday ? 'w-8 h-8 rounded-full flex items-center justify-center text-white' : ''}`}
+                  style={isToday ? { background: '#e85d3a' } : { color: '#1a1814' }}>
+                  {d.getDate()}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Day labels */}
-        <div className="grid grid-cols-7 gap-1 mb-1">
-          {dayLabels.map((d) => (
-            <div key={d} className="text-center text-xs text-slate-500 font-semibold py-1">
-              {d}
+        {/* All-day row */}
+        <div className="grid flex-shrink-0" style={{ gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)', minHeight: 28 }}>
+          <div className="flex items-center justify-end pr-2">
+            <span className="text-[9px] font-sans" style={{ color: '#a09d99' }}>ganztags</span>
+          </div>
+          {days.map(d => (
+            <div key={d.toISOString()} className="p-0.5" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
+              {eventsForDay(d, true).map(ev => (
+                <div key={ev.id} className="text-[10px] font-sans font-medium rounded px-1.5 py-0.5 mb-0.5 truncate"
+                  style={{ background: `${ev.color ?? '#6366f1'}22`, color: ev.color ?? '#6366f1' }}>
+                  {ev.title}
+                </div>
+              ))}
             </div>
           ))}
         </div>
 
-        {/* Calendar grid */}
-        {loading ? (
-          <div className="grid grid-cols-7 gap-1">
-            {[...Array(35)].map((_, i) => (
-              <div key={i} className="aspect-square bg-slate-800 rounded-lg animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-7 gap-1">
-            {/* Empty cells for first day offset */}
-            {[...Array(firstDay)].map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-
-            {/* Day cells */}
-            {[...Array(daysInMonth)].map((_, i) => {
-              const day = i + 1;
-              const dateStr = getDateStr(day);
-              const dayEvents = getEventsForDay(day);
-              const isToday = dateStr === todayStr;
-              const isSelected = dateStr === selectedDate;
-
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                  className={`
-                    aspect-square rounded-lg flex flex-col items-center justify-start p-1
-                    transition-all duration-150 active:scale-95 relative
-                    ${isToday ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}
-                    ${isSelected && !isToday ? 'ring-2 ring-indigo-400' : ''}
-                  `}
-                >
-                  <span className={`text-xs font-semibold ${isToday ? 'text-white' : ''}`}>{day}</span>
-                  {dayEvents.length > 0 && (
-                    <div className="flex flex-wrap gap-0.5 mt-0.5 justify-center">
-                      {dayEvents.slice(0, 3).map((e) => (
-                        <div
-                          key={e.id}
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: e.color ?? '#6366f1' }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Selected day events */}
-        {selectedDate && (
-          <div className="mt-4 bg-slate-800 rounded-2xl border border-slate-700 p-4">
-            <h3 className="text-sm font-bold text-slate-300 mb-3">
-              {new Date(selectedDate + 'T12:00:00').toLocaleDateString('de-DE', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-              })}
-            </h3>
-            {selectedEvents.length === 0 ? (
-              <p className="text-slate-500 text-sm">Keine Termine</p>
-            ) : (
-              <div className="space-y-2">
-                {selectedEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    className="flex items-start gap-3 bg-slate-700/50 rounded-xl px-3 py-2.5"
-                    style={{ borderLeft: `3px solid ${event.color ?? '#6366f1'}` }}
-                  >
-                    <span className="text-xs text-slate-400 flex-shrink-0 w-14 mt-0.5">
-                      {formatEventTime(event)}
-                    </span>
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-200 font-medium">{event.title}</p>
-                      {!event.allDay && event.end !== event.start && (
-                        <p className="text-xs text-slate-500">
-                          bis {new Date(event.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+        {/* Scrollable time body */}
+        <div ref={bodyRef} className="flex-1 overflow-y-auto grid" style={{ gridTemplateColumns: '56px repeat(7, 1fr)' }}>
+          {/* Time labels */}
+          <div className="flex flex-col">
+            {Array.from({ length: HOURS }, (_, i) => (
+              <div key={i} className="flex-shrink-0 flex items-start justify-end pr-2 pt-0.5" style={{ height: SLOT_H, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
+                <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>{START_H + i}:00</span>
               </div>
-            )}
+            ))}
           </div>
-        )}
+
+          {/* Day columns */}
+          {days.map(d => (
+            <div key={d.toISOString()} className="relative" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
+              {/* Hour slots */}
+              {Array.from({ length: HOURS }, (_, i) => (
+                <div key={i} style={{ height: SLOT_H, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }} />
+              ))}
+              {/* Events */}
+              {eventsForDay(d, false).map(ev => (
+                <div key={ev.id} style={eventStyle(ev)}>
+                  <div className="text-[10px] font-semibold font-sans truncate" style={{ color: ev.color ?? '#6366f1' }}>{ev.title}</div>
+                  {ev.calendarName && (
+                    <div className="text-[9px] font-sans truncate mt-0.5" style={{ color: ev.color ?? '#6366f1', opacity: 0.7 }}>{ev.calendarName}</div>
+                  )}
+                  <div className="text-[9px] font-sans mt-0.5" style={{ color: ev.color ?? '#6366f1', opacity: 0.7 }}>
+                    {new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                    {' – '}
+                    {new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
