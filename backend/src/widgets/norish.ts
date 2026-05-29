@@ -102,16 +102,19 @@ async function fetchGroceries(): Promise<GroceryItem[]> {
 async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
   const path = done ? `/groceries/${id}/done` : `/groceries/${id}/undone`;
   const res: FetchResponse = await norishFetch(path, {
-    method: 'POST',
+    method: 'PATCH',                          // Norish erwartet PATCH
     body: JSON.stringify({ id, version }),
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Norish POST ${path} → ${res.status}: ${body}`);
+    throw new Error(`Norish PATCH ${path} → ${res.status}: ${body}`);
   }
 }
 
 async function deleteGroceryItem(id: string, version: number): Promise<void> {
+  if (!Number.isFinite(version)) {
+    throw new Error(`deleteGroceryItem: ungültige version (${version}) für id ${id}`);
+  }
   const res: FetchResponse = await norishFetch(`/groceries/${id}`, {
     method: 'DELETE',
     body: JSON.stringify({ id, version }),
