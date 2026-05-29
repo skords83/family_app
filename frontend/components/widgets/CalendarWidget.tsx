@@ -88,7 +88,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
       {!hasEvents ? (
         <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine diese Woche</p>
       ) : (
-        <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+        <div className="space-y-4">
           {days.map(day => {
             const dayEvents = grouped.get(day);
             if (!dayEvents?.length) return null;

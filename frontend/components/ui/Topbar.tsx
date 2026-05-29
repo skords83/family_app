@@ -85,10 +85,11 @@ export default function Topbar() {
       {/* Members button */}
       <button
         onClick={() => router.push('/members')}
-        className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[#6b6760] text-lg transition-all hover:bg-black/5"
+        className="w-9 h-9 rounded-[10px] flex items-center justify-center transition-all hover:bg-black/5"
+        style={{ color: '#6b6760' }}
         title="Mitglieder"
       >
-        👥
+        <i className="ti ti-users" style={{ fontSize: 19 }} aria-hidden="true" />
       </button>
     </header>
   );
