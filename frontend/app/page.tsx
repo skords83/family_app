@@ -108,7 +108,7 @@ export default function HomePage() {
         <div className="lg:col-span-2 flex flex-col gap-5">
 
           {/* Calendar widget – prominent */}
-          <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} />
+          <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
           {/* Tasks per user */}
           {!loading && users.length > 0 && (

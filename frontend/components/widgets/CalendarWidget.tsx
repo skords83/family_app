@@ -6,6 +6,7 @@ interface CalendarEvent {
 }
 interface CalendarWidgetProps {
   events?: CalendarEvent[]; fetched_at?: string; loading?: boolean;
+  daysAhead?: number; // default 7, set to 1 for dashboard
 }
 
 function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
@@ -16,7 +17,7 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
 function groupEventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
   const map = new Map<string, CalendarEvent[]>();
   const now = new Date();
-  const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // still fetch 7 days, prop filters display
   for (const event of events) {
     const startDate = new Date(event.start);
     if (startDate > sevenDaysLater) continue;
@@ -42,7 +43,7 @@ function formatEventTime(event: CalendarEvent): string {
   return new Date(event.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function CalendarWidget({ events = [], fetched_at, loading }: CalendarWidgetProps) {
+export default function CalendarWidget({ events = [], fetched_at, loading, daysAhead = 7 }: CalendarWidgetProps) {
   if (loading) {
     return (
       <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
@@ -61,7 +62,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
   const grouped = groupEventsByDay(events);
   const days: string[] = [];
   const today = new Date();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < daysAhead; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     days.push(d.toISOString().split('T')[0]);
