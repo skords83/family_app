@@ -71,17 +71,46 @@ export default function CalendarPage() {
     });
   }
 
-  function eventStyle(ev: CalendarEvent): React.CSSProperties {
+  // Calculate collision groups and assign column slots
+  function layoutEvents(evs: CalendarEvent[]): Array<CalendarEvent & { col: number; cols: number }> {
+    if (evs.length === 0) return [];
+    const sorted = [...evs].sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
+    const result: Array<CalendarEvent & { col: number; cols: number }> = [];
+    // Group overlapping events
+    const groups: CalendarEvent[][] = [];
+    for (const ev of sorted) {
+      let placed = false;
+      for (const group of groups) {
+        if (group.some(g => toMinutes(g.start) < toMinutes(ev.end) && toMinutes(ev.start) < toMinutes(g.end === ev.end ? g.end : g.end))) {
+          group.push(ev);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) groups.push([ev]);
+    }
+    for (const group of groups) {
+      const cols = group.length;
+      group.forEach((ev, i) => result.push({ ...ev, col: i, cols }));
+    }
+    return result;
+  }
+
+  function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
     const startMin = toMinutes(ev.start);
     const endMin = toMinutes(ev.end);
     const top = ((startMin / 60) - START_H) * SLOT_H;
     const height = Math.max(SLOT_H * 0.5, ((endMin - startMin) / 60) * SLOT_H);
+    const width = cols > 1 ? `calc(${100 / cols}% - 4px)` : undefined;
+    const left = cols > 1 ? `calc(${(col / cols) * 100}% + 2px)` : 3;
+    const right = cols > 1 ? undefined : 3;
     return {
       position: 'absolute',
       top: Math.max(0, top),
       height,
-      left: 3,
-      right: 3,
+      left,
+      right,
+      width,
       background: `${ev.color ?? '#6366f1'}20`,
       borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
       borderRadius: 6,
@@ -177,9 +206,9 @@ export default function CalendarPage() {
               {Array.from({ length: HOURS }, (_, i) => (
                 <div key={i} style={{ height: SLOT_H, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }} />
               ))}
-              {/* Events */}
-              {eventsForDay(d, false).map(ev => (
-                <div key={ev.id} style={eventStyle(ev)}>
+              {/* Events with collision layout */}
+              {layoutEvents(eventsForDay(d, false)).map(ev => (
+                <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols)}>
                   <div className="text-[10px] font-semibold font-sans truncate" style={{ color: ev.color ?? '#6366f1' }}>{ev.title}</div>
                   {ev.calendarName && (
                     <div className="text-[9px] font-sans truncate mt-0.5" style={{ color: ev.color ?? '#6366f1', opacity: 0.7 }}>{ev.calendarName}</div>
