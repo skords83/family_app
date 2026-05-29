@@ -5,10 +5,21 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   avatar TEXT NOT NULL DEFAULT '👤',
+  photo TEXT,
   color TEXT NOT NULL DEFAULT '#6366f1',
   pin TEXT,
   role TEXT NOT NULL CHECK (role IN ('child', 'parent'))
 );
+
+-- Add photo column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='users' AND column_name='photo'
+  ) THEN
+    ALTER TABLE users ADD COLUMN photo TEXT;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS task_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
