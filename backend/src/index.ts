@@ -19,11 +19,10 @@ import { startDailyTaskCron, generateDailyTasks } from './jobs/generateDailyTask
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
-// Middleware
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+// Increase JSON limit to 10mb for base64 photo uploads
+app.use(express.json({ limit: '10mb' }));
 
-// Routes
 app.use('/api/users', usersRouter);
 app.use('/api/users/:id/points', userPointsRouter);
 app.use('/api/tasks', tasksRouter);
@@ -35,7 +34,6 @@ app.use('/api/widgets/calendar', caldavRouter);
 app.use('/api/widgets/meals', norishRouter);
 app.use('/api/widgets/immich', immichRouter);
 
-// Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -53,19 +51,13 @@ async function runMigrations(): Promise<void> {
 
 async function start(): Promise<void> {
   try {
-    // Run migrations on startup
     await runMigrations();
-
-    // Generate today's tasks on startup (in case the cron was missed)
     try {
       await generateDailyTasks();
     } catch (err) {
       console.error('Initial task generation failed (non-fatal):', err);
     }
-
-    // Start cron job
     startDailyTaskCron();
-
     app.listen(PORT, () => {
       console.log(`Family Organizer backend running on port ${PORT}`);
     });
