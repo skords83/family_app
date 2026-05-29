@@ -1,17 +1,20 @@
-import { Router, Request, Response as ExpressResponse } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+
+// ─── Types (1:1 aus der Norish OpenAPI-Spec) ────────────────────────────────
 
 type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 
 interface PlannedRecipe {
   id: string;
-  date: string;
+  date: string;         // 'YYYY-MM-DD'
   slot: Slot;
   sortOrder: number;
   recipeId: string;
   version: number;
   recipeName: string | null;
-  recipeImage: string | null;
+  recipeImage: string | null;  // relativer Pfad aus Norish
+  imageUrl: string | null;     // aufgelöste absolute URL, bereit für <img src>
   servings: number | null;
   calories: number | null;
 }
@@ -34,11 +37,36 @@ interface GroceryCreateInput {
   storeId?: string | null;
 }
 
-function norishFetch(path: string, init?: RequestInit): Promise<globalThis.Response> {
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Löst einen recipeImage-Pfad zur vollständigen URL auf.
+ *
+ * Norish speichert Bilder als relativen Pfad, z.B.:
+ *   /recipes/abc-123/deadbeef.jpg
+ * Diese werden direkt unter der Basis-URL ausgeliefert:
+ *   https://norish.skords.de/recipes/abc-123/deadbeef.jpg
+ *
+ * Gibt null zurück wenn kein Bild vorhanden.
+ */
+function resolveImageUrl(recipeImage: string | null): string | null {
+  if (!recipeImage) return null;
+  const base = (process.env.NORISH_URL ?? '').replace(/\/$/, '');
+  // Falls das Feld schon eine absolute URL enthält (http/https), direkt zurückgeben
+  if (recipeImage.startsWith('http://') || recipeImage.startsWith('https://')) {
+    return recipeImage;
+  }
+  const path = recipeImage.startsWith('/') ? recipeImage : `/${recipeImage}`;
+  return `${base}${path}`;
+}
+
+function norishFetch(path: string, init?: RequestInit): Promise<Response> {
   const base = process.env.NORISH_URL?.replace(/\/$/, '');
   const apiKey = process.env.NORISH_API_KEY;
+
   if (!base) throw new Error('NORISH_URL not configured');
   if (!apiKey) throw new Error('NORISH_API_KEY not configured');
+
   return fetch(`${base}/api/v1${path}`, {
     ...init,
     signal: AbortSignal.timeout(10_000),
@@ -50,10 +78,16 @@ function norishFetch(path: string, init?: RequestInit): Promise<globalThis.Respo
   });
 }
 
+// ─── Norish API calls ────────────────────────────────────────────────────────
+
 async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<PlannedRecipe[]> {
   const res = await norishFetch(`/planned-recipes/${range}`);
   if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
-  return res.json() as Promise<PlannedRecipe[]>;
+  const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
+  return raw.map(item => ({
+    ...item,
+    imageUrl: resolveImageUrl(item.recipeImage),
+  }));
 }
 
 async function fetchGroceries(): Promise<GroceryItem[]> {
@@ -73,6 +107,8 @@ async function addGroceryItem(item: GroceryCreateInput): Promise<GroceryItem> {
   }
   return res.json() as Promise<GroceryItem>;
 }
+
+// ─── Cache helpers ───────────────────────────────────────────────────────────
 
 async function getCache<T>(widgetType: string): Promise<{ data: T; fetched_at: string } | null> {
   const result = await pool.query(
@@ -95,12 +131,21 @@ async function setCache<T>(widgetType: string, data: T): Promise<string> {
   return result.rows[0].fetched_at;
 }
 
+// ─── Router ──────────────────────────────────────────────────────────────────
+
 export const norishRouter = Router();
 
-norishRouter.get('/', async (req: Request, res: ExpressResponse) => {
+/**
+ * GET /api/widgets/meals?range=today|week|month
+ *
+ * Gibt geplante Rezepte zurück, gruppiert nach Datum und Slot.
+ * Fällt bei Fehler auf den DB-Cache zurück.
+ */
+norishRouter.get('/', async (req: Request, res: Response) => {
   const range = (['today', 'week', 'month'].includes(req.query.range as string)
     ? req.query.range
     : 'week') as 'today' | 'week' | 'month';
+
   const cacheKey = `meals_${range}`;
 
   try {
@@ -122,6 +167,7 @@ norishRouter.get('/', async (req: Request, res: ExpressResponse) => {
       from_cache = true;
     }
 
+    // Gruppieren nach Datum für einfacheres Rendering im Frontend
     const byDate = items.reduce<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>(
       (acc, item) => {
         if (!acc[item.date]) acc[item.date] = {};
@@ -139,7 +185,12 @@ norishRouter.get('/', async (req: Request, res: ExpressResponse) => {
   }
 });
 
-norishRouter.get('/groceries', async (_req: Request, res: ExpressResponse) => {
+/**
+ * GET /api/widgets/meals/groceries
+ *
+ * Gibt die aktuelle Einkaufsliste zurück.
+ */
+norishRouter.get('/groceries', async (_req: Request, res: Response) => {
   try {
     let items: GroceryItem[];
     let fetched_at: string;
@@ -166,7 +217,13 @@ norishRouter.get('/groceries', async (_req: Request, res: ExpressResponse) => {
   }
 });
 
-norishRouter.post('/groceries', async (req: Request, res: ExpressResponse) => {
+/**
+ * POST /api/widgets/meals/groceries
+ *
+ * Fügt einen Eintrag zur Einkaufsliste hinzu.
+ * Body: { name, unit?, amount?, storeId? }
+ */
+norishRouter.post('/groceries', async (req: Request, res: Response) => {
   const { name, unit, amount, storeId } = req.body as Partial<GroceryCreateInput>;
 
   if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -181,6 +238,7 @@ norishRouter.post('/groceries', async (req: Request, res: ExpressResponse) => {
       isDone: false,
       storeId: storeId ?? null,
     });
+
     res.status(201).json({ item });
   } catch (err) {
     console.error('Error adding grocery item:', err);
