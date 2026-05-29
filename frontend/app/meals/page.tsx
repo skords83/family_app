@@ -12,6 +12,7 @@ interface PlannedRecipe {
   slot: Slot;
   recipeName: string | null;
   recipeImage: string | null;
+  imageUrl: string | null;      // aufgelöste absolute URL vom Backend
   servings: number | null;
   calories: number | null;
 }
@@ -180,31 +181,61 @@ export default function MealsPage() {
                     const recipes = daySlots[slot]!;
                     return (
                       <div key={slot} className="flex items-start gap-3">
+                        {/* Slot-Icon */}
                         <div
                           className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
                           style={{ background: SLOT_BG[slot] }}
                         >
                           {SLOT_ICONS[slot]}
                         </div>
+
                         <div className="flex-1 min-w-0">
-                          <div className="text-[10px] font-sans font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#a09d99' }}>
+                          <div className="text-[10px] font-sans font-semibold uppercase tracking-wide mb-1" style={{ color: '#a09d99' }}>
                             {SLOT_LABELS[slot]}
                           </div>
+
                           {recipes.map(r => (
-                            <div key={r.id} className="flex items-center gap-2">
-                              <span className="text-sm font-sans" style={{ color: '#1a1814' }}>
-                                {r.recipeName ?? 'Unbekanntes Rezept'}
-                              </span>
-                              {r.calories && (
-                                <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-                                  {r.calories} kcal
-                                </span>
+                            <div key={r.id} className="flex items-center gap-3">
+                              {/* Rezeptbild */}
+                              {r.imageUrl ? (
+                                <img
+                                  src={r.imageUrl}
+                                  alt={r.recipeName ?? ''}
+                                  className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                                  style={{ border: '0.5px solid rgba(0,0,0,0.07)' }}
+                                  onError={e => {
+                                    // Bild nicht erreichbar → Element ausblenden
+                                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                // Platzhalter wenn kein Bild vorhanden
+                                <div
+                                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-base"
+                                  style={{ background: SLOT_BG[slot], border: '0.5px solid rgba(0,0,0,0.05)' }}
+                                >
+                                  {SLOT_ICONS[slot]}
+                                </div>
                               )}
-                              {r.servings && (
-                                <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-                                  · {r.servings} Port.
+
+                              {/* Name + Meta */}
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-sans" style={{ color: '#1a1814' }}>
+                                  {r.recipeName ?? 'Unbekanntes Rezept'}
                                 </span>
-                              )}
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {r.calories && (
+                                    <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
+                                      {r.calories} kcal
+                                    </span>
+                                  )}
+                                  {r.servings && (
+                                    <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
+                                      · {r.servings} Port.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
