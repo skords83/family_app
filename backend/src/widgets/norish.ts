@@ -19,7 +19,7 @@ async function fetchMeals(): Promise<MealPlan> {
     throw new Error(`Norish API returned ${response.status}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as Record<string, unknown>;
 
   // Normalize the response — Norish may return various formats
   // Try to parse as { days: [...] } or as array directly
@@ -39,7 +39,7 @@ async function fetchMeals(): Promise<MealPlan> {
 
   // Try to extract days from any recognized structure
   if (json && typeof json === 'object') {
-    const possibleDays = json.plan ?? json.meals ?? json.week ?? [];
+    const possibleDays = (json.plan ?? json.meals ?? json.week ?? []) as unknown[];
     if (Array.isArray(possibleDays)) {
       return {
         days: possibleDays.map((item: any) => ({

@@ -49,7 +49,7 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
     throw new Error(`Immich API returned ${response.status}`);
   }
 
-  const assets: ImmichAsset[] = await response.json();
+  const assets = await response.json() as ImmichAsset[];
 
   if (!assets || assets.length === 0) {
     throw new Error('No assets returned from Immich');

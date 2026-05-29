@@ -22,7 +22,7 @@ async function fetchWeather(): Promise<WeatherData> {
     throw new Error(`Open-Meteo API returned ${response.status}`);
   }
 
-  const json = await response.json();
+  const json = await response.json() as { current_weather: { temperature: number; weathercode: number; windspeed: number }; hourly: { time: string[]; temperature_2m: number[] } };
 
   const current = json.current_weather;
   const hourly = json.hourly;
