@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import { Geist } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/ui/Sidebar';
 import Topbar from '@/components/ui/Topbar';
 
-const geist = Geist({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Family Organizer',
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
-      <body className={`${geist.className} bg-[#f5f2ee] text-[#1a1814] min-h-screen flex flex-col`}>
+      <body className={`${inter.className} bg-[#f5f2ee] text-[#1a1814] min-h-screen flex flex-col`}>
         {/* Topbar */}
         <Topbar />
 
