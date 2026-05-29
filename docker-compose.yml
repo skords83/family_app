@@ -28,9 +28,7 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/skords83/family-backend:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://family:password@postgres:5432/family_organizer
@@ -60,9 +58,7 @@ services:
       - "traefik.docker.network=traefik"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/skords83/family-frontend:latest
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: https://family.skords.de/api
