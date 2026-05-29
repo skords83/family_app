@@ -34,7 +34,7 @@ function formatDateLabel(dateStr: string): string {
   tomorrow.setDate(today.getDate() + 1);
   if (dateStr === today.toISOString().split('T')[0]) return 'Heute';
   if (dateStr === tomorrow.toISOString().split('T')[0]) return 'Morgen';
-  return date.toLocaleDateString('de-DE', { weekday: 'short', month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long' }).toUpperCase();
 }
 
 function formatEventTime(event: CalendarEvent): string {
@@ -42,27 +42,15 @@ function formatEventTime(event: CalendarEvent): string {
   return new Date(event.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-const S = {
-  card:    { background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18 },
-  title:   { color: '#a09d99' },
-  stale:   { color: '#f0a500' },
-  time:    { color: '#a09d99' },
-  dlabel:  { color: '#a09d99' },
-  evbg:    { background: 'rgba(0,0,0,0.03)', borderRadius: 10, padding: '7px 12px' },
-  evname:  { color: '#1a1814' },
-  empty:   { color: '#a09d99' },
-  skelBg:  { background: '#e8e4de', borderRadius: 6 },
-};
-
 export default function CalendarWidget({ events = [], fetched_at, loading }: CalendarWidgetProps) {
   if (loading) {
     return (
-      <div style={{ ...S.card, animationName: 'pulse' }}>
-        <div style={{ ...S.skelBg, height: 14, width: 96, marginBottom: 12 }} />
+      <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+        <div style={{ background: '#e8e4de', borderRadius: 4, height: 12, width: 80, marginBottom: 16 }} />
         {[0,1,2].map(i => (
           <div key={i} style={{ marginBottom: 12 }}>
-            <div style={{ ...S.skelBg, height: 10, width: 64, marginBottom: 8 }} />
-            <div style={{ ...S.skelBg, height: 32, marginBottom: 4 }} />
+            <div style={{ background: '#e8e4de', borderRadius: 4, height: 10, width: 60, marginBottom: 8 }} />
+            <div style={{ background: '#e8e4de', borderRadius: 10, height: 56 }} />
           </div>
         ))}
       </div>
@@ -81,13 +69,16 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
   const hasEvents = days.some(d => grouped.has(d));
 
   return (
-    <div style={S.card}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={S.title}>Kalender</h3>
+    <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[10px] font-sans font-semibold uppercase tracking-widest" style={{ color: '#a09d99' }}>
+          Kalender
+        </h3>
         <div className="flex items-center gap-2">
-          {stale && <span className="text-xs" style={S.stale}>⚠ veraltet</span>}
+          {stale && <span className="text-xs font-sans" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
           {fetched_at && (
-            <span className="text-xs font-sans" style={S.time}>
+            <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
               {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
@@ -95,27 +86,41 @@ export default function CalendarWidget({ events = [], fetched_at, loading }: Cal
       </div>
 
       {!hasEvents ? (
-        <p className="text-sm font-sans py-4 text-center" style={S.empty}>Keine Termine diese Woche</p>
+        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine diese Woche</p>
       ) : (
-        <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
           {days.map(day => {
             const dayEvents = grouped.get(day);
             if (!dayEvents?.length) return null;
             return (
               <div key={day}>
-                <p className="text-[10px] font-sans font-semibold uppercase mb-1.5" style={S.dlabel}>
+                {/* Day label */}
+                <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
                   {formatDateLabel(day)}
                 </p>
-                <div className="space-y-1">
+                {/* Events */}
+                <div className="space-y-1.5">
                   {dayEvents.map(event => (
-                    <div key={event.id} className="flex items-start gap-2" style={{ ...S.evbg, borderLeft: `3px solid ${event.color ?? '#6366f1'}` }}>
-                      <span className="text-xs font-sans flex-shrink-0 mt-0.5 w-14" style={S.time}>
+                    <div
+                      key={event.id}
+                      className="flex items-start gap-3 rounded-xl px-4 py-3"
+                      style={{
+                        background: '#f7f4f0',
+                        borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
+                        borderRadius: '0 10px 10px 0',
+                      }}
+                    >
+                      {/* Time */}
+                      <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 48 }}>
                         {formatEventTime(event)}
                       </span>
+                      {/* Title + calendar name */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-sans font-medium truncate" style={S.evname}>{event.title}</p>
+                        <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>
+                          {event.title}
+                        </p>
                         {event.calendarName && (
-                          <p className="text-xs mt-0.5 truncate font-sans" style={{ color: event.color ?? '#6366f1', opacity: 0.8 }}>
+                          <p className="text-xs font-sans mt-0.5 truncate" style={{ color: event.color ?? '#6366f1' }}>
                             {event.calendarName}
                           </p>
                         )}
