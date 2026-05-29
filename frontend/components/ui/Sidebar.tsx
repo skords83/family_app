@@ -46,7 +46,7 @@ export default function Sidebar() {
   return (
     <nav
       className="flex-shrink-0 flex flex-col items-center py-4 gap-1"
-      style={{ width: 64, background: '#1e1b18', height: '100%' }}
+      style={{ width: 64, background: '#1e1b18', minHeight: '100%', height: '100%' }}
     >
       {NAV.map(({ href, icon, label }) => (
         <NavItem key={href} href={href} icon={icon} label={label}

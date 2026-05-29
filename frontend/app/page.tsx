@@ -20,19 +20,13 @@ interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: 
 
 function Clock() {
   const [time, setTime] = useState(new Date());
-  useEffect(() => { const iv = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(iv); }, []);
+  useEffect(() => { const iv = setInterval(() => setTime(new Date()), 30_000); return () => clearInterval(iv); }, []);
   const hm = time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  const sec = time.getSeconds();
-  const date = time.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
     <div className="text-right">
       <div className="text-5xl font-bold tracking-tight tabular-nums" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
         {hm}
-        <span className={`text-3xl transition-opacity duration-500 ${sec % 2 === 0 ? 'opacity-100' : 'opacity-20'}`} style={{ color: '#a09d99' }}>
-          :{String(sec).padStart(2, '0')}
-        </span>
       </div>
-      <div className="text-sm font-sans mt-1 capitalize" style={{ color: '#a09d99' }}>{date}</div>
     </div>
   );
 }
@@ -93,7 +87,12 @@ export default function HomePage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
-            Guten Morgen 👋
+            {(() => {
+              const h = new Date().getHours();
+              if (h < 12) return 'Guten Morgen 👋';
+              if (h < 18) return 'Guten Tag 👋';
+              return 'Guten Abend 👋';
+            })()}
           </h1>
           <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>
             {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

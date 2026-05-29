@@ -23,9 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${inter.className} min-h-screen flex flex-col`} style={{ background: '#f5f2ee', color: '#1a1814' }}>
         <Topbar />
-        <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 68px)' }}>
+        {/* flex-1 + min-h-0 so sidebar stretches full height */}
+        <div className="flex flex-1 min-h-0" style={{ height: 'calc(100vh - 68px)' }}>
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto min-h-0">
             {children}
           </main>
         </div>
