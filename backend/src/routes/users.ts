@@ -15,13 +15,24 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
         u.photo,
         u.color,
         u.role,
-        COALESCE(SUM(pe.points), 0)::integer AS points,
-        COUNT(ti.id)::integer AS tasks_total,
-        COUNT(ti.completed_at)::integer AS tasks_done
+        COALESCE(pe.total_points, 0)::integer AS points,
+        COALESCE(ti.tasks_total, 0)::integer AS tasks_total,
+        COALESCE(ti.tasks_done, 0)::integer AS tasks_done
       FROM users u
-      LEFT JOIN point_events pe ON pe.user_id = u.id
-      LEFT JOIN task_instances ti ON ti.assigned_to = u.id AND ti.date = $1
-      GROUP BY u.id, u.name, u.avatar, u.photo, u.color, u.role
+      LEFT JOIN (
+        SELECT user_id, SUM(points) AS total_points
+        FROM point_events
+        GROUP BY user_id
+      ) pe ON pe.user_id = u.id
+      LEFT JOIN (
+        SELECT
+          assigned_to,
+          COUNT(id) AS tasks_total,
+          COUNT(completed_at) AS tasks_done
+        FROM task_instances
+        WHERE date = $1
+        GROUP BY assigned_to
+      ) ti ON ti.assigned_to = u.id
       ORDER BY u.name ASC
     `, [today]);
     res.json(result.rows);
@@ -44,14 +55,25 @@ usersRouter.get('/:id', async (req: Request, res: Response) => {
         u.photo,
         u.color,
         u.role,
-        COALESCE(SUM(pe.points), 0)::integer AS points,
-        COUNT(ti.id)::integer AS tasks_total,
-        COUNT(ti.completed_at)::integer AS tasks_done
+        COALESCE(pe.total_points, 0)::integer AS points,
+        COALESCE(ti.tasks_total, 0)::integer AS tasks_total,
+        COALESCE(ti.tasks_done, 0)::integer AS tasks_done
       FROM users u
-      LEFT JOIN point_events pe ON pe.user_id = u.id
-      LEFT JOIN task_instances ti ON ti.assigned_to = u.id AND ti.date = $1
+      LEFT JOIN (
+        SELECT user_id, SUM(points) AS total_points
+        FROM point_events
+        GROUP BY user_id
+      ) pe ON pe.user_id = u.id
+      LEFT JOIN (
+        SELECT
+          assigned_to,
+          COUNT(id) AS tasks_total,
+          COUNT(completed_at) AS tasks_done
+        FROM task_instances
+        WHERE date = $1
+        GROUP BY assigned_to
+      ) ti ON ti.assigned_to = u.id
       WHERE u.id = $2
-      GROUP BY u.id, u.name, u.avatar, u.photo, u.color, u.role
     `, [today, id]);
 
     if (result.rows.length === 0) {
@@ -74,8 +96,6 @@ usersRouter.post('/:id/photo', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing photo field (base64 data URL)' });
     }
 
-    // Accept data URLs like "data:image/jpeg;base64,..."
-    // Store as-is so frontend can use it directly as <img src>
     await pool.query(
       'UPDATE users SET photo = $1 WHERE id = $2',
       [photo, id]
@@ -99,7 +119,7 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
     const result = await pool.query(`
       UPDATE users
       SET
-        name  = COALESCE($1, name),
+        name   = COALESCE($1, name),
         avatar = COALESCE($2, avatar),
         color  = COALESCE($3, color),
         pin    = COALESCE($4, pin)
