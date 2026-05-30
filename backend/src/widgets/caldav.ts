@@ -58,8 +58,37 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       event.start.getSeconds() === 0 &&
       (event as any).datetype === 'date';
 
-    // UTC-Offset des originalen Events — rrule gibt UTC zurück, wir müssen korrigieren
-    const tzOffset = allDay ? 0 : originalStart.getTimezoneOffset() * 60 * 1000;
+    // TZID-Offset ermitteln: node-ical parsed TZID-Events als UTC (ignoriert Timezone).
+    // rrule expandiert ebenfalls in UTC-Basis. Wir korrigieren mit Intl.DateTimeFormat
+    // indem wir den echten lokalen Offset für die TZID zum Zeitpunkt des Events berechnen.
+    let tzOffsetMs = 0;
+    if (!allDay && (event as any).rrule) {
+      // node-ical speichert die TZID manchmal als event.tz, manchmal nicht.
+      // Zuverlässigste Methode: Differenz zwischen UTC-Stunde (was node-ical liefert)
+      // und der erwarteten wall-clock-Stunde über Intl berechnen.
+      // Da der Server auf UTC läuft: originalStart.getUTCHours() === originalStart.getHours()
+      // Wir versuchen TZID zu lesen, sonst Fallback auf 'Europe/Berlin' (dein Kalender)
+      const tzid: string = (event as any).tz || 'Europe/Berlin';
+      try {
+        const refDate = originalStart;
+        const utcMs = refDate.getTime();
+        // Erzeuge einen Formatter der die wall-clock-Zeit in der Ziel-TZ anzeigt
+        const fmt = new Intl.DateTimeFormat('en-GB', {
+          timeZone: tzid,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          hour12: false,
+        });
+        const parts = fmt.formatToParts(refDate);
+        const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value ?? '0', 10);
+        // Baue einen "naiven" Date aus den wall-clock-Teilen als wäre es UTC
+        const wallMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+        // Offset = wall-clock - UTC
+        tzOffsetMs = wallMs - utcMs;
+      } catch {
+        tzOffsetMs = 0;
+      }
+    }
 
     // Wiederkehrende Termine per RRULE expandieren
     if ((event as any).rrule) {
@@ -80,7 +109,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
 
         for (const occ of occurrences) {
           // UTC-Offset korrigieren: rrule gibt naive UTC-Zeiten zurück
-          const startDate = new Date(occ.getTime() - tzOffset);
+          const startDate = new Date(occ.getTime() + tzOffsetMs);
           if (exdates.has(startDate.getTime())) continue;
           const endDate = new Date(startDate.getTime() + duration);
           events.push({
