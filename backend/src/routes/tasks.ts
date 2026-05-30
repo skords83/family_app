@@ -272,6 +272,26 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/tasks/templates/:id - delete template + all its instances
+tasksRouter.delete('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const existing = await pool.query(`SELECT id FROM task_templates WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Instances are deleted via ON DELETE CASCADE
+    await pool.query(`DELETE FROM task_templates WHERE id = $1`, [id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting template:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/instances - create one-off instance
 tasksRouter.post('/instances', async (req: Request, res: Response) => {
   try {

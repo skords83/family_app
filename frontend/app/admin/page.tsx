@@ -149,6 +149,73 @@ export default function AdminPage() {
     setAuthenticated(true);
   };
 
+  // ── Edit drawer state ──
+  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    points: 1,
+    assigned_to: [] as string[],
+    recurrence: 'daily',
+    due_time: '',
+    weekdays: [] as string[],
+  });
+
+  const openEdit = (template: TaskTemplate) => {
+    const ids = Array.isArray(template.assigned_to)
+      ? template.assigned_to
+      : template.assigned_to ? [template.assigned_to] : [];
+    let recurrence = template.recurrence;
+    let weekdays: string[] = [];
+    if (template.recurrence.startsWith('weekdays:')) {
+      weekdays = template.recurrence.replace('weekdays:', '').split(',');
+      recurrence = 'weekdays';
+    }
+    setEditForm({
+      title: template.title,
+      points: template.points,
+      assigned_to: ids,
+      recurrence,
+      due_time: template.due_time ?? '',
+      weekdays,
+    });
+    setEditingTemplate(template);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTemplate) return;
+    let recurrenceValue = editForm.recurrence;
+    if (editForm.recurrence === 'weekdays') {
+      if (editForm.weekdays.length === 0) { showNotification('Bitte mindestens einen Wochentag auswählen.'); return; }
+      recurrenceValue = `weekdays:${editForm.weekdays.join(',')}`;
+    }
+    const res = await fetch(`${API_BASE}/api/tasks/templates/${editingTemplate.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: editForm.title,
+        points: editForm.points,
+        assigned_to: editForm.assigned_to.length > 0 ? editForm.assigned_to : null,
+        recurrence: recurrenceValue,
+        due_time: editForm.due_time || null,
+      }),
+    });
+    if (res.ok) {
+      setEditingTemplate(null);
+      showNotification('Aufgabe gespeichert!');
+      fetchData();
+    }
+  };
+
+  const handleDeleteTemplate = async (template: TaskTemplate) => {
+    if (!confirm(`"${template.title}" wirklich löschen? Alle zugehörigen Instanzen werden ebenfalls gelöscht.`)) return;
+    const res = await fetch(`${API_BASE}/api/tasks/templates/${template.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setTemplates((prev) => prev.filter((t) => t.id !== template.id));
+      showNotification('Aufgabe gelöscht.');
+    }
+  };
+
   const handleToggleTemplate = async (template: TaskTemplate) => {
     const res = await fetch(`${API_BASE}/api/tasks/templates/${template.id}`, {
       method: 'PATCH',
@@ -527,17 +594,35 @@ export default function AdminPage() {
                       {template.due_time && ` • ${template.due_time}`}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleToggleTemplate(template)}
-                    className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
-                    style={
-                      template.active
-                        ? { background: '#fee2e2', color: '#dc2626' }
-                        : { background: '#dcfce7', color: '#16a34a' }
-                    }
-                  >
-                    {template.active ? 'Deaktivieren' : 'Aktivieren'}
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => openEdit(template)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                      title="Bearbeiten"
+                    >
+                      <Icon name="pencil" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTemplate(template)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: '#fee2e2', color: '#dc2626' }}
+                      title="Löschen"
+                    >
+                      <Icon name="trash" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleTemplate(template)}
+                      className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                      style={
+                        template.active
+                          ? { background: '#fef3c7', color: '#92400e' }
+                          : { background: '#dcfce7', color: '#16a34a' }
+                      }
+                    >
+                      {template.active ? 'Aktiv' : 'Inaktiv'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -800,6 +885,172 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* ── Edit Template Drawer ── */}
+      {editingTemplate && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.35)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingTemplate(null); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto"
+            style={{ background: 'var(--family-bg)', maxHeight: '92dvh' }}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex-1">
+                <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--family-text3)' }}>Aufgabe bearbeiten</p>
+                <p className="font-bold text-lg leading-tight truncate" style={{ color: 'var(--family-text)' }}>{editingTemplate.title}</p>
+              </div>
+              <button
+                onClick={() => setEditingTemplate(null)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl"
+                style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)' }}
+              >
+                <Icon name="x" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {/* Title */}
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Aufgabenname</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+
+              {/* Points + Recurrence */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
+                  <input
+                    type="number" min="1"
+                    value={editForm.points}
+                    onChange={(e) => setEditForm({ ...editForm, points: parseInt(e.target.value) })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
+                  <select
+                    value={editForm.recurrence}
+                    onChange={(e) => setEditForm({ ...editForm, recurrence: e.target.value, weekdays: [] })}
+                    className={inputCls}
+                    style={inputStyle}
+                  >
+                    <option value="daily">Täglich</option>
+                    <option value="weekdays">Bestimmte Wochentage</option>
+                    <option value="weekly">Wöchentlich</option>
+                    <option value="once">Einmalig</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Weekday picker for edit */}
+              {editForm.recurrence === 'weekdays' && (
+                <div>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Wochentage</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {WEEKDAYS.map((day) => {
+                      const sel = editForm.weekdays.includes(day.key);
+                      return (
+                        <button
+                          key={day.key}
+                          type="button"
+                          onClick={() => setEditForm((prev) => ({
+                            ...prev,
+                            weekdays: sel ? prev.weekdays.filter((d) => d !== day.key) : [...prev.weekdays, day.key],
+                          }))}
+                          className="w-10 h-10 rounded-xl text-sm font-bold transition-all active:scale-95"
+                          style={sel
+                            ? { background: 'var(--family-accent)', color: '#fff', border: '2px solid var(--family-accent)' }
+                            : { background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '2px solid #d8d4cf' }}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned to */}
+              <div>
+                <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                  Zugewiesen an
+                  <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                    {editForm.assigned_to.length === 0 ? '— Alle' : `(${editForm.assigned_to.length} ausgewählt)`}
+                  </span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {users.map((u) => {
+                    const sel = editForm.assigned_to.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setEditForm((prev) => ({
+                          ...prev,
+                          assigned_to: sel ? prev.assigned_to.filter((id) => id !== u.id) : [...prev.assigned_to, u.id],
+                        }))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                        style={sel
+                          ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                          : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }}
+                      >
+                        {u.photo
+                          ? <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 16 }}>{u.avatar}</span>}
+                        {u.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Due time */}
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                <input
+                  type="time"
+                  value={editForm.due_time}
+                  onChange={(e) => setEditForm({ ...editForm, due_time: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingTemplate(null)}
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95"
+                  style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
+                >
+                  <Icon name="check" />
+                  Speichern
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
