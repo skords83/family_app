@@ -30,7 +30,7 @@ interface TaskTemplate {
   id: string;
   title: string;
   points: number;
-  assigned_to: string | null;
+  assigned_to: string | string[] | null;   // legacy: single UUID or new: UUID[]
   assigned_to_name?: string;
   recurrence: string;
   due_time: string | null;
@@ -113,7 +113,7 @@ export default function AdminPage() {
   const [newTask, setNewTask] = useState({
     title: '',
     points: 1,
-    assigned_to: '',
+    assigned_to: [] as string[],   // multi-select
     recurrence: 'daily',
     due_time: '',
     weekdays: [] as string[],
@@ -188,13 +188,13 @@ export default function AdminPage() {
       body: JSON.stringify({
         title: newTask.title,
         points: newTask.points,
-        assigned_to: newTask.assigned_to || null,
+        assigned_to: newTask.assigned_to.length > 0 ? newTask.assigned_to : null,
         recurrence: recurrenceValue,
         due_time: newTask.due_time || null,
       }),
     });
     if (res.ok) {
-      setNewTask({ title: '', points: 1, assigned_to: '', recurrence: 'daily', due_time: '', weekdays: [] });
+      setNewTask({ title: '', points: 1, assigned_to: [], recurrence: 'daily', due_time: '', weekdays: [] });
       showNotification('Aufgabe erstellt!');
       fetchData();
     }
@@ -258,6 +258,15 @@ export default function AdminPage() {
       showNotification('Punkte angepasst!');
       fetchData();
     }
+  };
+
+  /** Assigned-to label: handles legacy single UUID, array, or null */
+  const assignedLabel = (template: TaskTemplate): string => {
+    if (!template.assigned_to) return 'Alle';
+    const ids = Array.isArray(template.assigned_to) ? template.assigned_to : [template.assigned_to];
+    if (ids.length === 0) return 'Alle';
+    const names = ids.map((id) => users.find((u) => u.id === id)?.name ?? '?');
+    return names.join(', ');
   };
 
   /** Human-readable recurrence label */
@@ -429,31 +438,58 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Zugewiesen an</label>
-                    <select
-                      value={newTask.assigned_to}
-                      onChange={(e) => setNewTask({ ...newTask, assigned_to: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                    >
-                      <option value="">Alle</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.avatar} {u.name}</option>
-                      ))}
-                    </select>
+                {/* Multi-user assignment */}
+                <div>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                    Zugewiesen an
+                    <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                      {newTask.assigned_to.length === 0 ? '— Alle' : `(${newTask.assigned_to.length} ausgewählt)`}
+                    </span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {users.map((u) => {
+                      const sel = newTask.assigned_to.includes(u.id);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() =>
+                            setNewTask((prev) => ({
+                              ...prev,
+                              assigned_to: sel
+                                ? prev.assigned_to.filter((id) => id !== u.id)
+                                : [...prev.assigned_to, u.id],
+                            }))
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                          style={
+                            sel
+                              ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                              : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }
+                          }
+                        >
+                          {u.photo ? (
+                            <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <span style={{ fontSize: 16 }}>{u.avatar}</span>
+                          )}
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
-                    <input
-                      type="time"
-                      value={newTask.due_time}
-                      onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                    />
-                  </div>
+                </div>
+
+                {/* Due time */}
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                  <input
+                    type="time"
+                    value={newTask.due_time}
+                    onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
                 </div>
                 <button
                   type="submit"
@@ -487,7 +523,7 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{template.title}</p>
                     <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
-                      {template.points} Pkt. • {recurrenceLabel(template.recurrence)} • {template.assigned_to_name ?? 'Alle'}
+                      {template.points} Pkt. • {recurrenceLabel(template.recurrence)} • {assignedLabel(template)}
                       {template.due_time && ` • ${template.due_time}`}
                     </p>
                   </div>

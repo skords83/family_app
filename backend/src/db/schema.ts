@@ -21,12 +21,50 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Migrate task_templates.assigned_to from UUID → JSONB (safe)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='assigned_to'
+      AND data_type = 'uuid'
+  ) THEN
+    -- Drop FK constraint first (name may vary, use dynamic lookup)
+    EXECUTE (
+      SELECT 'ALTER TABLE task_templates DROP CONSTRAINT ' || conname
+      FROM pg_constraint
+      WHERE conrelid = 'task_templates'::regclass
+        AND contype = 'f'
+        AND conname LIKE '%assigned_to%'
+      LIMIT 1
+    );
+    ALTER TABLE task_templates
+      ALTER COLUMN assigned_to TYPE JSONB
+      USING CASE
+        WHEN assigned_to IS NULL THEN NULL
+        ELSE jsonb_build_array(assigned_to::text)
+      END;
+  END IF;
+END $$;
+
+-- Remove old recurrence CHECK constraint if it still exists (safe)
+DO $$ BEGIN
+  EXECUTE (
+    SELECT 'ALTER TABLE task_templates DROP CONSTRAINT ' || conname
+    FROM pg_constraint
+    WHERE conrelid = 'task_templates'::regclass
+      AND contype = 'c'
+      AND conname LIKE '%recurrence%'
+    LIMIT 1
+  );
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS task_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   points INTEGER NOT NULL DEFAULT 1,
-  assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
-  recurrence TEXT NOT NULL CHECK (recurrence IN ('daily', 'weekly', 'once')),
+  assigned_to JSONB,
+  recurrence TEXT NOT NULL,
   due_time TEXT,
   active BOOLEAN NOT NULL DEFAULT true
 );

@@ -4,6 +4,28 @@ import { v4 as uuidv4 } from 'uuid';
 
 export const tasksRouter = Router();
 
+/**
+ * Normalise assigned_to coming from DB (JSONB) or request body.
+ * Always returns string[] | null.
+ *   null / undefined / []  → null  (means "all users")
+ *   "uuid"                 → ["uuid"]   (legacy single value)
+ *   ["uuid1","uuid2"]      → ["uuid1","uuid2"]
+ */
+function normaliseAssignedTo(value: unknown): string[] | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value.length > 0 ? value.map(String) : null;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.length > 0 ? parsed.map(String) : null;
+    } catch {}
+    return [value]; // plain UUID string
+  }
+  return null;
+}
+
+
+
 async function verifyParentPin(pin: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
@@ -148,14 +170,18 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
 tasksRouter.get('/templates', async (_req: Request, res: Response) => {
   try {
     const result = await pool.query(`
-      SELECT
-        tt.*,
-        u.name AS assigned_to_name
+      SELECT tt.*
       FROM task_templates tt
-      LEFT JOIN users u ON tt.assigned_to = u.id
       ORDER BY tt.title ASC
     `);
-    res.json(result.rows);
+
+    // Normalise assigned_to: always return a string[] or null
+    const rows = result.rows.map((t) => ({
+      ...t,
+      assigned_to: normaliseAssignedTo(t.assigned_to),
+    }));
+
+    res.json(rows);
   } catch (err) {
     console.error('Error fetching templates:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -171,13 +197,26 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'title and recurrence are required' });
     }
 
+    // Validate recurrence value
+    const validRecurrence = /^(daily|weekly|once|weekdays:[a-z,]+)$/.test(recurrence);
+    if (!validRecurrence) {
+      return res.status(400).json({ error: 'Invalid recurrence value' });
+    }
+
+    // Normalise assigned_to → JSONB array or null
+    const assignedToJson = normaliseAssignedTo(assigned_to);
+    const assignedToParam = assignedToJson ? JSON.stringify(assignedToJson) : null;
+
     const result = await pool.query(`
       INSERT INTO task_templates (title, points, assigned_to, recurrence, due_time, active)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3::jsonb, $4, $5, $6)
       RETURNING *
-    `, [title, points ?? 1, assigned_to ?? null, recurrence, due_time ?? null, active ?? true]);
+    `, [title, points ?? 1, assignedToParam, recurrence, due_time ?? null, active ?? true]);
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({
+      ...result.rows[0],
+      assigned_to: normaliseAssignedTo(result.rows[0].assigned_to),
+    });
   } catch (err) {
     console.error('Error creating template:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -197,12 +236,17 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
 
     const current = existing.rows[0];
 
+    const newAssigned = assigned_to !== undefined
+      ? normaliseAssignedTo(assigned_to)
+      : normaliseAssignedTo(current.assigned_to);
+    const assignedParam = newAssigned ? JSON.stringify(newAssigned) : null;
+
     const result = await pool.query(`
       UPDATE task_templates
       SET
         title = $1,
         points = $2,
-        assigned_to = $3,
+        assigned_to = $3::jsonb,
         recurrence = $4,
         due_time = $5,
         active = $6
@@ -211,14 +255,17 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
     `, [
       title ?? current.title,
       points ?? current.points,
-      assigned_to !== undefined ? assigned_to : current.assigned_to,
+      assignedParam,
       recurrence ?? current.recurrence,
       due_time !== undefined ? due_time : current.due_time,
       active !== undefined ? active : current.active,
       id,
     ]);
 
-    res.json(result.rows[0]);
+    res.json({
+      ...result.rows[0],
+      assigned_to: normaliseAssignedTo(result.rows[0].assigned_to),
+    });
   } catch (err) {
     console.error('Error updating template:', err);
     res.status(500).json({ error: 'Internal server error' });

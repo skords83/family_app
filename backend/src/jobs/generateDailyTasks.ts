@@ -21,15 +21,28 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
     const usersResult = await client.query(`SELECT id FROM users`);
     const allUserIds: string[] = usersResult.rows.map((r: any) => r.id);
 
+    // Weekday key for today: 0=sun→'sun', 1=mon→'mon', ...
+    const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const todayKey = WEEKDAY_KEYS[dayOfWeek];
+
     let created = 0;
     let skipped = 0;
 
     for (const template of templates) {
-      // Determine which users to assign
+      // Normalise assigned_to: JSONB array, legacy single UUID, or null → string[]
       let userIds: string[];
-
-      if (template.assigned_to) {
-        userIds = [template.assigned_to];
+      const raw = template.assigned_to;
+      if (!raw || (Array.isArray(raw) && raw.length === 0)) {
+        userIds = allUserIds;
+      } else if (Array.isArray(raw)) {
+        userIds = raw.map(String);
+      } else if (typeof raw === 'string') {
+        try {
+          const parsed = JSON.parse(raw);
+          userIds = Array.isArray(parsed) && parsed.length > 0 ? parsed.map(String) : allUserIds;
+        } catch {
+          userIds = [raw]; // plain UUID string (legacy)
+        }
       } else {
         userIds = allUserIds;
       }
@@ -46,6 +59,10 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
           SELECT COUNT(*) FROM task_instances WHERE template_id = $1
         `, [template.id]);
         shouldCreate = parseInt(existingAny.rows[0].count) === 0;
+      } else if (template.recurrence.startsWith('weekdays:')) {
+        // e.g. "weekdays:mon,wed,fri"
+        const days = template.recurrence.replace('weekdays:', '').split(',');
+        shouldCreate = days.includes(todayKey);
       }
 
       if (!shouldCreate) continue;
