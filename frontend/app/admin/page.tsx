@@ -6,10 +6,21 @@ import PinModal from '@/components/ui/PinModal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
+const WEEKDAYS = [
+  { key: 'mon', label: 'Mo' },
+  { key: 'tue', label: 'Di' },
+  { key: 'wed', label: 'Mi' },
+  { key: 'thu', label: 'Do' },
+  { key: 'fri', label: 'Fr' },
+  { key: 'sat', label: 'Sa' },
+  { key: 'sun', label: 'So' },
+];
+
 interface User {
   id: string;
   name: string;
   avatar: string;
+  photo?: string;
   color: string;
   points: number;
   role: string;
@@ -45,10 +56,47 @@ interface RewardClaim {
   user_name: string;
   user_avatar: string;
   user_color: string;
+  user_photo?: string;
   points_cost: number;
 }
 
 type AdminTab = 'tasks' | 'rewards' | 'users' | 'points';
+
+/** Small avatar: photo if available, otherwise emoji fallback */
+function UserAvatar({ user, size = 36 }: { user: { avatar: string; photo?: string; name: string; color: string }; size?: number }) {
+  if (user.photo) {
+    return (
+      <img
+        src={user.photo}
+        alt={user.name}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: `2px solid ${user.color}` }}
+      />
+    );
+  }
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: user.color + '22',
+        border: `2px solid ${user.color}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: size * 0.5,
+        flexShrink: 0,
+      }}
+    >
+      {user.avatar}
+    </div>
+  );
+}
+
+/** Tabler icon helper (webfont must be loaded in layout.tsx) */
+function Icon({ name, className = '' }: { name: string; className?: string }) {
+  return <i className={`ti ti-${name} ${className}`} aria-hidden="true" />;
+}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -62,7 +110,14 @@ export default function AdminPage() {
   const [notification, setNotification] = useState<string | null>(null);
 
   // Forms
-  const [newTask, setNewTask] = useState({ title: '', points: 1, assigned_to: '', recurrence: 'daily', due_time: '' });
+  const [newTask, setNewTask] = useState({
+    title: '',
+    points: 1,
+    assigned_to: '',
+    recurrence: 'daily',
+    due_time: '',
+    weekdays: [] as string[],
+  });
   const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: '' });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
 
@@ -86,9 +141,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (authenticated) {
-      fetchData();
-    }
+    if (authenticated) fetchData();
   }, [authenticated, fetchData]);
 
   const handlePinSuccess = (pin: string) => {
@@ -103,15 +156,32 @@ export default function AdminPage() {
       body: JSON.stringify({ active: !template.active }),
     });
     if (res.ok) {
-      setTemplates((prev) =>
-        prev.map((t) => (t.id === template.id ? { ...t, active: !t.active } : t))
-      );
+      setTemplates((prev) => prev.map((t) => (t.id === template.id ? { ...t, active: !t.active } : t)));
       showNotification(template.active ? 'Aufgabe deaktiviert' : 'Aufgabe aktiviert');
     }
   };
 
+  const toggleWeekday = (day: string) => {
+    setNewTask((prev) => ({
+      ...prev,
+      weekdays: prev.weekdays.includes(day)
+        ? prev.weekdays.filter((d) => d !== day)
+        : [...prev.weekdays, day],
+    }));
+  };
+
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
+    // For weekday recurrence, encode selected days into recurrence string, e.g. "weekdays:mon,tue,wed"
+    let recurrenceValue = newTask.recurrence;
+    if (newTask.recurrence === 'weekdays') {
+      if (newTask.weekdays.length === 0) {
+        showNotification('Bitte mindestens einen Wochentag auswählen.');
+        return;
+      }
+      recurrenceValue = `weekdays:${newTask.weekdays.join(',')}`;
+    }
+
     const res = await fetch(`${API_BASE}/api/tasks/templates`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -119,12 +189,12 @@ export default function AdminPage() {
         title: newTask.title,
         points: newTask.points,
         assigned_to: newTask.assigned_to || null,
-        recurrence: newTask.recurrence,
+        recurrence: recurrenceValue,
         due_time: newTask.due_time || null,
       }),
     });
     if (res.ok) {
-      setNewTask({ title: '', points: 1, assigned_to: '', recurrence: 'daily', due_time: '' });
+      setNewTask({ title: '', points: 1, assigned_to: '', recurrence: 'daily', due_time: '', weekdays: [] });
       showNotification('Aufgabe erstellt!');
       fetchData();
     }
@@ -155,9 +225,7 @@ export default function AdminPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !reward.active, pin: adminPin }),
     });
-    setRewards((prev) =>
-      prev.map((r) => (r.id === reward.id ? { ...r, active: !r.active } : r))
-    );
+    setRewards((prev) => prev.map((r) => (r.id === reward.id ? { ...r, active: !r.active } : r)));
     showNotification(reward.active ? 'Belohnung deaktiviert' : 'Belohnung aktiviert');
   };
 
@@ -192,9 +260,21 @@ export default function AdminPage() {
     }
   };
 
+  /** Human-readable recurrence label */
+  const recurrenceLabel = (rec: string) => {
+    if (rec === 'daily') return 'Täglich';
+    if (rec === 'weekly') return 'Wöchentlich';
+    if (rec === 'once') return 'Einmalig';
+    if (rec.startsWith('weekdays:')) {
+      const days = rec.replace('weekdays:', '').split(',');
+      return days.map((d) => WEEKDAYS.find((w) => w.key === d)?.label ?? d).join(', ');
+    }
+    return rec;
+  };
+
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--family-bg)' }}>
         <PinModal
           title="Admin PIN"
           onSuccess={handlePinSuccess}
@@ -206,18 +286,30 @@ export default function AdminPage() {
 
   const pendingClaims = claims.filter((c) => !c.approved_at);
 
-  const tabConfig: { id: AdminTab; label: string }[] = [
-    { id: 'tasks', label: 'Aufgaben' },
-    { id: 'rewards', label: `Belohnungen${pendingClaims.length > 0 ? ` (${pendingClaims.length})` : ''}` },
-    { id: 'users', label: 'Nutzer' },
-    { id: 'points', label: 'Punkte' },
+  const tabConfig: { id: AdminTab; label: string; icon: string }[] = [
+    { id: 'tasks', label: 'Aufgaben', icon: 'checklist' },
+    { id: 'rewards', label: `Belohnungen${pendingClaims.length > 0 ? ` (${pendingClaims.length})` : ''}`, icon: 'gift' },
+    { id: 'users', label: 'Nutzer', icon: 'users' },
+    { id: 'points', label: 'Punkte', icon: 'star' },
   ];
 
+  // Input / select shared classes (light theme)
+  const inputCls =
+    'w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--family-accent)] border transition-colors';
+  const inputStyle = {
+    background: 'var(--family-surface2)',
+    borderColor: '#d8d4cf',
+    color: 'var(--family-text)',
+  } as React.CSSProperties;
+
   return (
-    <main className="min-h-screen bg-slate-900 p-4">
+    <main className="min-h-screen p-4" style={{ background: 'var(--family-bg)' }}>
       {/* Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white rounded-xl px-6 py-3 font-semibold shadow-2xl">
+        <div
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-xl px-6 py-3 font-semibold shadow-2xl text-white"
+          style={{ background: 'var(--family-accent)' }}
+        >
           {notification}
         </div>
       )}
@@ -226,11 +318,15 @@ export default function AdminPage() {
       <div className="flex items-center gap-3 mb-6 max-w-2xl mx-auto">
         <button
           onClick={() => router.push('/')}
-          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 transition-all active:scale-95"
+          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl border transition-all active:scale-95"
+          style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf', color: 'var(--family-text2)' }}
         >
-          ←
+          <Icon name="arrow-left" />
         </button>
-        <h1 className="text-xl font-bold text-white flex-1">⚙️ Admin</h1>
+        <h1 className="text-xl font-bold flex-1 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+          <Icon name="settings" className="text-[var(--family-accent)]" />
+          Admin
+        </h1>
       </div>
 
       {/* Tabs */}
@@ -239,14 +335,14 @@ export default function AdminPage() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`
-              px-4 py-2.5 rounded-xl font-semibold text-sm whitespace-nowrap transition-all active:scale-95
-              ${tab === t.id
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
-              }
-            `}
+            className="px-4 py-2.5 rounded-xl font-semibold text-sm whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5"
+            style={
+              tab === t.id
+                ? { background: 'var(--family-accent)', color: '#fff', border: '1.5px solid transparent' }
+                : { background: 'var(--family-surface)', color: 'var(--family-text2)', border: '1.5px solid #d8d4cf' }
+            }
           >
+            <Icon name={t.icon} />
             {t.label}
           </button>
         ))}
@@ -254,52 +350,93 @@ export default function AdminPage() {
 
       <div className="max-w-2xl mx-auto">
 
-        {/* Tasks Tab */}
+        {/* ── Tasks Tab ── */}
         {tab === 'tasks' && (
           <div className="space-y-4">
             {/* Create task form */}
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-4">
-              <h3 className="font-bold text-slate-200 mb-4">Neue Aufgabe</h3>
+            <div
+              className="rounded-2xl border p-4"
+              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+            >
+              <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+                <Icon name="plus" className="text-[var(--family-accent)]" />
+                Neue Aufgabe
+              </h3>
               <form onSubmit={handleCreateTask} className="space-y-3">
                 <input
                   type="text"
                   placeholder="Aufgabenname"
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className={inputCls}
+                  style={inputStyle}
                   required
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Punkte</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
                     <input
                       type="number"
                       min="1"
                       value={newTask.points}
                       onChange={(e) => setNewTask({ ...newTask, points: parseInt(e.target.value) })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className={inputCls}
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Wiederholung</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
                     <select
                       value={newTask.recurrence}
-                      onChange={(e) => setNewTask({ ...newTask, recurrence: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      onChange={(e) => setNewTask({ ...newTask, recurrence: e.target.value, weekdays: [] })}
+                      className={inputCls}
+                      style={inputStyle}
                     >
                       <option value="daily">Täglich</option>
+                      <option value="weekdays">Bestimmte Wochentage</option>
                       <option value="weekly">Wöchentlich</option>
                       <option value="once">Einmalig</option>
                     </select>
                   </div>
                 </div>
+
+                {/* Weekday picker — shown only when recurrence = weekdays */}
+                {newTask.recurrence === 'weekdays' && (
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                      Wochentage auswählen
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      {WEEKDAYS.map((day) => {
+                        const selected = newTask.weekdays.includes(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() => toggleWeekday(day.key)}
+                            className="w-10 h-10 rounded-xl text-sm font-bold transition-all active:scale-95"
+                            style={
+                              selected
+                                ? { background: 'var(--family-accent)', color: '#fff', border: '2px solid var(--family-accent)' }
+                                : { background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '2px solid #d8d4cf' }
+                            }
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Zugewiesen an</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Zugewiesen an</label>
                     <select
                       value={newTask.assigned_to}
                       onChange={(e) => setNewTask({ ...newTask, assigned_to: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className={inputCls}
+                      style={inputStyle}
                     >
                       <option value="">Alle</option>
                       {users.map((u) => (
@@ -308,19 +445,22 @@ export default function AdminPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Uhrzeit (opt.)</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
                     <input
                       type="time"
                       value={newTask.due_time}
                       onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className={inputCls}
+                      style={inputStyle}
                     />
                   </div>
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-colors active:scale-95"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="plus" />
                   Aufgabe erstellen
                 </button>
               </form>
@@ -331,29 +471,34 @@ export default function AdminPage() {
               {templates.map((template) => (
                 <div
                   key={template.id}
-                  className={`
-                    flex items-center gap-3 bg-slate-800 border rounded-xl px-4 py-3
-                    ${template.active ? 'border-slate-700' : 'border-slate-700/30 opacity-50'}
-                  `}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border transition-opacity"
+                  style={{
+                    background: 'var(--family-surface)',
+                    borderColor: '#d8d4cf',
+                    opacity: template.active ? 1 : 0.45,
+                  }}
                 >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'var(--family-surface2)' }}
+                  >
+                    <Icon name="checklist" className="text-[var(--family-accent)]" />
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-200 truncate">{template.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {template.points} ⭐ •{' '}
-                      {template.recurrence === 'daily' ? 'Täglich' : template.recurrence === 'weekly' ? 'Wöchentlich' : 'Einmalig'} •{' '}
-                      {template.assigned_to_name ?? 'Alle'}
+                    <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{template.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                      {template.points} Pkt. • {recurrenceLabel(template.recurrence)} • {template.assigned_to_name ?? 'Alle'}
                       {template.due_time && ` • ${template.due_time}`}
                     </p>
                   </div>
                   <button
                     onClick={() => handleToggleTemplate(template)}
-                    className={`
-                      min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95
-                      ${template.active
-                        ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
-                        : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
-                      }
-                    `}
+                    className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                    style={
+                      template.active
+                        ? { background: '#fee2e2', color: '#dc2626' }
+                        : { background: '#dcfce7', color: '#16a34a' }
+                    }
                   >
                     {template.active ? 'Deaktivieren' : 'Aktivieren'}
                   </button>
@@ -363,65 +508,91 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Rewards Tab */}
+        {/* ── Rewards Tab ── */}
         {tab === 'rewards' && (
           <div className="space-y-4">
-            {/* Pending claims */}
             {pendingClaims.length > 0 && (
-              <div className="bg-slate-800 rounded-2xl border border-amber-700/30 p-4">
-                <h3 className="font-bold text-amber-400 mb-3">⏳ Wartend auf Genehmigung</h3>
+              <div
+                className="rounded-2xl border p-4"
+                style={{ background: '#fffbeb', borderColor: '#fbbf24' }}
+              >
+                <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: '#92400e' }}>
+                  <Icon name="clock" />
+                  Wartend auf Genehmigung
+                </h3>
                 <div className="space-y-2">
-                  {pendingClaims.map((claim) => (
-                    <div
-                      key={claim.id}
-                      className="flex items-center gap-3 bg-amber-900/10 border border-amber-700/20 rounded-xl px-3 py-3"
-                    >
-                      <span className="text-2xl">{claim.user_avatar}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-200 truncate">{claim.reward_title}</p>
-                        <p className="text-xs text-slate-400">{claim.user_name} • {claim.points_cost} ⭐</p>
-                      </div>
-                      <button
-                        onClick={() => handleApproveClaim(claim.id)}
-                        className="min-h-[36px] px-3 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                  {pendingClaims.map((claim) => {
+                    const claimUser = users.find((u) => u.id === claim.user_id);
+                    return (
+                      <div
+                        key={claim.id}
+                        className="flex items-center gap-3 rounded-xl px-3 py-3 border"
+                        style={{ background: '#fef3c7', borderColor: '#fcd34d' }}
                       >
-                        ✓ Genehmigen
-                      </button>
-                    </div>
-                  ))}
+                        {claimUser ? (
+                          <UserAvatar user={claimUser} size={36} />
+                        ) : (
+                          <span className="text-2xl">{claim.user_avatar}</span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{claim.reward_title}</p>
+                          <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
+                            {claim.user_name} • {claim.points_cost} Pkt.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleApproveClaim(claim.id)}
+                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                          style={{ background: '#16a34a' }}
+                        >
+                          <Icon name="check" />
+                          Genehmigen
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {/* Create reward form */}
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-4">
-              <h3 className="font-bold text-slate-200 mb-4">Neue Belohnung</h3>
+            <div
+              className="rounded-2xl border p-4"
+              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+            >
+              <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+                <Icon name="plus" className="text-[var(--family-accent)]" />
+                Neue Belohnung
+              </h3>
               <form onSubmit={handleCreateReward} className="space-y-3">
                 <input
                   type="text"
                   placeholder="Belohnungsname"
                   value={newReward.title}
                   onChange={(e) => setNewReward({ ...newReward, title: e.target.value })}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className={inputCls}
+                  style={inputStyle}
                   required
                 />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Punktekosten</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punktekosten</label>
                     <input
                       type="number"
                       min="1"
                       value={newReward.points_cost}
                       onChange={(e) => setNewReward({ ...newReward, points_cost: parseInt(e.target.value) })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className={inputCls}
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Verfügbar für</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Verfügbar für</label>
                     <select
                       value={newReward.available_to}
                       onChange={(e) => setNewReward({ ...newReward, available_to: e.target.value })}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                      className={inputCls}
+                      style={inputStyle}
                     >
                       <option value="">Alle</option>
                       {users.map((u) => (
@@ -432,8 +603,10 @@ export default function AdminPage() {
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-colors active:scale-95"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="plus" />
                   Belohnung erstellen
                 </button>
               </form>
@@ -444,27 +617,33 @@ export default function AdminPage() {
               {rewards.map((reward) => (
                 <div
                   key={reward.id}
-                  className={`
-                    flex items-center gap-3 bg-slate-800 border rounded-xl px-4 py-3
-                    ${reward.active ? 'border-slate-700' : 'border-slate-700/30 opacity-50'}
-                  `}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border transition-opacity"
+                  style={{
+                    background: 'var(--family-surface)',
+                    borderColor: '#d8d4cf',
+                    opacity: reward.active ? 1 : 0.45,
+                  }}
                 >
-                  <span className="text-2xl">🎁</span>
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'var(--family-surface2)' }}
+                  >
+                    <Icon name="gift" className="text-[var(--family-accent)]" />
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-200 truncate">{reward.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {reward.points_cost} ⭐ • {reward.available_to_name ?? 'Alle'}
+                    <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{reward.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                      {reward.points_cost} Pkt. • {reward.available_to_name ?? 'Alle'}
                     </p>
                   </div>
                   <button
                     onClick={() => handleToggleReward(reward)}
-                    className={`
-                      min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95
-                      ${reward.active
-                        ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
-                        : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
-                      }
-                    `}
+                    className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                    style={
+                      reward.active
+                        ? { background: '#fee2e2', color: '#dc2626' }
+                        : { background: '#dcfce7', color: '#16a34a' }
+                    }
                   >
                     {reward.active ? 'Deaktivieren' : 'Aktivieren'}
                   </button>
@@ -474,75 +653,93 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Users Tab */}
+        {/* ── Users Tab ── */}
         {tab === 'users' && (
           <div className="space-y-2">
             {users.map((user) => (
               <div
                 key={user.id}
-                className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3"
+                className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
               >
-                <span className="text-3xl">{user.avatar}</span>
+                <UserAvatar user={user} size={44} />
                 <div className="flex-1">
                   <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {user.role === 'parent' ? '👑 Elternteil' : '👶 Kind'}
+                  <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
+                    {user.role === 'parent'
+                      ? <><Icon name="crown" />&nbsp;Elternteil</>
+                      : <><Icon name="user" />&nbsp;Kind</>
+                    }
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold" style={{ color: user.color }}>⭐ {user.points}</p>
-                  <p className="text-xs text-slate-500">Punkte</p>
+                  <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
+                    <Icon name="star" />{user.points}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Points Tab */}
+        {/* ── Points Tab ── */}
         {tab === 'points' && (
           <div className="space-y-4">
-            {/* Manual points form */}
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-4">
-              <h3 className="font-bold text-slate-200 mb-4">Punkte manuell anpassen</h3>
+            <div
+              className="rounded-2xl border p-4"
+              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+            >
+              <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+                <Icon name="adjustments-horizontal" className="text-[var(--family-accent)]" />
+                Punkte manuell anpassen
+              </h3>
               <form onSubmit={handleManualPoints} className="space-y-3">
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Nutzer</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Nutzer</label>
                   <select
                     value={manualPoints.user_id}
                     onChange={(e) => setManualPoints({ ...manualPoints, user_id: e.target.value })}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                    className={inputCls}
+                    style={inputStyle}
                     required
                   >
                     <option value="">Nutzer wählen</option>
                     {users.map((u) => (
-                      <option key={u.id} value={u.id}>{u.avatar} {u.name} (aktuell: {u.points} ⭐)</option>
+                      <option key={u.id} value={u.id}>{u.avatar} {u.name} (aktuell: {u.points} Pkt.)</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Punkte (negativ zum Abziehen)</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Punkte (negativ zum Abziehen)
+                  </label>
                   <input
                     type="number"
                     value={manualPoints.points}
                     onChange={(e) => setManualPoints({ ...manualPoints, points: parseInt(e.target.value) })}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500"
+                    className={inputCls}
+                    style={inputStyle}
                     required
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">Grund (optional)</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Grund (optional)</label>
                   <input
                     type="text"
                     placeholder="z.B. Bonus, Strafe..."
                     value={manualPoints.reason}
                     onChange={(e) => setManualPoints({ ...manualPoints, reason: e.target.value })}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className={inputCls}
+                    style={{ ...inputStyle }}
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-colors active:scale-95"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="check" />
                   Punkte anpassen
                 </button>
               </form>
@@ -553,11 +750,14 @@ export default function AdminPage() {
               {users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3"
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
                 >
-                  <span className="text-2xl">{user.avatar}</span>
+                  <UserAvatar user={user} size={40} />
                   <p className="flex-1 font-semibold" style={{ color: user.color }}>{user.name}</p>
-                  <p className="font-bold text-lg" style={{ color: user.color }}>⭐ {user.points}</p>
+                  <p className="font-bold text-lg flex items-center gap-1" style={{ color: user.color }}>
+                    <Icon name="star" />{user.points}
+                  </p>
                 </div>
               ))}
             </div>
