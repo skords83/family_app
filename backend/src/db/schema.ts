@@ -22,21 +22,39 @@ DO $$ BEGIN
 END $$;
 
 -- Migrate task_templates.assigned_to from UUID → JSONB (safe)
-DO $$ BEGIN
+-- Uses variable to avoid EXECUTE NULL when no constraint exists
+DO $$ DECLARE
+  v_fk TEXT;
+  v_ck TEXT;
+BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name='task_templates' AND column_name='assigned_to'
       AND data_type = 'uuid'
   ) THEN
-    -- Drop FK constraint first (name may vary, use dynamic lookup)
-    EXECUTE (
-      SELECT 'ALTER TABLE task_templates DROP CONSTRAINT ' || conname
-      FROM pg_constraint
-      WHERE conrelid = 'task_templates'::regclass
-        AND contype = 'f'
-        AND conname LIKE '%assigned_to%'
-      LIMIT 1
-    );
+    -- Drop FK constraint if present
+    SELECT conname INTO v_fk
+    FROM pg_constraint
+    WHERE conrelid = 'task_templates'::regclass
+      AND contype = 'f'
+      AND conname LIKE '%assigned_to%'
+    LIMIT 1;
+    IF v_fk IS NOT NULL THEN
+      EXECUTE 'ALTER TABLE task_templates DROP CONSTRAINT ' || quote_ident(v_fk);
+    END IF;
+
+    -- Drop recurrence CHECK constraint if present
+    SELECT conname INTO v_ck
+    FROM pg_constraint
+    WHERE conrelid = 'task_templates'::regclass
+      AND contype = 'c'
+      AND conname LIKE '%recurrence%'
+    LIMIT 1;
+    IF v_ck IS NOT NULL THEN
+      EXECUTE 'ALTER TABLE task_templates DROP CONSTRAINT ' || quote_ident(v_ck);
+    END IF;
+
+    -- Convert UUID column to JSONB array
     ALTER TABLE task_templates
       ALTER COLUMN assigned_to TYPE JSONB
       USING CASE
@@ -46,17 +64,20 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Remove old recurrence CHECK constraint if it still exists (safe)
-DO $$ BEGIN
-  EXECUTE (
-    SELECT 'ALTER TABLE task_templates DROP CONSTRAINT ' || conname
-    FROM pg_constraint
-    WHERE conrelid = 'task_templates'::regclass
-      AND contype = 'c'
-      AND conname LIKE '%recurrence%'
-    LIMIT 1
-  );
-EXCEPTION WHEN undefined_object THEN NULL;
+-- Drop recurrence CHECK constraint on fresh installs where assigned_to is already JSONB
+-- (covers case where table was created with old definition before this migration ran)
+DO $$ DECLARE
+  v_ck TEXT;
+BEGIN
+  SELECT conname INTO v_ck
+  FROM pg_constraint
+  WHERE conrelid = 'task_templates'::regclass
+    AND contype = 'c'
+    AND conname LIKE '%recurrence%'
+  LIMIT 1;
+  IF v_ck IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE task_templates DROP CONSTRAINT ' || quote_ident(v_ck);
+  END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS task_templates (
