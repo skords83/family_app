@@ -20,6 +20,9 @@ interface CalendarMeta {
 
 export const caldavRouter = Router();
 
+// Cache TTL: 5 Minuten
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 // Fallback colors if Nextcloud doesn't return one
 const FALLBACK_COLORS = [
   '#6366f1', '#f59e0b', '#10b981', '#ef4444',
@@ -249,25 +252,38 @@ async function updateCalendarCache(data: CalendarEvent[]): Promise<string> {
 // GET /api/widgets/calendar
 caldavRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    let data: CalendarEvent[];
-    let fetched_at: string;
-    let fromCache = false;
+    const cached = await getCachedCalendar();
 
-    try {
-      data = await fetchCalDAV();
-      fetched_at = await updateCalendarCache(data);
-    } catch (fetchErr) {
-      console.error('CalDAV fetch failed, trying cache:', fetchErr);
-      const cached = await getCachedCalendar();
-      if (!cached) {
-        return res.status(503).json({ error: 'Calendar data unavailable', events: [] });
+    if (cached) {
+      const age = Date.now() - new Date(cached.fetched_at).getTime();
+
+      if (age < CACHE_TTL_MS) {
+        // Cache frisch → sofort zurückgeben, kein CalDAV-Call
+        return res.json({ events: cached.data, fetched_at: cached.fetched_at, from_cache: true });
       }
-      data = cached.data;
-      fetched_at = cached.fetched_at;
-      fromCache = true;
+
+      // Cache vorhanden aber alt → sofort zurückgeben, im Hintergrund neu holen
+      res.json({ events: cached.data, fetched_at: cached.fetched_at, from_cache: true });
+
+      fetchCalDAV()
+        .then(data => updateCalendarCache(data))
+        .then(() => console.log('[caldav] Background refresh completed'))
+        .catch(err => console.error('[caldav] Background refresh failed:', err));
+
+      return;
     }
 
-    res.json({ events: data, fetched_at, from_cache: fromCache });
+    // Kein Cache vorhanden (erster Start nach DB-Reset) → muss warten
+    console.log('[caldav] No cache found, fetching CalDAV...');
+    try {
+      const data = await fetchCalDAV();
+      const fetched_at = await updateCalendarCache(data);
+      return res.json({ events: data, fetched_at, from_cache: false });
+    } catch (fetchErr) {
+      console.error('[caldav] Initial fetch failed:', fetchErr);
+      return res.status(503).json({ error: 'Calendar data unavailable', events: [] });
+    }
+
   } catch (err) {
     console.error('Error in calendar handler:', err);
     res.status(500).json({ error: 'Internal server error' });
