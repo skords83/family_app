@@ -266,6 +266,124 @@ async function updateCalendarCache(data: CalendarEvent[]): Promise<string> {
   return result.rows[0].fetched_at;
 }
 
+// Kalender die beim Erstellen auswählbar sind
+const ALLOWED_CALENDARS = ['familie', 'sven', 'sanna', 'smilla', 'sophine', 'silja', 'samu'];
+
+// GET /api/widgets/calendar/calendars — verfügbare Kalender für das Erstell-Modal
+caldavRouter.get('/calendars', async (_req: Request, res: Response) => {
+  try {
+    const caldavUrl = process.env.CALDAV_URL;
+    const caldavUser = process.env.CALDAV_USER;
+    const caldavPass = process.env.CALDAV_PASS;
+    if (!caldavUrl || !caldavUser || !caldavPass) {
+      return res.status(503).json({ error: 'CalDAV configuration missing' });
+    }
+    const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+    const [calendars, userColors] = await Promise.all([
+      discoverCalendars(caldavUrl, auth),
+      getUserColorMap(),
+    ]);
+    const filtered = calendars
+      .filter(c => ALLOWED_CALENDARS.includes(c.name.toLowerCase()))
+      .map(c => ({
+        url: c.url,
+        name: c.name,
+        color: userColors.get(c.name.toLowerCase()) ?? c.color,
+      }));
+    res.json({ calendars: filtered });
+  } catch (err) {
+    console.error('Error fetching calendar list:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/widgets/calendar — neuen Termin anlegen
+caldavRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const { title, start, end, allDay, calendarUrl } = req.body as {
+      title: string;
+      start: string;       // ISO string
+      end: string;         // ISO string
+      allDay: boolean;
+      calendarUrl: string; // volle Nextcloud-URL des Zielkalenders
+    };
+
+    if (!title || !start || !end || !calendarUrl) {
+      return res.status(400).json({ error: 'title, start, end, calendarUrl sind erforderlich' });
+    }
+
+    const caldavUser = process.env.CALDAV_USER;
+    const caldavPass = process.env.CALDAV_PASS;
+    if (!caldavUser || !caldavPass) {
+      return res.status(503).json({ error: 'CalDAV configuration missing' });
+    }
+    const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+
+    // UID + Dateinamen generieren
+    const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@family-organizer`;
+    const filename = `${uid}.ics`;
+
+    // iCal-String bauen
+    function toICalDate(iso: string): string {
+      return iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', 'Z');
+    }
+    function toICalDateOnly(iso: string): string {
+      return iso.split('T')[0].replace(/-/g, '');
+    }
+
+    const now = toICalDate(new Date().toISOString());
+    let dtstart: string;
+    let dtend: string;
+
+    if (allDay) {
+      dtstart = `DTSTART;VALUE=DATE:${toICalDateOnly(start)}`;
+      dtend   = `DTEND;VALUE=DATE:${toICalDateOnly(end)}`;
+    } else {
+      dtstart = `DTSTART:${toICalDate(start)}`;
+      dtend   = `DTEND:${toICalDate(end)}`;
+    }
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Family Organizer//EN',
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTAMP:${now}`,
+      dtstart,
+      dtend,
+      `SUMMARY:${title}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const putUrl = calendarUrl.replace(/\/?$/, '/') + filename;
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'text/calendar; charset=utf-8',
+      },
+      body: icsContent,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!putRes.ok && putRes.status !== 201 && putRes.status !== 204) {
+      console.error(`[caldav] PUT failed: ${putRes.status} ${await putRes.text()}`);
+      return res.status(502).json({ error: `CalDAV PUT failed: ${putRes.status}` });
+    }
+
+    // Cache invalidieren → nächster GET holt frische Daten
+    await pool.query(`DELETE FROM widget_cache WHERE widget_type = 'calendar'`);
+    console.log(`[caldav] Event created: "${title}" in ${calendarUrl}`);
+
+    res.status(201).json({ ok: true, uid });
+  } catch (err) {
+    console.error('Error creating calendar event:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/widgets/calendar
 caldavRouter.get('/', async (_req: Request, res: Response) => {
   try {
