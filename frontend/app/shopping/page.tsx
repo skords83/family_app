@@ -75,7 +75,7 @@ function noriishToShopItem(ni: NoriishGroceryItem): ShopItem {
     category: NORISH_CATEGORY,
     source: 'norish',
     noriishId: ni.id,
-    noriishVersion: ni.version,
+    noriishVersion: ni.version ?? 1,
   };
 }
 
@@ -199,10 +199,7 @@ export default function ShoppingPage() {
         })
       )
     );
-
-    // Norish-Liste neu laden damit State konsistent bleibt
-    const fresh = await fetchNoriish();
-    setItems(prev => [...prev.filter(i => i.source === 'manual'), ...fresh]);
+    // Kein Reload – State ist bereits korrekt durch applyAndSave oben
   }
 
   // ── Item hinzufügen ───────────────────────────────────────────────────────
