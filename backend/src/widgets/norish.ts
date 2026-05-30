@@ -101,8 +101,10 @@ async function fetchGroceries(): Promise<GroceryItem[]> {
 
 async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
   const path = done ? `/groceries/${id}/done` : `/groceries/${id}/undone`;
+  // version + id im Body, id auch im Pfad (trpc-to-openapi merged beides)
   const res: FetchResponse = await norishFetch(path, {
-    method: 'PATCH',                          // Norish erwartet PATCH
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, version }),
   });
   if (!res.ok) {
@@ -119,14 +121,9 @@ async function deleteGroceryItem(id: string, version: number): Promise<void> {
   // version muss im Body stehen. Da Express DELETE-Bodies zuverlässig
   // nur mit explizitem Content-Length parst, schicken wir beides:
   // id im Pfad + version im Body mit explizitem Content-Length Header.
-  const bodyStr = JSON.stringify({ id, version });
-  const res: FetchResponse = await norishFetch(`/groceries/${id}`, {
+  // trpc-to-openapi liest version als Query-Parameter, nicht aus dem Body
+  const res: FetchResponse = await norishFetch(`/groceries/${id}?version=${version}`, {
     method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': String(Buffer.byteLength(bodyStr)),
-    },
-    body: bodyStr,
   });
   if (!res.ok) {
     const body = await res.text();
