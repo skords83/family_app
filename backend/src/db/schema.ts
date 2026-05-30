@@ -87,8 +87,19 @@ CREATE TABLE IF NOT EXISTS task_templates (
   assigned_to JSONB,
   recurrence TEXT NOT NULL,
   due_time TEXT,
-  active BOOLEAN NOT NULL DEFAULT true
+  active BOOLEAN NOT NULL DEFAULT true,
+  requires_approval BOOLEAN NOT NULL DEFAULT false
 );
+
+-- Add requires_approval column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='requires_approval'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN requires_approval BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS task_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -96,8 +107,21 @@ CREATE TABLE IF NOT EXISTS task_instances (
   assigned_to UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   date DATE NOT NULL,
   completed_at TIMESTAMPTZ,
-  completed_by UUID REFERENCES users(id)
+  completed_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  approved_by UUID REFERENCES users(id)
 );
+
+-- Add approved_at / approved_by columns if they don't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_instances' AND column_name='approved_at'
+  ) THEN
+    ALTER TABLE task_instances ADD COLUMN approved_at TIMESTAMPTZ;
+    ALTER TABLE task_instances ADD COLUMN approved_by UUID REFERENCES users(id);
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS point_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -35,6 +35,7 @@ interface TaskTemplate {
   recurrence: string;
   due_time: string | null;
   active: boolean;
+  requires_approval: boolean;
 }
 
 interface Reward {
@@ -117,6 +118,7 @@ export default function AdminPage() {
     recurrence: 'daily',
     due_time: '',
     weekdays: [] as string[],
+    requires_approval: false,
   });
   const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: '' });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
@@ -158,6 +160,7 @@ export default function AdminPage() {
     recurrence: 'daily',
     due_time: '',
     weekdays: [] as string[],
+    requires_approval: false,
   });
 
   const openEdit = (template: TaskTemplate) => {
@@ -177,6 +180,7 @@ export default function AdminPage() {
       recurrence,
       due_time: template.due_time ?? '',
       weekdays,
+      requires_approval: template.requires_approval ?? false,
     });
     setEditingTemplate(template);
   };
@@ -198,6 +202,7 @@ export default function AdminPage() {
         assigned_to: editForm.assigned_to.length > 0 ? editForm.assigned_to : null,
         recurrence: recurrenceValue,
         due_time: editForm.due_time || null,
+        requires_approval: editForm.requires_approval,
       }),
     });
     if (res.ok) {
@@ -258,10 +263,11 @@ export default function AdminPage() {
         assigned_to: newTask.assigned_to.length > 0 ? newTask.assigned_to : null,
         recurrence: recurrenceValue,
         due_time: newTask.due_time || null,
+        requires_approval: newTask.requires_approval,
       }),
     });
     if (res.ok) {
-      setNewTask({ title: '', points: 1, assigned_to: [], recurrence: 'daily', due_time: '', weekdays: [] });
+      setNewTask({ title: '', points: 1, assigned_to: [], recurrence: 'daily', due_time: '', weekdays: [], requires_approval: false });
       showNotification('Aufgabe erstellt!');
       fetchData();
     }
@@ -558,6 +564,24 @@ export default function AdminPage() {
                     style={inputStyle}
                   />
                 </div>
+                {/* Requires approval toggle */}
+                <label
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                  style={{
+                    background: newTask.requires_approval ? '#fef3c722' : 'var(--family-surface2)',
+                    borderColor: newTask.requires_approval ? '#f0a500' : '#d8d4cf',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={newTask.requires_approval}
+                    onChange={(e) => setNewTask({ ...newTask, requires_approval: e.target.checked })}
+                    className="w-4 h-4 accent-[var(--family-accent)]"
+                  />
+                  <span className="text-sm" style={{ color: 'var(--family-text2)' }}>
+                    Muss von Elternteil bestätigt werden
+                  </span>
+                </label>
                 <button
                   type="submit"
                   className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
@@ -592,6 +616,11 @@ export default function AdminPage() {
                     <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
                       {template.points} Pkt. • {recurrenceLabel(template.recurrence)} • {assignedLabel(template)}
                       {template.due_time && ` • ${template.due_time}`}
+                      {template.requires_approval && (
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#fef3c7', color: '#92400e' }}>
+                          ✓ Bestätigung nötig
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1027,6 +1056,25 @@ export default function AdminPage() {
                   style={inputStyle}
                 />
               </div>
+
+              {/* Requires approval toggle */}
+              <label
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                style={{
+                  background: editForm.requires_approval ? '#fef3c722' : 'var(--family-surface2)',
+                  borderColor: editForm.requires_approval ? '#f0a500' : '#d8d4cf',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={editForm.requires_approval}
+                  onChange={(e) => setEditForm({ ...editForm, requires_approval: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--family-accent)]"
+                />
+                <span className="text-sm" style={{ color: 'var(--family-text2)' }}>
+                  Muss von Elternteil bestätigt werden
+                </span>
+              </label>
 
               {/* Actions */}
               <div className="flex gap-3 pt-1">

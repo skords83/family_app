@@ -46,9 +46,12 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
         ti.date,
         ti.completed_at,
         ti.completed_by,
+        ti.approved_at,
+        ti.approved_by,
         tt.title,
         tt.points,
         tt.due_time,
+        tt.requires_approval,
         u.name AS assigned_to_name,
         u.avatar AS assigned_to_avatar,
         u.color AS assigned_to_color
@@ -65,7 +68,7 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/:id/complete - mark task as completed
+// POST /api/tasks/:id/complete - mark task as completed (or pending if requires_approval)
 tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -75,9 +78,9 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    // Get the task instance and its template points
+    // Get the task instance and its template
     const taskResult = await pool.query(`
-      SELECT ti.*, tt.points, tt.title
+      SELECT ti.*, tt.points, tt.title, tt.requires_approval
       FROM task_instances ti
       JOIN task_templates tt ON ti.template_id = tt.id
       WHERE ti.id = $1
@@ -100,24 +103,27 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
       WHERE id = $2
     `, [user_id, id]);
 
-    // Insert point event
-    await pool.query(`
-      INSERT INTO point_events (user_id, points, reason)
-      VALUES ($1, $2, $3)
-    `, [task.assigned_to, task.points, `task:${id}`]);
+    // Only grant points immediately if no approval required
+    if (!task.requires_approval) {
+      await pool.query(`
+        INSERT INTO point_events (user_id, points, reason)
+        VALUES ($1, $2, $3)
+      `, [task.assigned_to, task.points, `task:${id}`]);
+      return res.json({ success: true, points_earned: task.points, pending_approval: false });
+    }
 
-    res.json({ success: true, points_earned: task.points });
+    return res.json({ success: true, points_earned: 0, pending_approval: true });
   } catch (err) {
     console.error('Error completing task:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// POST /api/tasks/:id/uncomplete - reverse completion (parent only)
-tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
+// POST /api/tasks/:id/approve - parent approves a pending task (grants points)
+tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { user_id, pin } = req.body;
+    const { pin } = req.body;
 
     if (!pin) {
       return res.status(400).json({ error: 'pin is required' });
@@ -128,9 +134,60 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid parent PIN' });
     }
 
-    // Get the task instance
+    // Get parent id for approved_by
+    const parentResult = await pool.query(
+      `SELECT id FROM users WHERE role = 'parent' AND pin = $1 LIMIT 1`,
+      [pin]
+    );
+    const parentId = parentResult.rows[0]?.id;
+
     const taskResult = await pool.query(`
-      SELECT ti.*, tt.points
+      SELECT ti.*, tt.points, tt.title, tt.requires_approval
+      FROM task_instances ti
+      JOIN task_templates tt ON ti.template_id = tt.id
+      WHERE ti.id = $1
+    `, [id]);
+
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task instance not found' });
+    }
+
+    const task = taskResult.rows[0];
+
+    if (!task.completed_at) {
+      return res.status(400).json({ error: 'Task is not completed yet' });
+    }
+    if (task.approved_at) {
+      return res.status(400).json({ error: 'Task already approved' });
+    }
+
+    // Mark as approved
+    await pool.query(`
+      UPDATE task_instances
+      SET approved_at = NOW(), approved_by = $1
+      WHERE id = $2
+    `, [parentId, id]);
+
+    // Now grant the points
+    await pool.query(`
+      INSERT INTO point_events (user_id, points, reason)
+      VALUES ($1, $2, $3)
+    `, [task.assigned_to, task.points, `task:${id}`]);
+
+    res.json({ success: true, points_earned: task.points });
+  } catch (err) {
+    console.error('Error approving task:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/tasks/:id/uncomplete - reverse completion (anyone, no PIN needed)
+tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const taskResult = await pool.query(`
+      SELECT ti.*, tt.points, tt.requires_approval
       FROM task_instances ti
       JOIN task_templates tt ON ti.template_id = tt.id
       WHERE ti.id = $1
@@ -146,16 +203,21 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Task is not completed' });
     }
 
-    // Delete the point event for this task
-    await pool.query(`
-      DELETE FROM point_events
-      WHERE reason = $1 AND user_id = $2
-    `, [`task:${id}`, task.assigned_to]);
+    // Only remove points if they were already granted
+    // (no approval required → points given on complete)
+    // (approval required → points given on approve, so only remove if approved)
+    const pointsWereGranted = !task.requires_approval || task.approved_at;
+    if (pointsWereGranted) {
+      await pool.query(`
+        DELETE FROM point_events
+        WHERE reason = $1 AND user_id = $2
+      `, [`task:${id}`, task.assigned_to]);
+    }
 
-    // Clear completed state
+    // Clear completed + approval state
     await pool.query(`
       UPDATE task_instances
-      SET completed_at = NULL, completed_by = NULL
+      SET completed_at = NULL, completed_by = NULL, approved_at = NULL, approved_by = NULL
       WHERE id = $1
     `, [id]);
 
@@ -191,7 +253,7 @@ tasksRouter.get('/templates', async (_req: Request, res: Response) => {
 // POST /api/tasks/templates - create template
 tasksRouter.post('/templates', async (req: Request, res: Response) => {
   try {
-    const { title, points, assigned_to, recurrence, due_time, active } = req.body;
+    const { title, points, assigned_to, recurrence, due_time, active, requires_approval } = req.body;
 
     if (!title || !recurrence) {
       return res.status(400).json({ error: 'title and recurrence are required' });
@@ -208,10 +270,10 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     const assignedToParam = assignedToJson ? JSON.stringify(assignedToJson) : null;
 
     const result = await pool.query(`
-      INSERT INTO task_templates (title, points, assigned_to, recurrence, due_time, active)
-      VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+      INSERT INTO task_templates (title, points, assigned_to, recurrence, due_time, active, requires_approval)
+      VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
       RETURNING *
-    `, [title, points ?? 1, assignedToParam, recurrence, due_time ?? null, active ?? true]);
+    `, [title, points ?? 1, assignedToParam, recurrence, due_time ?? null, active ?? true, requires_approval ?? false]);
 
     res.status(201).json({
       ...result.rows[0],
@@ -227,7 +289,7 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
 tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, points, assigned_to, recurrence, due_time, active } = req.body;
+    const { title, points, assigned_to, recurrence, due_time, active, requires_approval } = req.body;
 
     const existing = await pool.query(`SELECT * FROM task_templates WHERE id = $1`, [id]);
     if (existing.rows.length === 0) {
@@ -249,8 +311,9 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
         assigned_to = $3::jsonb,
         recurrence = $4,
         due_time = $5,
-        active = $6
-      WHERE id = $7
+        active = $6,
+        requires_approval = $7
+      WHERE id = $8
       RETURNING *
     `, [
       title ?? current.title,
@@ -259,6 +322,7 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       recurrence ?? current.recurrence,
       due_time !== undefined ? due_time : current.due_time,
       active !== undefined ? active : current.active,
+      requires_approval !== undefined ? requires_approval : current.requires_approval,
       id,
     ]);
 

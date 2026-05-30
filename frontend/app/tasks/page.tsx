@@ -13,6 +13,7 @@ interface User {
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
+  requires_approval?: boolean; approved_at?: string | null;
 }
 
 const PASTELS: Record<string, string> = {
@@ -46,14 +47,49 @@ export default function TasksPage() {
 
   const handleComplete = async (taskId: string, userId: string) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
+    if (!task || task.completed_at) return;
+    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId }),
     });
+    const data = await res.json();
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
+    ));
+    if (!data.pending_approval) {
+      const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+      if (Array.isArray(fresh)) setUsers(fresh);
+    }
+  };
+
+  const handleUncomplete = async (taskId: string) => {
+    await fetch(`${API_BASE}/api/tasks/${taskId}/uncomplete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, completed_at: null, approved_at: null } : t
+    ));
+    const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+    if (Array.isArray(fresh)) setUsers(fresh);
+  };
+
+  const handleApprove = async (taskId: string) => {
+    const pin = prompt('Eltern-PIN eingeben:');
+    if (!pin) return;
+    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error ?? 'Fehler');
+      return;
+    }
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, approved_at: new Date().toISOString() } : t
     ));
     const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
     if (Array.isArray(fresh)) setUsers(fresh);
@@ -84,8 +120,10 @@ export default function TasksPage() {
         {users.map(user => {
           const userTasks = tasks.filter(t => t.assigned_to === user.id);
           const pending = userTasks.filter(t => !t.completed_at);
-          const done = userTasks.filter(t => t.completed_at);
-          const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
+          const awaitingApproval = userTasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
+          const done = userTasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
+          const completedCount = done.length + awaitingApproval.length;
+          const pct = userTasks.length ? Math.round(completedCount / userTasks.length * 100) : 0;
           const bg = pastel(user.color);
 
           return (
@@ -102,7 +140,7 @@ export default function TasksPage() {
                     {user.name}
                   </div>
                   <div className="text-xs font-sans" style={{ color: '#a09d99' }}>
-                    {done.length}/{userTasks.length} · ⭐ {user.points}
+                    {done.length + awaitingApproval.length}/{userTasks.length} · ⭐ {user.points}
                   </div>
                 </div>
                 {/* Add task button */}
@@ -128,8 +166,9 @@ export default function TasksPage() {
                 />
               </div>
 
-              {/* Pending tasks */}
+              {/* Task list */}
               <div className="flex flex-col gap-1.5">
+                {/* Pending (not yet done) */}
                 {pending.map(task => (
                   <button
                     key={task.id}
@@ -145,14 +184,49 @@ export default function TasksPage() {
                   </button>
                 ))}
 
-                {done.map(task => (
-                  <div key={task.id} className="flex items-center gap-2.5 opacity-50">
-                    <div
-                      className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
-                      style={{ background: user.color }}
+                {/* Awaiting parent approval */}
+                {awaitingApproval.map(task => (
+                  <div key={task.id} className="flex items-center gap-2 w-full">
+                    {/* Undo button */}
+                    <button
+                      onClick={() => handleUncomplete(task.id)}
+                      className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all hover:opacity-70"
+                      style={{ background: '#f0a50033', border: '2px solid #f0a500' }}
+                      title="Rückgängig"
                     >
-                      <i className="ti ti-check" style={{ fontSize: 10, color: '#fff' }} />
-                    </div>
+                      <i className="ti ti-rotate-left" style={{ fontSize: 9, color: '#f0a500' }} />
+                    </button>
+                    <span className="text-sm font-sans flex-1" style={{ color: '#6b6760' }}>{task.title}</span>
+                    <button
+                      onClick={() => handleApprove(task.id)}
+                      className="text-xs font-sans px-2 py-0.5 rounded-full transition-all hover:opacity-80"
+                      style={{ background: '#f0a50022', color: '#c47e00', border: '1px solid #f0a50066' }}
+                      title="Bestätigen"
+                    >
+                      ✓ ok?
+                    </button>
+                  </div>
+                ))}
+
+                {/* Done (approved or no approval needed) */}
+                {done.map(task => (
+                  <div key={task.id} className="flex items-center gap-2 group/done">
+                    <button
+                      onClick={() => handleUncomplete(task.id)}
+                      className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all"
+                      style={{ background: user.color }}
+                      title="Rückgängig"
+                    >
+                      {/* Show undo icon on hover, checkmark otherwise */}
+                      <i
+                        className="ti ti-check group-hover/done:hidden"
+                        style={{ fontSize: 10, color: '#fff' }}
+                      />
+                      <i
+                        className="ti ti-rotate-left hidden group-hover/done:block"
+                        style={{ fontSize: 10, color: '#fff' }}
+                      />
+                    </button>
                     <span className="text-sm font-sans line-through flex-1" style={{ color: '#6b6760' }}>{task.title}</span>
                     <span className="text-xs font-sans" style={{ color: '#a09d99' }}>⭐{task.points}</span>
                   </div>
