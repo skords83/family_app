@@ -75,7 +75,7 @@ function noriishToShopItem(ni: NoriishGroceryItem): ShopItem {
     category: NORISH_CATEGORY,
     source: 'norish',
     noriishId: ni.id,
-    noriishVersion: ni.version,
+    noriishVersion: ni.version ?? 1,  // Norish liefert version nicht immer → Fallback auf 1
   };
 }
 
