@@ -185,12 +185,31 @@ export default function ShoppingPage() {
     }
   }
 
-  function clearDone() {
-    // Nur manuelle erledigte Items lokal löschen;
-    // Norish-Items einzeln über API löschen
-    const doneNorish = items.filter(i => i.done && i.source === 'norish');
-    doneNorish.forEach(i => remove(i.id));
-    applyAndSave(items.filter(i => !i.done || i.source === 'norish'));
+  async function clearDone() {
+    const doneItems = items.filter(i => i.done);
+    if (doneItems.length === 0) return;
+
+    // Sofort optimistisch alle erledigten aus dem State entfernen
+    applyAndSave(items.filter(i => !i.done));
+
+    // Norish-Items parallel per API löschen
+    const doneNorish = doneItems.filter(
+      i => i.source === 'norish' && i.noriishId && i.noriishVersion != null
+    );
+
+    await Promise.allSettled(
+      doneNorish.map(item =>
+        fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: item.noriishVersion }),
+        })
+      )
+    );
+
+    // Nach dem Löschen Norish-Liste neu laden damit der State konsistent bleibt
+    const fresh = await fetchNoriish();
+    setItems(prev => [...prev.filter(i => i.source === 'manual'), ...fresh]);
   }
 
   // ── Item hinzufügen ───────────────────────────────────────────────────────
