@@ -96,7 +96,9 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
 async function fetchGroceries(): Promise<GroceryItem[]> {
   const res: FetchResponse = await norishFetch('/groceries');
   if (!res.ok) throw new Error(`Norish /groceries → ${res.status}`);
-  return res.json() as Promise<GroceryItem[]>;
+  const raw = await res.json() as (GroceryItem & { version?: number })[];
+  // version fehlt in der Norish-API-Response → Fallback auf 1
+  return raw.map(item => ({ ...item, version: item.version ?? 1 }));
 }
 
 async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
