@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import * as ical from 'node-ical';
+import { RRule, RRuleSet, rrulestr } from 'rrule';
 
 interface CalendarEvent {
   id: string;
@@ -34,6 +35,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
   const events: CalendarEvent[] = [];
 
   const now = new Date();
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
   const futureLimit = new Date(now.getTime() + weeksAhead * 7 * 24 * 60 * 60 * 1000);
 
   for (const key of Object.keys(parsed)) {
@@ -43,10 +45,9 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     const event = component as ical.VEvent;
     if (!event.start) continue;
 
-    const startDate = new Date(event.start);
-    const endDate = event.end ? new Date(event.end) : startDate;
-
-    if (endDate < now || startDate > futureLimit) continue;
+    const duration = event.end
+      ? new Date(event.end).getTime() - new Date(event.start).getTime()
+      : 0;
 
     const allDay =
       event.start instanceof Date &&
@@ -54,6 +55,62 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       event.start.getMinutes() === 0 &&
       event.start.getSeconds() === 0 &&
       (event as any).datetype === 'date';
+
+    // Wiederkehrende Termine per RRULE expandieren
+    if ((event as any).rrule) {
+      try {
+        const rruleObj: RRule = (event as any).rrule;
+
+        // EXDATE-Ausnahmen sammeln (als UTC-Timestamps)
+        const exdates = new Set<number>();
+        if ((event as any).exdate) {
+          const ex = (event as any).exdate;
+          const exArr = Array.isArray(ex) ? ex : Object.values(ex);
+          for (const d of exArr) {
+            if (d instanceof Date) exdates.add(d.getTime());
+          }
+        }
+
+        const occurrences = rruleObj.between(todayStart, futureLimit, true);
+
+        for (const occ of occurrences) {
+          if (exdates.has(occ.getTime())) continue;
+          const startDate = new Date(occ);
+          const endDate = new Date(startDate.getTime() + duration);
+          events.push({
+            id: `${event.uid ?? key}-${startDate.toISOString()}`,
+            title: event.summary ?? '(no title)',
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            allDay,
+            color,
+            calendarName,
+          });
+        }
+      } catch (err) {
+        console.warn(`[caldav] RRULE expansion failed for ${event.uid}:`, err);
+        // Fallback: originales Event anzeigen falls noch relevant
+        const startDate = new Date(event.start);
+        const endDate = event.end ? new Date(event.end) : startDate;
+        if (endDate >= todayStart && startDate <= futureLimit) {
+          events.push({
+            id: event.uid ?? key,
+            title: event.summary ?? '(no title)',
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            allDay,
+            color,
+            calendarName,
+          });
+        }
+      }
+      continue;
+    }
+
+    // Einmalige Termine
+    const startDate = new Date(event.start);
+    const endDate = event.end ? new Date(event.end) : startDate;
+    if (endDate < todayStart || startDate > futureLimit) continue;
 
     events.push({
       id: event.uid ?? key,
