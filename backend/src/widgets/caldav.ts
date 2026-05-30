@@ -83,7 +83,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
           // Offset = wall-clock - echtes UTC
           const realTzOffset = wallAsUtc - originalStart.getTime();
           // node-ical hat diesen Offset bereits abgezogen, wir müssen ihn doppelt addieren
-          tzOffsetMs = realTzOffset * 2;
+          tzOffsetMs = realTzOffset;
         } catch {
           tzOffsetMs = 0;
         }
