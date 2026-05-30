@@ -42,7 +42,7 @@ interface Reward {
   id: string;
   title: string;
   points_cost: number;
-  available_to: string | null;
+  available_to: string | string[] | null;
   available_to_name?: string;
   active: boolean;
 }
@@ -120,7 +120,7 @@ export default function AdminPage() {
     weekdays: [] as string[],
     requires_approval: false,
   });
-  const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: '' });
+  const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
 
   const showNotification = (text: string) => {
@@ -281,12 +281,12 @@ export default function AdminPage() {
       body: JSON.stringify({
         title: newReward.title,
         points_cost: newReward.points_cost,
-        available_to: newReward.available_to || null,
+        available_to: newReward.available_to.length > 0 ? newReward.available_to : null,
         pin: adminPin,
       }),
     });
     if (res.ok) {
-      setNewReward({ title: '', points_cost: 50, available_to: '' });
+      setNewReward({ title: '', points_cost: 50, available_to: [] });
       showNotification('Belohnung erstellt!');
       fetchData();
     }
@@ -736,19 +736,45 @@ export default function AdminPage() {
                       style={inputStyle}
                     />
                   </div>
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Verfügbar für</label>
-                    <select
-                      value={newReward.available_to}
-                      onChange={(e) => setNewReward({ ...newReward, available_to: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                    >
-                      <option value="">Alle</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.avatar} {u.name}</option>
-                      ))}
-                    </select>
+                </div>
+                <div>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                    Verfügbar für
+                    <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                      {newReward.available_to.length === 0 ? '— Alle' : `(${newReward.available_to.length} ausgewählt)`}
+                    </span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {users.map((u) => {
+                      const sel = newReward.available_to.includes(u.id);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() =>
+                            setNewReward((prev) => ({
+                              ...prev,
+                              available_to: sel
+                                ? prev.available_to.filter((id) => id !== u.id)
+                                : [...prev.available_to, u.id],
+                            }))
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                          style={
+                            sel
+                              ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                              : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }
+                          }
+                        >
+                          {u.photo ? (
+                            <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <span style={{ fontSize: 16 }}>{u.avatar}</span>
+                          )}
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <button
@@ -783,7 +809,13 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{reward.title}</p>
                     <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
-                      {reward.points_cost} Pkt. • {reward.available_to_name ?? 'Alle'}
+                      {reward.points_cost} Pkt. • {
+                        !reward.available_to || (Array.isArray(reward.available_to) && reward.available_to.length === 0)
+                          ? 'Alle'
+                          : Array.isArray(reward.available_to)
+                            ? reward.available_to.map((id) => users.find((u) => u.id === id)?.name ?? '?').join(', ')
+                            : (users.find((u) => u.id === reward.available_to)?.name ?? reward.available_to_name ?? 'Alle')
+                      }
                     </p>
                   </div>
                   <button

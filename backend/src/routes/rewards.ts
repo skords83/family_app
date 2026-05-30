@@ -19,15 +19,19 @@ rewardsRouter.get('/', async (req: Request, res: Response) => {
     let query = `
       SELECT
         r.*,
-        u.name AS available_to_name
+        COALESCE(
+          (SELECT array_agg(u.name ORDER BY u.name)
+           FROM users u
+           WHERE u.id = ANY(r.available_to)),
+          ARRAY[]::text[]
+        ) AS available_to_names
       FROM rewards r
-      LEFT JOIN users u ON r.available_to = u.id
       WHERE r.active = true
     `;
     const params: string[] = [];
 
     if (user_id) {
-      query += ` AND (r.available_to IS NULL OR r.available_to = $1)`;
+      query += ` AND (r.available_to IS NULL OR r.available_to = '{}' OR $1 = ANY(r.available_to))`;
       params.push(user_id as string);
     }
 
@@ -82,11 +86,16 @@ rewardsRouter.post('/', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid parent PIN' });
     }
 
+    // Normalize: null/undefined → null, [] → null, array → UUID[]
+    const availableToValue = Array.isArray(available_to) && available_to.length > 0
+      ? available_to
+      : null;
+
     const result = await pool.query(`
       INSERT INTO rewards (title, points_cost, available_to, active)
       VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [title, points_cost, available_to ?? null, active ?? true]);
+    `, [title, points_cost, availableToValue, active ?? true]);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -117,6 +126,14 @@ rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
 
     const current = existing.rows[0];
 
+    // Normalize available_to the same way as POST
+    let availableToValue = current.available_to;
+    if (available_to !== undefined) {
+      availableToValue = Array.isArray(available_to) && available_to.length > 0
+        ? available_to
+        : null;
+    }
+
     const result = await pool.query(`
       UPDATE rewards
       SET
@@ -129,7 +146,7 @@ rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
     `, [
       title ?? current.title,
       points_cost ?? current.points_cost,
-      available_to !== undefined ? available_to : current.available_to,
+      availableToValue,
       active !== undefined ? active : current.active,
       id,
     ]);
@@ -159,8 +176,9 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
 
     const reward = rewardResult.rows[0];
 
-    // Check if reward is available to this user
-    if (reward.available_to && reward.available_to !== user_id) {
+    // Check if reward is available to this user (null = everyone, array = specific users)
+    const availableTo: string[] | null = reward.available_to;
+    if (availableTo && availableTo.length > 0 && !availableTo.includes(user_id)) {
       return res.status(403).json({ error: 'Reward not available to this user' });
     }
 

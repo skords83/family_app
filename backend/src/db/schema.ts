@@ -131,11 +131,41 @@ CREATE TABLE IF NOT EXISTS point_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Migrate rewards.available_to from UUID → UUID[] (safe)
+DO $$ DECLARE
+  v_fk TEXT;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='rewards' AND column_name='available_to'
+      AND data_type = 'uuid'
+  ) THEN
+    -- Drop FK constraint if present
+    SELECT conname INTO v_fk
+    FROM pg_constraint
+    WHERE conrelid = 'rewards'::regclass
+      AND contype = 'f'
+      AND conname LIKE '%available_to%'
+    LIMIT 1;
+    IF v_fk IS NOT NULL THEN
+      EXECUTE 'ALTER TABLE rewards DROP CONSTRAINT ' || quote_ident(v_fk);
+    END IF;
+
+    -- Convert UUID column to UUID[]
+    ALTER TABLE rewards
+      ALTER COLUMN available_to TYPE UUID[]
+      USING CASE
+        WHEN available_to IS NULL THEN NULL
+        ELSE ARRAY[available_to]
+      END;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS rewards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   points_cost INTEGER NOT NULL,
-  available_to UUID REFERENCES users(id) ON DELETE SET NULL,
+  available_to UUID[],
   active BOOLEAN NOT NULL DEFAULT true
 );
 
