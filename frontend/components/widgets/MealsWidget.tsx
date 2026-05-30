@@ -60,7 +60,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
 
   const stale = isStale(fetched_at);
   const today = new Date().toISOString().split('T')[0];
-  const sortedDates = Object.keys(byDate).filter(d => d >= today).sort().slice(0, 3);
+  const sortedDates = Object.keys(byDate).filter(d => d >= today).sort().slice(0, 1);
 
   return (
     <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>

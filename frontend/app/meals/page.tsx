@@ -65,7 +65,7 @@ export default function MealsPage() {
   function load() {
     setLoading(true);
     setError(false);
-    fetch(`${API_BASE}/api/widgets/meals?range=week`)
+    fetch(`${API_BASE}/api/widgets/meals?range=month`)
       .then(r => r.json())
       .then(data => {
         if (data?.byDate) {

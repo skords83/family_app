@@ -47,7 +47,7 @@ export default function HomePage() {
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/meals?range=week`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
