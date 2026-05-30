@@ -115,9 +115,18 @@ async function deleteGroceryItem(id: string, version: number): Promise<void> {
   if (!Number.isFinite(version)) {
     throw new Error(`deleteGroceryItem: ungültige version (${version}) für id ${id}`);
   }
+  // trpc-to-openapi merged URL-params + body: id kommt aus dem Pfad,
+  // version muss im Body stehen. Da Express DELETE-Bodies zuverlässig
+  // nur mit explizitem Content-Length parst, schicken wir beides:
+  // id im Pfad + version im Body mit explizitem Content-Length Header.
+  const bodyStr = JSON.stringify({ id, version });
   const res: FetchResponse = await norishFetch(`/groceries/${id}`, {
     method: 'DELETE',
-    body: JSON.stringify({ id, version }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': String(Buffer.byteLength(bodyStr)),
+    },
+    body: bodyStr,
   });
   if (!res.ok) {
     const body = await res.text();
