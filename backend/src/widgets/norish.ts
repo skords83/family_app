@@ -110,7 +110,7 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
 
   const monthRaw = await monthRes.json() as Omit<PlannedRecipe, 'imageUrl'>[];
   const weekRaw: Omit<PlannedRecipe, 'imageUrl'>[] = weekRes.ok
-    ? await weekRes.json()
+    ? (await weekRes.json()) as Omit<PlannedRecipe, 'imageUrl'>[]
     : [];
 
   if (!weekRes.ok) {
