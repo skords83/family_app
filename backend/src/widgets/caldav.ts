@@ -229,8 +229,8 @@ async function discoverCalendars(baseUrl: string, auth: string): Promise<Calenda
   return calendars;
 }
 
-// REPORT on a single calendar to get raw VEVENT strings
-async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<string[]> {
+// REPORT on a single calendar to get raw VEVENT strings + VTIMEZONE blocks
+async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<{ vevents: string[]; vtimezones: string[] }> {
   const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
   <D:prop>
@@ -255,10 +255,18 @@ async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<s
     signal: AbortSignal.timeout(15000),
   });
 
-  if (!response.ok && response.status !== 207) return [];
+  if (!response.ok && response.status !== 207) return { vevents: [], vtimezones: [] };
 
   const xml = await response.text();
   const vevents: string[] = [];
+  const vtimezones: string[] = [];
+
+  // VTIMEZONE-Blöcke aus dem ersten calendar-data Block extrahieren (einmalig pro Kalender)
+  const firstCalData = xml.match(/<[^>]*:?calendar-data[^>]*>([\s\S]*?)<\/[^>]*:?calendar-data>/i);
+  if (firstCalData?.[1]) {
+    const tzMatches = firstCalData[1].match(/BEGIN:VTIMEZONE[\s\S]*?END:VTIMEZONE/g);
+    if (tzMatches) vtimezones.push(...tzMatches);
+  }
 
   const calDataMatches = xml.match(/<[^>]*:?calendar-data[^>]*>([\s\S]*?)<\/[^>]*:?calendar-data>/gi) ?? [];
 
@@ -270,7 +278,7 @@ async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<s
     if (veventMatches) vevents.push(...veventMatches);
   }
 
-  return vevents;
+  return { vevents, vtimezones };
 }
 
 async function getUserColorMap(): Promise<Map<string, string>> {
@@ -310,14 +318,16 @@ async function fetchCalDAV(): Promise<CalendarEvent[]> {
   await Promise.all(
     calendars.map(async (cal) => {
       try {
-        const vevents = await fetchCalendarEvents(cal.url, auth);
+        const { vevents, vtimezones } = await fetchCalendarEvents(cal.url, auth);
         if (vevents.length === 0) return;
 
         // User-Farbe hat Vorrang vor Nextcloud-Kalenderfarbe
         const userColor = userColors.get(cal.name.toLowerCase());
         const color = userColor ?? cal.color;
 
-        const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${vevents.join('\r\n')}\r\nEND:VCALENDAR`;
+        // VTIMEZONE-Blöcke einbauen damit node-ical TZID korrekt auflöst
+        const tzBlock = vtimezones.length > 0 ? vtimezones.join('\r\n') + '\r\n' : '';
+        const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${tzBlock}${vevents.join('\r\n')}\r\nEND:VCALENDAR`;
         const events = parseICSEvents(icsContent, color, cal.name);
         allEvents.push(...events);
       } catch (err) {
