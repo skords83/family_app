@@ -75,7 +75,7 @@ function noriishToShopItem(ni: NoriishGroceryItem): ShopItem {
     category: NORISH_CATEGORY,
     source: 'norish',
     noriishId: ni.id,
-    noriishVersion: ni.version ?? 1,  // Norish liefert version nicht immer → Fallback auf 1
+    noriishVersion: ni.version,
   };
 }
 
@@ -165,10 +165,8 @@ export default function ShoppingPage() {
     if (item.source === 'norish' && item.noriishId && item.noriishVersion != null) {
       setPendingIds(prev => new Set(prev).add(id));
       try {
-        const res = await fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}`, {
+        const res = await fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}?version=${item.noriishVersion}`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ version: item.noriishVersion }),
         });
         if (!res.ok) throw new Error('delete failed');
       } catch {
@@ -196,10 +194,8 @@ export default function ShoppingPage() {
 
     await Promise.allSettled(
       doneNorish.map(item =>
-        fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}`, {
+        fetch(`${API_BASE}/api/widgets/meals/groceries/${item.noriishId}?version=${item.noriishVersion}`, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ version: item.noriishVersion }),
         })
       )
     );

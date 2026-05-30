@@ -254,11 +254,9 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
  */
 norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const rawVersion = req.body?.version;
-  const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : rawVersion;
-  const { isDone } = req.body as { isDone?: boolean };
+  const { version, isDone } = req.body as { version?: number; isDone?: boolean };
 
-  if (typeof version !== 'number' || !Number.isFinite(version) || typeof isDone !== 'boolean') {
+  if (typeof version !== 'number' || typeof isDone !== 'boolean') {
     return res.status(400).json({ error: 'version (number) and isDone (boolean) are required' });
   }
 
@@ -279,11 +277,12 @@ norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
  */
 norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const rawVersion = req.body?.version;
-  const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : rawVersion;
+  // version als Query-Parameter (?version=2) weil Express DELETE-Bodies nicht zuverlässig parst
+  const rawVersion = req.query.version ?? req.body?.version;
+  const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : Number(rawVersion);
 
-  if (typeof version !== 'number' || !Number.isFinite(version)) {
-    return res.status(400).json({ error: 'version (number) is required' });
+  if (!Number.isFinite(version) || version <= 0) {
+    return res.status(400).json({ error: 'version (positive number) is required' });
   }
 
   try {
