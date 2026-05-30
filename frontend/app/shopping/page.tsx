@@ -89,7 +89,6 @@ export default function ShoppingPage() {
   const [noriishError, setNoriishError] = useState(false);
   const [addingToNoriish, setAddingToNoriish] = useState(false);
   const [sendToNoriish, setSendToNoriish] = useState(false);
-  // IDs die gerade per API verarbeitet werden (verhindert Doppelklicks)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -135,7 +134,6 @@ export default function ShoppingPage() {
     const item = items.find(i => i.id === id);
     if (!item || pendingIds.has(id)) return;
 
-    // Optimistisch sofort umschalten
     applyAndSave(items.map(i => i.id === id ? { ...i, done: !i.done } : i));
 
     if (item.source === 'norish' && item.noriishId && item.noriishVersion != null) {
@@ -148,7 +146,6 @@ export default function ShoppingPage() {
         });
         if (!res.ok) throw new Error('toggle failed');
       } catch {
-        // Rollback
         applyAndSave(items.map(i => i.id === id ? { ...i, done: item.done } : i));
         setNoriishError(true);
       } finally {
@@ -163,7 +160,6 @@ export default function ShoppingPage() {
     const item = items.find(i => i.id === id);
     if (!item || pendingIds.has(id)) return;
 
-    // Optimistisch sofort entfernen
     applyAndSave(items.filter(i => i.id !== id));
 
     if (item.source === 'norish' && item.noriishId && item.noriishVersion != null) {
@@ -176,7 +172,6 @@ export default function ShoppingPage() {
         });
         if (!res.ok) throw new Error('delete failed');
       } catch {
-        // Rollback: Item wieder einfügen
         applyAndSave([...items]);
         setNoriishError(true);
       } finally {
@@ -185,11 +180,13 @@ export default function ShoppingPage() {
     }
   }
 
+  // ── Erledigte löschen ─────────────────────────────────────────────────────
+
   async function clearDone() {
     const doneItems = items.filter(i => i.done);
     if (doneItems.length === 0) return;
 
-    // Sofort optimistisch alle erledigten aus dem State entfernen
+    // Optimistisch sofort alle erledigten entfernen
     applyAndSave(items.filter(i => !i.done));
 
     // Norish-Items parallel per API löschen
@@ -207,7 +204,7 @@ export default function ShoppingPage() {
       )
     );
 
-    // Nach dem Löschen Norish-Liste neu laden damit der State konsistent bleibt
+    // Norish-Liste neu laden damit State konsistent bleibt
     const fresh = await fetchNoriish();
     setItems(prev => [...prev.filter(i => i.source === 'manual'), ...fresh]);
   }
@@ -227,12 +224,10 @@ export default function ShoppingPage() {
           body: JSON.stringify({ name }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Liste neu laden damit version/id korrekt gesetzt ist
         const fresh = await fetchNoriish();
         applyAndSave([...items.filter(i => i.source === 'manual'), ...fresh]);
       } catch {
         setNoriishError(true);
-        // Fallback: lokal speichern
         applyAndSave([...items, {
           id: crypto.randomUUID(),
           name,
@@ -434,7 +429,6 @@ export default function ShoppingPage() {
                         opacity: item.done ? 0.55 : 1,
                       }}
                     >
-                      {/* Checkbox */}
                       <button
                         onClick={() => toggle(item.id)}
                         disabled={isPending}
