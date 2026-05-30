@@ -183,6 +183,15 @@ async function fetchCalendarEvents(calendarUrl: string, auth: string): Promise<s
   return vevents;
 }
 
+async function getUserColorMap(): Promise<Map<string, string>> {
+  const result = await pool.query(`SELECT name, color FROM users WHERE color IS NOT NULL`);
+  const map = new Map<string, string>();
+  for (const row of result.rows) {
+    map.set(row.name.toLowerCase(), row.color);
+  }
+  return map;
+}
+
 async function fetchCalDAV(): Promise<CalendarEvent[]> {
   const caldavUrl = process.env.CALDAV_URL;
   const caldavUser = process.env.CALDAV_USER;
@@ -194,7 +203,11 @@ async function fetchCalDAV(): Promise<CalendarEvent[]> {
 
   const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
 
-  const calendars = await discoverCalendars(caldavUrl, auth);
+  const [calendars, userColors] = await Promise.all([
+    discoverCalendars(caldavUrl, auth),
+    getUserColorMap(),
+  ]);
+
   console.log(`Discovered ${calendars.length} calendars:`, calendars.map(c => `${c.name} (${c.color})`));
 
   if (calendars.length === 0) {
@@ -210,8 +223,12 @@ async function fetchCalDAV(): Promise<CalendarEvent[]> {
         const vevents = await fetchCalendarEvents(cal.url, auth);
         if (vevents.length === 0) return;
 
+        // User-Farbe hat Vorrang vor Nextcloud-Kalenderfarbe
+        const userColor = userColors.get(cal.name.toLowerCase());
+        const color = userColor ?? cal.color;
+
         const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Family Organizer//EN\r\n${vevents.join('\r\n')}\r\nEND:VCALENDAR`;
-        const events = parseICSEvents(icsContent, cal.color, cal.name);
+        const events = parseICSEvents(icsContent, color, cal.name);
         allEvents.push(...events);
       } catch (err) {
         console.warn(`Failed to fetch calendar ${cal.url}:`, err);
