@@ -30,12 +30,13 @@ const FALLBACK_COLORS = [
   '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
 ];
 
-function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 4): CalendarEvent[] {
+function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
 
   const now = new Date();
-  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  // Zeitfenster: 52 Wochen zurück bis weeksAhead voraus — damit Rückwärtsnavigation funktioniert
+  const rangeStart = new Date(now.getTime() - 52 * 7 * 24 * 60 * 60 * 1000);
   const futureLimit = new Date(now.getTime() + weeksAhead * 7 * 24 * 60 * 60 * 1000);
 
   for (const key of Object.keys(parsed)) {
@@ -45,8 +46,9 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     const event = component as ical.VEvent;
     if (!event.start) continue;
 
+    const originalStart = new Date(event.start);
     const duration = event.end
-      ? new Date(event.end).getTime() - new Date(event.start).getTime()
+      ? new Date(event.end).getTime() - originalStart.getTime()
       : 0;
 
     const allDay =
@@ -56,12 +58,15 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       event.start.getSeconds() === 0 &&
       (event as any).datetype === 'date';
 
+    // UTC-Offset des originalen Events — rrule gibt UTC zurück, wir müssen korrigieren
+    const tzOffset = allDay ? 0 : originalStart.getTimezoneOffset() * 60 * 1000;
+
     // Wiederkehrende Termine per RRULE expandieren
     if ((event as any).rrule) {
       try {
         const rruleObj: RRule = (event as any).rrule;
 
-        // EXDATE-Ausnahmen sammeln (als UTC-Timestamps)
+        // EXDATE-Ausnahmen sammeln
         const exdates = new Set<number>();
         if ((event as any).exdate) {
           const ex = (event as any).exdate;
@@ -71,11 +76,12 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
           }
         }
 
-        const occurrences = rruleObj.between(todayStart, futureLimit, true);
+        const occurrences = rruleObj.between(rangeStart, futureLimit, true);
 
         for (const occ of occurrences) {
-          if (exdates.has(occ.getTime())) continue;
-          const startDate = new Date(occ);
+          // UTC-Offset korrigieren: rrule gibt naive UTC-Zeiten zurück
+          const startDate = new Date(occ.getTime() - tzOffset);
+          if (exdates.has(startDate.getTime())) continue;
           const endDate = new Date(startDate.getTime() + duration);
           events.push({
             id: `${event.uid ?? key}-${startDate.toISOString()}`,
@@ -89,14 +95,13 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         }
       } catch (err) {
         console.warn(`[caldav] RRULE expansion failed for ${event.uid}:`, err);
-        // Fallback: originales Event anzeigen falls noch relevant
-        const startDate = new Date(event.start);
-        const endDate = event.end ? new Date(event.end) : startDate;
-        if (endDate >= todayStart && startDate <= futureLimit) {
+        // Fallback: originales Event anzeigen falls im Fenster
+        const endDate = event.end ? new Date(event.end) : originalStart;
+        if (originalStart >= rangeStart && originalStart <= futureLimit) {
           events.push({
             id: event.uid ?? key,
             title: event.summary ?? '(no title)',
-            start: startDate.toISOString(),
+            start: originalStart.toISOString(),
             end: endDate.toISOString(),
             allDay,
             color,
@@ -108,14 +113,13 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     }
 
     // Einmalige Termine
-    const startDate = new Date(event.start);
-    const endDate = event.end ? new Date(event.end) : startDate;
-    if (endDate < todayStart || startDate > futureLimit) continue;
+    const endDate = event.end ? new Date(event.end) : originalStart;
+    if (originalStart > futureLimit || endDate < rangeStart) continue;
 
     events.push({
       id: event.uid ?? key,
       title: event.summary ?? '(no title)',
-      start: startDate.toISOString(),
+      start: originalStart.toISOString(),
       end: endDate.toISOString(),
       allDay,
       color,
