@@ -29,6 +29,11 @@ function toMinutes(isoStr: string): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+// Lokales Datum als YYYY-MM-DD (nicht UTC) — verhindert den +1-Tag-Bug bei UTC-Offset
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,9 +69,9 @@ export default function CalendarPage() {
   const weekLabel = `${fmt(days[0])} – ${fmt(days[6])} ${days[6].getFullYear()}`;
 
   function eventsForDay(day: Date, allDay: boolean): CalendarEvent[] {
-    const dayStr = day.toISOString().split('T')[0];
+    const dayStr = toLocalDateStr(day);
     return events.filter(e => {
-      const eDay = e.start.split('T')[0];
+      const eDay = toLocalDateStr(new Date(e.start));
       return eDay === dayStr && e.allDay === allDay;
     });
   }
