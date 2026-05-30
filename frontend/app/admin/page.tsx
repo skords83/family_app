@@ -121,6 +121,8 @@ export default function AdminPage() {
     requires_approval: false,
   });
   const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
+  const [editRewardForm, setEditRewardForm] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
 
   const showNotification = (text: string) => {
@@ -132,7 +134,7 @@ export default function AdminPage() {
     const [usersRes, templatesRes, rewardsRes, claimsRes] = await Promise.allSettled([
       fetch(`${API_BASE}/api/users`).then((r) => r.json()),
       fetch(`${API_BASE}/api/tasks/templates`).then((r) => r.json()),
-      fetch(`${API_BASE}/api/rewards`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/rewards?admin=true`).then((r) => r.json()),
       fetch(`${API_BASE}/api/rewards/claims`).then((r) => r.json()),
     ]);
 
@@ -300,6 +302,47 @@ export default function AdminPage() {
     });
     setRewards((prev) => prev.map((r) => (r.id === reward.id ? { ...r, active: !r.active } : r)));
     showNotification(reward.active ? 'Belohnung deaktiviert' : 'Belohnung aktiviert');
+  };
+
+  const openEditReward = (reward: Reward) => {
+    const ids = Array.isArray(reward.available_to)
+      ? reward.available_to
+      : reward.available_to ? [reward.available_to] : [];
+    setEditRewardForm({ title: reward.title, points_cost: reward.points_cost, available_to: ids });
+    setEditingReward(reward);
+  };
+
+  const handleSaveReward = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReward) return;
+    const res = await fetch(`${API_BASE}/api/rewards/${editingReward.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: editRewardForm.title,
+        points_cost: editRewardForm.points_cost,
+        available_to: editRewardForm.available_to.length > 0 ? editRewardForm.available_to : null,
+        pin: adminPin,
+      }),
+    });
+    if (res.ok) {
+      setEditingReward(null);
+      showNotification('Belohnung gespeichert!');
+      fetchData();
+    }
+  };
+
+  const handleDeleteReward = async (reward: Reward) => {
+    if (!confirm(`"${reward.title}" wirklich löschen?`)) return;
+    const res = await fetch(`${API_BASE}/api/rewards/${reward.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: adminPin }),
+    });
+    if (res.ok) {
+      setRewards((prev) => prev.filter((r) => r.id !== reward.id));
+      showNotification('Belohnung gelöscht.');
+    }
   };
 
   const handleApproveClaim = async (claimId: string) => {
@@ -818,17 +861,35 @@ export default function AdminPage() {
                       }
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleToggleReward(reward)}
-                    className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
-                    style={
-                      reward.active
-                        ? { background: '#fee2e2', color: '#dc2626' }
-                        : { background: '#dcfce7', color: '#16a34a' }
-                    }
-                  >
-                    {reward.active ? 'Deaktivieren' : 'Aktivieren'}
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => openEditReward(reward)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                      title="Bearbeiten"
+                    >
+                      <Icon name="pencil" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteReward(reward)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: '#fee2e2', color: '#dc2626' }}
+                      title="Löschen"
+                    >
+                      <Icon name="trash" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleReward(reward)}
+                      className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                      style={
+                        reward.active
+                          ? { background: '#fef3c7', color: '#92400e' }
+                          : { background: '#dcfce7', color: '#16a34a' }
+                      }
+                    >
+                      {reward.active ? 'Aktiv' : 'Inaktiv'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1113,6 +1174,110 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setEditingTemplate(null)}
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95"
+                  style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
+                >
+                  <Icon name="check" />
+                  Speichern
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ── Edit Reward Drawer ── */}
+      {editingReward && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.35)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingReward(null); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto"
+            style={{ background: 'var(--family-bg)', maxHeight: '92dvh' }}
+          >
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex-1">
+                <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--family-text3)' }}>Belohnung bearbeiten</p>
+                <p className="font-bold text-lg leading-tight truncate" style={{ color: 'var(--family-text)' }}>{editingReward.title}</p>
+              </div>
+              <button
+                onClick={() => setEditingReward(null)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl"
+                style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)' }}
+              >
+                <Icon name="x" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReward} className="space-y-4">
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Belohnungsname</label>
+                <input
+                  type="text"
+                  value={editRewardForm.title}
+                  onChange={(e) => setEditRewardForm({ ...editRewardForm, title: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punktekosten</label>
+                <input
+                  type="number" min="1"
+                  value={editRewardForm.points_cost}
+                  onChange={(e) => setEditRewardForm({ ...editRewardForm, points_cost: parseInt(e.target.value) })}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                  Verfügbar für
+                  <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                    {editRewardForm.available_to.length === 0 ? '— Alle' : `(${editRewardForm.available_to.length} ausgewählt)`}
+                  </span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {users.map((u) => {
+                    const sel = editRewardForm.available_to.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setEditRewardForm((prev) => ({
+                          ...prev,
+                          available_to: sel ? prev.available_to.filter((id) => id !== u.id) : [...prev.available_to, u.id],
+                        }))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                        style={sel
+                          ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                          : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }}
+                      >
+                        {u.photo
+                          ? <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 16 }}>{u.avatar}</span>}
+                        {u.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingReward(null)}
                   className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95"
                   style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
                 >

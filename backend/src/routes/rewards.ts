@@ -14,7 +14,7 @@ async function verifyParentPin(pin: string): Promise<boolean> {
 // GET /api/rewards - all active rewards with available_to filter
 rewardsRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const { user_id } = req.query;
+    const { user_id, admin } = req.query;
 
     let query = `
       SELECT
@@ -26,7 +26,7 @@ rewardsRouter.get('/', async (req: Request, res: Response) => {
           ARRAY[]::text[]
         ) AS available_to_names
       FROM rewards r
-      WHERE r.active = true
+      WHERE ${admin === 'true' ? 'true' : 'r.active = true'}
     `;
     const params: string[] = [];
 
@@ -154,6 +154,29 @@ rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating reward:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/rewards/:id - delete reward (admin)
+rewardsRouter.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    await pool.query(`DELETE FROM rewards WHERE id = $1`, [id]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('Error deleting reward:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
