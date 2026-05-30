@@ -58,35 +58,35 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       event.start.getSeconds() === 0 &&
       (event as any).datetype === 'date';
 
-    // TZID-Offset ermitteln: node-ical parsed TZID-Events als UTC (ignoriert Timezone).
-    // rrule expandiert ebenfalls in UTC-Basis. Wir korrigieren mit Intl.DateTimeFormat
-    // indem wir den echten lokalen Offset für die TZID zum Zeitpunkt des Events berechnen.
+    // node-ical parsed TZID-Events falsch: DTSTART;TZID=Europe/Berlin:20260406T110000
+    // wird zu 2026-04-06T09:00:00Z (zieht den TZ-Offset ab statt ihn zu ignorieren).
+    // rrule bekommt diesen falschen DTSTART und gibt ebenfalls verschobene Zeiten zurück.
+    // Fix: wir lesen die tz-Property vom geparsten Date-Objekt und berechnen den Offset
+    // den wir addieren müssen um die wall-clock-Zeit wiederherzustellen.
     let tzOffsetMs = 0;
     if (!allDay && (event as any).rrule) {
-      // node-ical speichert die TZID manchmal als event.tz, manchmal nicht.
-      // Zuverlässigste Methode: Differenz zwischen UTC-Stunde (was node-ical liefert)
-      // und der erwarteten wall-clock-Stunde über Intl berechnen.
-      // Da der Server auf UTC läuft: originalStart.getUTCHours() === originalStart.getHours()
-      // Wir versuchen TZID zu lesen, sonst Fallback auf 'Europe/Berlin' (dein Kalender)
-      const tzid: string = (event as any).tz || 'Europe/Berlin';
-      try {
-        const refDate = originalStart;
-        const utcMs = refDate.getTime();
-        // Erzeuge einen Formatter der die wall-clock-Zeit in der Ziel-TZ anzeigt
-        const fmt = new Intl.DateTimeFormat('en-GB', {
-          timeZone: tzid,
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', minute: '2-digit', second: '2-digit',
-          hour12: false,
-        });
-        const parts = fmt.formatToParts(refDate);
-        const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value ?? '0', 10);
-        // Baue einen "naiven" Date aus den wall-clock-Teilen als wäre es UTC
-        const wallMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-        // Offset = wall-clock - UTC
-        tzOffsetMs = wallMs - utcMs;
-      } catch {
-        tzOffsetMs = 0;
+      const tzid: string | undefined = (originalStart as any).tz;
+      if (tzid) {
+        try {
+          // originalStart ist z.B. 09:00 UTC, gemeint war 11:00 Europe/Berlin (CEST = UTC+2)
+          // Der Offset den Europe/Berlin zu diesem Zeitpunkt hat = +2h
+          // Wir berechnen: was ist der UTC-Offset von tzid für diesen Timestamp?
+          const fmt = new Intl.DateTimeFormat('en-GB', {
+            timeZone: tzid,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+          });
+          const parts = fmt.formatToParts(originalStart);
+          const get = (t: string) => parseInt(parts.find(p => p.type === t)?.value ?? '0', 10);
+          // wall-clock in tzid als UTC interpretiert
+          const wallAsUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+          // Offset = wall-clock - echtes UTC
+          const realTzOffset = wallAsUtc - originalStart.getTime();
+          // node-ical hat diesen Offset bereits abgezogen, wir müssen ihn doppelt addieren
+          tzOffsetMs = realTzOffset * 2;
+        } catch {
+          tzOffsetMs = 0;
+        }
       }
     }
 
