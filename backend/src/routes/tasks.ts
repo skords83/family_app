@@ -24,7 +24,17 @@ function normaliseAssignedTo(value: unknown): string[] | null {
   return null;
 }
 
-
+/**
+ * Extract a single UUID string from assigned_to.
+ * task_instances.assigned_to is a scalar UUID column (not JSONB),
+ * but after joining through task_templates it can occasionally arrive
+ * as a JS array if pg deserialises it unexpectedly.
+ * Always use this helper before writing to point_events.user_id.
+ */
+function extractUserId(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0]);
+  return String(value);
+}
 
 async function verifyParentPin(pin: string): Promise<boolean> {
   const result = await pool.query(
@@ -91,6 +101,8 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const task = taskResult.rows[0];
+    // assigned_to is a scalar UUID on task_instances, but extract safely
+    const assignedTo = extractUserId(task.assigned_to);
 
     if (task.completed_at) {
       return res.status(400).json({ error: 'Task already completed' });
@@ -108,7 +120,7 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
       await pool.query(`
         INSERT INTO point_events (user_id, points, reason)
         VALUES ($1, $2, $3)
-      `, [task.assigned_to, task.points, `task:${id}`]);
+      `, [assignedTo, task.points, `task:${id}`]);
       return res.json({ success: true, points_earned: task.points, pending_approval: false });
     }
 
@@ -153,6 +165,7 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
     }
 
     const task = taskResult.rows[0];
+    const assignedTo = extractUserId(task.assigned_to);
 
     if (!task.completed_at) {
       return res.status(400).json({ error: 'Task is not completed yet' });
@@ -172,7 +185,7 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
     await pool.query(`
       INSERT INTO point_events (user_id, points, reason)
       VALUES ($1, $2, $3)
-    `, [task.assigned_to, task.points, `task:${id}`]);
+    `, [assignedTo, task.points, `task:${id}`]);
 
     res.json({ success: true, points_earned: task.points });
   } catch (err) {
@@ -198,6 +211,7 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
     }
 
     const task = taskResult.rows[0];
+    const assignedTo = extractUserId(task.assigned_to);
 
     if (!task.completed_at) {
       return res.status(400).json({ error: 'Task is not completed' });
@@ -211,7 +225,7 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
       await pool.query(`
         DELETE FROM point_events
         WHERE reason = $1 AND user_id = $2
-      `, [`task:${id}`, task.assigned_to]);
+      `, [`task:${id}`, assignedTo]);
     }
 
     // Clear completed + approval state
