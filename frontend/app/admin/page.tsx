@@ -291,6 +291,9 @@ export default function AdminPage() {
       setNewReward({ title: '', points_cost: 50, available_to: [] });
       showNotification('Belohnung erstellt!');
       fetchData();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
     }
   };
 

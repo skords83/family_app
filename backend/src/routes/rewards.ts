@@ -93,7 +93,7 @@ rewardsRouter.post('/', async (req: Request, res: Response) => {
 
     const result = await pool.query(`
       INSERT INTO rewards (title, points_cost, available_to, active)
-      VALUES ($1, $2, $3, $4)
+      VALUES ($1, $2, $3::uuid[], $4)
       RETURNING *
     `, [title, points_cost, availableToValue, active ?? true]);
 
@@ -139,7 +139,7 @@ rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
       SET
         title = $1,
         points_cost = $2,
-        available_to = $3,
+        available_to = $3::uuid[],
         active = $4
       WHERE id = $5
       RETURNING *
