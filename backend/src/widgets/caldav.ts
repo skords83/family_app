@@ -65,7 +65,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     // den wir addieren müssen um die wall-clock-Zeit wiederherzustellen.
     let tzOffsetMs = 0;
     if (!allDay && (event as any).rrule) {
-      const tzid: string | undefined = (originalStart as any).tz;
+      const tzid: string | undefined = (event.start as any).tz;
       if (tzid) {
         try {
           // originalStart ist z.B. 09:00 UTC, gemeint war 11:00 Europe/Berlin (CEST = UTC+2)
