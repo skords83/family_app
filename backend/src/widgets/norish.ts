@@ -83,14 +83,52 @@ function norishFetch(path: string, init?: RequestInit): Promise<FetchResponse> {
 
 // ─── Norish API calls ────────────────────────────────────────────────────────
 
+/**
+ * Holt geplante Rezepte von Norish.
+ *
+ * Für range='month': month + week werden parallel abgerufen und dedupliziert,
+ * damit Einträge der nächsten Woche (Monatsübergang) ebenfalls erscheinen.
+ * Der week-Call ist nicht fatal – bei Fehler wird nur month zurückgegeben.
+ */
 async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<PlannedRecipe[]> {
-  const res: FetchResponse = await norishFetch(`/planned-recipes/${range}`);
-  if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
-  const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
-  return raw.map(item => ({
-    ...item,
-    imageUrl: resolveImageUrl(item.recipeImage),
-  }));
+  if (range !== 'month') {
+    const res: FetchResponse = await norishFetch(`/planned-recipes/${range}`);
+    if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
+    const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
+    return raw.map(item => ({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
+  }
+
+  // month: aktuellen Monat + aktuelle Woche parallel holen und deduplizieren,
+  // damit Einträge nach dem Monatsübergang (z.B. Juni 1–3 wenn heute Mai 30)
+  // ebenfalls angezeigt werden.
+  const [monthRes, weekRes] = await Promise.all([
+    norishFetch('/planned-recipes/month'),
+    norishFetch('/planned-recipes/week'),
+  ]);
+
+  if (!monthRes.ok) throw new Error(`Norish /planned-recipes/month → ${monthRes.status}`);
+
+  const monthRaw = await monthRes.json() as Omit<PlannedRecipe, 'imageUrl'>[];
+  const weekRaw: Omit<PlannedRecipe, 'imageUrl'>[] = weekRes.ok
+    ? await weekRes.json()
+    : [];
+
+  if (!weekRes.ok) {
+    console.warn(`Norish /planned-recipes/week → ${weekRes.status} (non-fatal, using month only)`);
+  }
+
+  // Deduplizieren per id – month hat Vorrang (kommt zuerst im Array)
+  const seen = new Set<string>();
+  const merged = [...monthRaw, ...weekRaw].filter(item => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+
+  // Nach Datum sortieren
+  merged.sort((a, b) => a.date.localeCompare(b.date));
+
+  return merged.map(item => ({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
 }
 
 async function fetchGroceries(): Promise<GroceryItem[]> {
@@ -279,7 +317,7 @@ norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
  * DELETE /api/widgets/meals/groceries/:id
  *
  * Löscht einen Eintrag aus der Einkaufsliste.
- * Body: { version }
+ * Query: ?version=N
  */
 norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -299,6 +337,13 @@ norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
     res.status(502).json({ error: 'Failed to delete item in Norish' });
   }
 });
+
+/**
+ * POST /api/widgets/meals/groceries
+ *
+ * Fügt ein Item zur Norish-Einkaufsliste hinzu.
+ * Body: { name, unit?, amount?, storeId? }
+ */
 norishRouter.post('/groceries', async (req: Request, res: Response) => {
   const { name, unit, amount, storeId } = req.body as Partial<GroceryCreateInput>;
 
