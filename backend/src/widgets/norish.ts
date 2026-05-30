@@ -96,9 +96,7 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
 async function fetchGroceries(): Promise<GroceryItem[]> {
   const res: FetchResponse = await norishFetch('/groceries');
   if (!res.ok) throw new Error(`Norish /groceries → ${res.status}`);
-  const raw = await res.json() as (GroceryItem & { version?: number })[];
-  // version fehlt in der Norish-API-Response → Fallback auf 1
-  return raw.map(item => ({ ...item, version: item.version ?? 1 }));
+  return res.json() as Promise<GroceryItem[]>;
 }
 
 async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
@@ -256,9 +254,11 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
  */
 norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { version, isDone } = req.body as { version?: number; isDone?: boolean };
+  const rawVersion = req.body?.version;
+  const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : rawVersion;
+  const { isDone } = req.body as { isDone?: boolean };
 
-  if (typeof version !== 'number' || typeof isDone !== 'boolean') {
+  if (typeof version !== 'number' || !Number.isFinite(version) || typeof isDone !== 'boolean') {
     return res.status(400).json({ error: 'version (number) and isDone (boolean) are required' });
   }
 
@@ -279,9 +279,10 @@ norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
  */
 norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { version } = req.body as { version?: number };
+  const rawVersion = req.body?.version;
+  const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : rawVersion;
 
-  if (typeof version !== 'number') {
+  if (typeof version !== 'number' || !Number.isFinite(version)) {
     return res.status(400).json({ error: 'version (number) is required' });
   }
 
