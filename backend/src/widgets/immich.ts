@@ -1,30 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import {
+  ImmichAssetSchema,
+  ImmichWidgetDataSchema,
+  ImmichResponseSchema,
+  type ImmichWidgetData,
+} from '@family/shared';
 
 export const immichRouter = Router();
-
-interface ImmichAsset {
-  id: string;
-  originalPath: string;
-  originalFileName: string;
-  fileCreatedAt: string;
-  type: string;
-  exifInfo?: {
-    description?: string;
-    city?: string;
-    country?: string;
-  };
-}
-
-interface ImmichWidgetData {
-  id: string;
-  url: string;
-  thumbnailUrl: string;
-  fileName: string;
-  createdAt: string;
-  description?: string;
-  location?: string;
-}
 
 async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
   const immichUrl = process.env.IMMICH_URL;
@@ -38,10 +21,7 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
   const apiBase = `${baseUrl}/api`;
 
   const response = await fetch(`${apiBase}/assets/random?count=1`, {
-    headers: {
-      'x-api-key': apiKey,
-      Accept: 'application/json',
-    },
+    headers: { 'x-api-key': apiKey, Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });
 
@@ -49,15 +29,13 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
     throw new Error(`Immich API returned ${response.status}`);
   }
 
-  const assets = await response.json() as ImmichAsset[];
-
-  if (!assets || assets.length === 0) {
+  const rawAssets = await response.json() as unknown[];
+  if (!rawAssets || rawAssets.length === 0) {
     throw new Error('No assets returned from Immich');
   }
 
-  const asset = assets[0];
+  const asset = ImmichAssetSchema.parse(rawAssets[0]);
 
-  // Only use images (not videos)
   if (asset.type !== 'IMAGE') {
     throw new Error('Random asset is not an image, retry needed');
   }
@@ -70,7 +48,7 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
     location = [asset.exifInfo.city, asset.exifInfo.country].filter(Boolean).join(', ');
   }
 
-  return {
+  return ImmichWidgetDataSchema.parse({
     id: asset.id,
     url: fullUrl,
     thumbnailUrl,
@@ -78,7 +56,7 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
     createdAt: asset.fileCreatedAt,
     description: asset.exifInfo?.description,
     location,
-  };
+  });
 }
 
 async function getCachedImmich(): Promise<{ data: ImmichWidgetData; fetched_at: string } | null> {
@@ -86,10 +64,7 @@ async function getCachedImmich(): Promise<{ data: ImmichWidgetData; fetched_at: 
     SELECT data, fetched_at FROM widget_cache WHERE widget_type = 'immich'
   `);
   if (result.rows.length === 0) return null;
-  return {
-    data: result.rows[0].data,
-    fetched_at: result.rows[0].fetched_at,
-  };
+  return { data: result.rows[0].data, fetched_at: result.rows[0].fetched_at };
 }
 
 async function updateImmichCache(data: ImmichWidgetData): Promise<string> {
@@ -124,9 +99,11 @@ immichRouter.get('/', async (_req: Request, res: Response) => {
       fromCache = true;
     }
 
-    // Add the API key as a query param for the frontend to use (since Immich needs auth)
-    // We proxy through backend to avoid exposing API key in frontend
-    res.json({ data, fetched_at, from_cache: fromCache });
+    return res.json(ImmichResponseSchema.parse({
+      data,
+      fetched_at: new Date(fetched_at).toISOString(),
+      from_cache: fromCache,
+    }));
   } catch (err) {
     console.error('Error in immich handler:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -138,7 +115,11 @@ immichRouter.get('/refresh', async (_req: Request, res: Response) => {
   try {
     const data = await fetchRandomPhoto();
     const fetched_at = await updateImmichCache(data);
-    res.json({ data, fetched_at, from_cache: false });
+    return res.json(ImmichResponseSchema.parse({
+      data,
+      fetched_at: new Date(fetched_at).toISOString(),
+      from_cache: false,
+    }));
   } catch (err) {
     console.error('Error refreshing immich photo:', err);
     res.status(503).json({ error: 'Could not fetch new photo' });
@@ -159,7 +140,6 @@ immichRouter.get('/proxy/:id', async (req: Request, res: Response) => {
 
     const baseUrl = immichUrl.replace(/\/$/, '');
     const apiBase = `${baseUrl}/api`;
-
     const imageUrl = size === 'original'
       ? `${apiBase}/assets/${id}/original`
       : `${apiBase}/assets/${id}/thumbnail?size=${size}`;

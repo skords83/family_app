@@ -1,61 +1,29 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import {
+  PlannedRecipeSchema,
+  GroceryItemSchema,
+  GroceryCreateInputSchema,
+  GroceryToggleInputSchema,
+  MealsResponseSchema,
+  GroceriesResponseSchema,
+  type MealSlot,
+  type PlannedRecipe,
+  type GroceryItem,
+  type GroceryCreateInput,
+} from '@family/shared';
 
 // Alias für das globale Fetch-Response, damit kein Konflikt mit Express' Response entsteht
 type FetchResponse = Awaited<ReturnType<typeof fetch>>;
-
-// ─── Types (1:1 aus der Norish OpenAPI-Spec) ────────────────────────────────
-
-type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
-
-interface PlannedRecipe {
-  id: string;
-  date: string;         // 'YYYY-MM-DD'
-  slot: Slot;
-  sortOrder: number;
-  recipeId: string;
-  version: number;
-  recipeName: string | null;
-  recipeImage: string | null;  // relativer Pfad aus Norish
-  imageUrl: string | null;     // aufgelöste absolute URL, bereit für <img src>
-  servings: number | null;
-  calories: number | null;
-}
-
-interface GroceryItem {
-  id: string;
-  name: string | null;
-  unit: string | null;
-  amount: number | null;
-  isDone: boolean;
-  storeId: string | null;
-  version: number;
-}
-
-interface GroceryCreateInput {
-  name: string | null;
-  unit?: string | null;
-  amount?: number | null;
-  isDone?: boolean;
-  storeId?: string | null;
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /**
  * Löst einen recipeImage-Pfad zur vollständigen URL auf.
- *
- * Norish speichert Bilder als relativen Pfad, z.B.:
- *   /recipes/abc-123/deadbeef.jpg
- * Diese werden direkt unter der Basis-URL ausgeliefert:
- *   https://norish.skords.de/recipes/abc-123/deadbeef.jpg
- *
- * Gibt null zurück wenn kein Bild vorhanden.
  */
 function resolveImageUrl(recipeImage: string | null): string | null {
   if (!recipeImage) return null;
   const base = (process.env.NORISH_URL ?? '').replace(/\/$/, '');
-  // Falls das Feld schon eine absolute URL enthält (http/https), direkt zurückgeben
   if (recipeImage.startsWith('http://') || recipeImage.startsWith('https://')) {
     return recipeImage;
   }
@@ -83,24 +51,14 @@ function norishFetch(path: string, init?: RequestInit): Promise<FetchResponse> {
 
 // ─── Norish API calls ────────────────────────────────────────────────────────
 
-/**
- * Holt geplante Rezepte von Norish.
- *
- * Für range='month': month + week werden parallel abgerufen und dedupliziert,
- * damit Einträge der nächsten Woche (Monatsübergang) ebenfalls erscheinen.
- * Der week-Call ist nicht fatal – bei Fehler wird nur month zurückgegeben.
- */
 async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<PlannedRecipe[]> {
   if (range !== 'month') {
     const res: FetchResponse = await norishFetch(`/planned-recipes/${range}`);
     if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
     const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
-    return raw.map(item => ({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
+    return raw.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
   }
 
-  // month: aktuellen Monat + aktuelle Woche parallel holen und deduplizieren,
-  // damit Einträge nach dem Monatsübergang (z.B. Juni 1–3 wenn heute Mai 30)
-  // ebenfalls angezeigt werden.
   const [monthRes, weekRes] = await Promise.all([
     norishFetch('/planned-recipes/month'),
     norishFetch('/planned-recipes/week'),
@@ -117,29 +75,26 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
     console.warn(`Norish /planned-recipes/week → ${weekRes.status} (non-fatal, using month only)`);
   }
 
-  // Deduplizieren per id – month hat Vorrang (kommt zuerst im Array)
   const seen = new Set<string>();
   const merged = [...monthRaw, ...weekRaw].filter(item => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
     return true;
   });
-
-  // Nach Datum sortieren
   merged.sort((a, b) => a.date.localeCompare(b.date));
 
-  return merged.map(item => ({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
+  return merged.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
 }
 
 async function fetchGroceries(): Promise<GroceryItem[]> {
   const res: FetchResponse = await norishFetch('/groceries');
   if (!res.ok) throw new Error(`Norish /groceries → ${res.status}`);
-  return res.json() as Promise<GroceryItem[]>;
+  const raw = await res.json() as unknown[];
+  return raw.map(item => GroceryItemSchema.parse(item));
 }
 
 async function toggleGroceryDone(id: string, version: number, done: boolean): Promise<void> {
   const path = done ? `/groceries/${id}/done` : `/groceries/${id}/undone`;
-  // version + id im Body, id auch im Pfad (trpc-to-openapi merged beides)
   const res: FetchResponse = await norishFetch(path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -155,11 +110,6 @@ async function deleteGroceryItem(id: string, version: number): Promise<void> {
   if (!Number.isFinite(version)) {
     throw new Error(`deleteGroceryItem: ungültige version (${version}) für id ${id}`);
   }
-  // trpc-to-openapi merged URL-params + body: id kommt aus dem Pfad,
-  // version muss im Body stehen. Da Express DELETE-Bodies zuverlässig
-  // nur mit explizitem Content-Length parst, schicken wir beides:
-  // id im Pfad + version im Body mit explizitem Content-Length Header.
-  // trpc-to-openapi liest version als Query-Parameter, nicht aus dem Body
   const res: FetchResponse = await norishFetch(`/groceries/${id}?version=${version}`, {
     method: 'DELETE',
   });
@@ -178,7 +128,8 @@ async function addGroceryItem(item: GroceryCreateInput): Promise<GroceryItem> {
     const body = await res.text();
     throw new Error(`Norish POST /groceries → ${res.status}: ${body}`);
   }
-  return res.json() as Promise<GroceryItem>;
+  const raw = await res.json() as unknown;
+  return GroceryItemSchema.parse(raw);
 }
 
 // ─── Cache helpers ───────────────────────────────────────────────────────────
@@ -210,9 +161,6 @@ export const norishRouter = Router();
 
 /**
  * GET /api/widgets/meals?range=today|week|month
- *
- * Gibt geplante Rezepte zurück, gruppiert nach Datum und Slot.
- * Fällt bei Fehler auf den DB-Cache zurück.
  */
 norishRouter.get('/', async (req: Request, res: Response) => {
   const range = (['today', 'week', 'month'].includes(req.query.range as string)
@@ -240,8 +188,7 @@ norishRouter.get('/', async (req: Request, res: Response) => {
       from_cache = true;
     }
 
-    // Gruppieren nach Datum für einfacheres Rendering im Frontend
-    const byDate = items.reduce<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>(
+    const byDate = items.reduce<Record<string, Partial<Record<MealSlot, PlannedRecipe[]>>>>(
       (acc, item) => {
         if (!acc[item.date]) acc[item.date] = {};
         if (!acc[item.date][item.slot]) acc[item.date][item.slot] = [];
@@ -251,7 +198,12 @@ norishRouter.get('/', async (req: Request, res: Response) => {
       {}
     );
 
-    res.json({ items, byDate, fetched_at, from_cache });
+    return res.json(MealsResponseSchema.parse({
+      items,
+      byDate,
+      fetched_at: new Date(fetched_at).toISOString(),
+      from_cache,
+    }));
   } catch (err) {
     console.error('Error in meals handler:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -260,8 +212,6 @@ norishRouter.get('/', async (req: Request, res: Response) => {
 
 /**
  * GET /api/widgets/meals/groceries
- *
- * Gibt die aktuelle Einkaufsliste zurück.
  */
 norishRouter.get('/groceries', async (_req: Request, res: Response) => {
   try {
@@ -283,7 +233,11 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
       from_cache = true;
     }
 
-    res.json({ items, fetched_at, from_cache });
+    return res.json(GroceriesResponseSchema.parse({
+      items,
+      fetched_at: new Date(fetched_at).toISOString(),
+      from_cache,
+    }));
   } catch (err) {
     console.error('Error in groceries handler:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -292,20 +246,18 @@ norishRouter.get('/groceries', async (_req: Request, res: Response) => {
 
 /**
  * PATCH /api/widgets/meals/groceries/:id
- *
- * Setzt den checked-Status eines Eintrags.
  * Body: { version, isDone }
  */
 norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { version, isDone } = req.body as { version?: number; isDone?: boolean };
+  const parsed = GroceryToggleInputSchema.safeParse(req.body);
 
-  if (typeof version !== 'number' || typeof isDone !== 'boolean') {
+  if (!parsed.success) {
     return res.status(400).json({ error: 'version (number) and isDone (boolean) are required' });
   }
 
   try {
-    await toggleGroceryDone(id, version, isDone);
+    await toggleGroceryDone(id, parsed.data.version, parsed.data.isDone);
     res.json({ success: true });
   } catch (err) {
     console.error('Error toggling grocery item:', err);
@@ -315,13 +267,10 @@ norishRouter.patch('/groceries/:id', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/widgets/meals/groceries/:id
- *
- * Löscht einen Eintrag aus der Einkaufsliste.
  * Query: ?version=N
  */
 norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  // version als Query-Parameter (?version=2) weil Express DELETE-Bodies nicht zuverlässig parst
   const rawVersion = req.query.version ?? req.body?.version;
   const version = typeof rawVersion === 'string' ? parseInt(rawVersion, 10) : Number(rawVersion);
 
@@ -340,24 +289,22 @@ norishRouter.delete('/groceries/:id', async (req: Request, res: Response) => {
 
 /**
  * POST /api/widgets/meals/groceries
- *
- * Fügt ein Item zur Norish-Einkaufsliste hinzu.
  * Body: { name, unit?, amount?, storeId? }
  */
 norishRouter.post('/groceries', async (req: Request, res: Response) => {
-  const { name, unit, amount, storeId } = req.body as Partial<GroceryCreateInput>;
+  const parsed = GroceryCreateInputSchema.safeParse(req.body);
 
-  if (!name || typeof name !== 'string' || name.trim() === '') {
+  if (!parsed.success) {
     return res.status(400).json({ error: 'name is required' });
   }
 
   try {
     const item = await addGroceryItem({
-      name: name.trim(),
-      unit: unit ?? null,
-      amount: amount != null ? Number(amount) : null,
+      name: parsed.data.name,
+      unit: parsed.data.unit ?? null,
+      amount: parsed.data.amount != null ? Number(parsed.data.amount) : null,
       isDone: false,
-      storeId: storeId ?? null,
+      storeId: parsed.data.storeId ?? null,
     });
 
     res.status(201).json({ item });

@@ -1,12 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-
-interface WeatherData {
-  temperature: number;
-  weathercode: number;
-  windspeed: number;
-  hourly?: { time: string; temperature: number }[];
-}
+import { WeatherDataSchema, WeatherResponseSchema, type WeatherData } from '@family/shared';
 
 export const weatherRouter = Router();
 
@@ -22,27 +16,27 @@ async function fetchWeather(): Promise<WeatherData> {
     throw new Error(`Open-Meteo API returned ${response.status}`);
   }
 
-  const json = await response.json() as { current_weather: { temperature: number; weathercode: number; windspeed: number }; hourly: { time: string[]; temperature_2m: number[] } };
+  const json = await response.json() as {
+    current_weather: { temperature: number; weathercode: number; windspeed: number };
+    hourly: { time: string[]; temperature_2m: number[] };
+  };
 
   const current = json.current_weather;
   const hourly = json.hourly;
 
   const hourlyData: { time: string; temperature: number }[] = [];
-  if (hourly && hourly.time && hourly.temperature_2m) {
+  if (hourly?.time && hourly.temperature_2m) {
     for (let i = 0; i < hourly.time.length; i++) {
-      hourlyData.push({
-        time: hourly.time[i],
-        temperature: hourly.temperature_2m[i],
-      });
+      hourlyData.push({ time: hourly.time[i], temperature: hourly.temperature_2m[i] });
     }
   }
 
-  return {
+  return WeatherDataSchema.parse({
     temperature: current.temperature,
     weathercode: current.weathercode,
     windspeed: current.windspeed,
     hourly: hourlyData,
-  };
+  });
 }
 
 async function getCachedWeather(): Promise<{ data: WeatherData; fetched_at: string } | null> {
@@ -50,10 +44,7 @@ async function getCachedWeather(): Promise<{ data: WeatherData; fetched_at: stri
     SELECT data, fetched_at FROM widget_cache WHERE widget_type = 'weather'
   `);
   if (result.rows.length === 0) return null;
-  return {
-    data: result.rows[0].data,
-    fetched_at: result.rows[0].fetched_at,
-  };
+  return { data: result.rows[0].data, fetched_at: result.rows[0].fetched_at };
 }
 
 async function updateWeatherCache(data: WeatherData): Promise<string> {
@@ -88,7 +79,11 @@ weatherRouter.get('/', async (_req: Request, res: Response) => {
       fromCache = true;
     }
 
-    res.json({ data, fetched_at, from_cache: fromCache });
+    return res.json(WeatherResponseSchema.parse({
+      data,
+      fetched_at: new Date(fetched_at).toISOString(),
+      from_cache: fromCache,
+    }));
   } catch (err) {
     console.error('Error in weather handler:', err);
     res.status(500).json({ error: 'Internal server error' });
