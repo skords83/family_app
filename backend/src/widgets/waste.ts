@@ -55,14 +55,6 @@ function summaryToType(summary: string): WasteType | null {
 
 // ── Fetch & Store ─────────────────────────────────────────────────────────────
 
-/**
- * Zieht das iCal der Hamburger Stadtreinigung, parst die Events und
- * schreibt sie per UPSERT in external_events.
- *
- * Wird aufgerufen von:
- *   - jobs/refreshWaste.ts (Cronjob, täglich 03:00)
- *   - index.ts beim Server-Start (non-fatal, füllt die DB beim ersten Deploy)
- */
 export async function fetchAndStoreWasteEvents(): Promise<void> {
   console.log('[waste] Fetching iCal from Hamburger Stadtreinigung...');
 
@@ -84,7 +76,7 @@ export async function fetchAndStoreWasteEvents(): Promise<void> {
       const eventDate = new Date((event.start as Date).getTime() + 12 * 60 * 60 * 1000);
       const dateStr = toBerlinDate(eventDate);
 
-      if (dateStr < todayStr) continue; // Vergangene Termine überspringen
+      if (dateStr < todayStr) continue;
 
       const type = summaryToType(event.summary);
       if (!type) {
@@ -105,7 +97,7 @@ export async function fetchAndStoreWasteEvents(): Promise<void> {
       upserted++;
     }
 
-    // Vergangene Zeilen bereinigen (Termine die vor heute lagen)
+    // Vergangene Zeilen bereinigen
     await client.query(`
       DELETE FROM external_events
       WHERE source = 'hh_stadtreinigung' AND date < $1
@@ -123,9 +115,12 @@ export async function fetchAndStoreWasteEvents(): Promise<void> {
  * GET /api/widgets/waste/today
  *
  * Aktives Fenster: Vortag 15:00 → Abholtag 10:00
- *   hour >= 15  → morgen wird abgeholt  → aktiver Zustand (Tonne rausstellen)
- *   hour < 10   → heute wird abgeholt   → aktiver Zustand (Tonne steht hoffentlich draußen)
- *   sonst       → passiver Zustand       → nächste Abholung als Vorschau
+ *   hour >= 15  → morgen wird abgeholt  → aktiver Zustand
+ *   hour < 10   → heute wird abgeholt   → aktiver Zustand
+ *   sonst       → passiver Zustand       → nächste Abholung ab morgen
+ *
+ * `events` enthält IMMER alle Tonnen des relevanten Datums (nicht nur eine).
+ * Bei passivem Zustand sind das alle Tonnen des nächsten Abfuhrtermins.
  */
 wasteRouter.get('/today', async (_req: Request, res: Response) => {
   try {
@@ -160,23 +155,34 @@ wasteRouter.get('/today', async (_req: Request, res: Response) => {
         fetched_at: (r.fetched_at as Date).toISOString(),
       }));
 
-      return res.json(WasteTodayResponseSchema.parse({ active: true, events, next: null, fetched_at }));
+      return res.json(WasteTodayResponseSchema.parse({ active: true, events, next: events[0] ?? null, fetched_at }));
     }
 
-    // Passiv: nächste bevorstehende Abholung
+    // Passiv: ALLE Events des nächsten Abfuhrtermins ab morgen.
+    // (Zwischen 10–15 Uhr hat die heutige Abfuhr bereits stattgefunden
+    // oder war nie geplant — wir schauen daher immer ab morgen.)
     const nextResult = await pool.query(`
       SELECT id::text, source, date::text, type, title, fetched_at
       FROM external_events
-      WHERE source = 'hh_stadtreinigung' AND date >= $1
-      ORDER BY date ASC, type ASC
-      LIMIT 1
-    `, [todayStr]);
+      WHERE source = 'hh_stadtreinigung'
+        AND date = (
+          SELECT MIN(date) FROM external_events
+          WHERE source = 'hh_stadtreinigung' AND date >= $1
+        )
+      ORDER BY type
+    `, [tomorrowStr]);
 
-    const next = nextResult.rows.length > 0
-      ? { ...nextResult.rows[0], fetched_at: (nextResult.rows[0].fetched_at as Date).toISOString() }
-      : null;
+    const passiveEvents = nextResult.rows.map(r => ({
+      ...r,
+      fetched_at: (r.fetched_at as Date).toISOString(),
+    }));
 
-    return res.json(WasteTodayResponseSchema.parse({ active: false, events: [], next, fetched_at }));
+    return res.json(WasteTodayResponseSchema.parse({
+      active: false,
+      events: passiveEvents,
+      next: passiveEvents[0] ?? null,
+      fetched_at,
+    }));
   } catch (err) {
     console.error('[waste] Fehler in /today:', err);
     res.status(500).json({ error: 'Internal server error' });
