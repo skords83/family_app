@@ -19,7 +19,8 @@ interface WeatherData { temperature: number; weathercode: number; windspeed: num
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 // ← neu: Waste-Response ist der direkte API-Response (kein data-Wrapper wie bei Weather)
-interface WasteTodayData { active: boolean; events: { id: string; source: string; type: string; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: string; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
+type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
+interface WasteTodayData { active: boolean; events: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
 
 function Clock() {
   const [time, setTime] = useState(new Date());
