@@ -10,7 +10,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -21,13 +20,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Backend: Build-Context = Repo-Root, damit shared/ und Root-package.json
+      # im Build sichtbar sind. Dockerfile-Pfad explizit angegeben.
       - name: Build & push backend
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: .
+          file: ./backend/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/family-backend:latest
 
+      # Frontend: bleibt unverändert, solange es nichts aus @family/shared importiert.
+      # Wird beim WasteWidget-Schritt nachgezogen.
       - name: Build & push frontend
         uses: docker/build-push-action@v5
         with:
