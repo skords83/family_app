@@ -5,6 +5,7 @@ import CalendarWidget from '@/components/widgets/CalendarWidget';
 import WeatherWidget from '@/components/widgets/WeatherWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
 import ImmichWidget from '@/components/widgets/ImmichWidget';
+import WasteWidget from '@/components/widgets/WasteWidget';          // ← neu
 import AvatarButton from '@/components/ui/AvatarButton';
 import Link from 'next/link';
 
@@ -17,6 +18,8 @@ interface TaskInstance { id: string; title: string; points: number; assigned_to:
 interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
+// ← neu: Waste-Response ist der direkte API-Response (kein data-Wrapper wie bei Weather)
+interface WasteTodayData { active: boolean; events: { id: string; type: string; date: string; title: string; fetched_at: string; }[]; next: { id: string; type: string; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
 
 function Clock() {
   const [time, setTime] = useState(new Date());
@@ -38,17 +41,19 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
+  const [waste, setWaste] = useState<WasteTodayData | undefined>();  // ← neu
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [ur, tr, wr, cr, mr, ir] = await Promise.allSettled([
+      const [ur, tr, wr, cr, mr, ir, wasteR] = await Promise.allSettled([  // ← wasteR hinzu
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),  // ← neu
       ]);
       if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value)) setTasks(tr.value);
@@ -56,6 +61,7 @@ export default function HomePage() {
       if (cr.status === 'fulfilled' && cr.value?.events) setCalendar({ events: cr.value.events, fetched_at: cr.value.fetched_at });
       if (mr.status === 'fulfilled' && mr.value?.byDate) setMeals({ byDate: mr.value.byDate, fetched_at: mr.value.fetched_at });
       if (ir.status === 'fulfilled' && ir.value?.data) setImmich({ data: ir.value.data, fetched_at: ir.value.fetched_at });
+      if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);  // ← neu
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -178,12 +184,14 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* RIGHT col (1/3): Weather + Meals + Photo */}
+        {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
         <div className="flex flex-col gap-5">
           <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
           <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
+          <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />  {/* ← neu */}
           <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
         </div>
+
       </div>
     </div>
   );
