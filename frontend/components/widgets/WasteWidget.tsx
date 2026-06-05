@@ -26,13 +26,12 @@ interface WasteWidgetProps {
 
 // Farben der Hamburger Stadtreinigung
 const BIN_CONFIG: Record<WasteType, { label: string; bg: string; border: string }> = {
-  bioabfall: { label: 'Biotonne',     bg: '#97C459', border: '#3B6D11' },
-  restmuell: { label: 'Restmüll',     bg: '#5A5A57', border: '#2C2C2A' },
-  papier:    { label: 'Papiertonne',  bg: '#378ADD', border: '#0C447C' },
-  wertstoff: { label: 'Wertstoff',    bg: '#EF9F27', border: '#854F0B' },
+  bioabfall: { label: 'Biotonne',    bg: '#97C459', border: '#3B6D11' },
+  restmuell: { label: 'Restmüll',   bg: '#5A5A57', border: '#2C2C2A' },
+  papier:    { label: 'Papiertonne', bg: '#378ADD', border: '#0C447C' },
+  wertstoff: { label: 'Wertstoff',  bg: '#EF9F27', border: '#854F0B' },
 };
 
-// Einfache Tonnen-Illustration aus CSS — keine externe Abhängigkeit
 function BinIllustration({ type, size = 'md' }: { type: WasteType; size?: 'sm' | 'md' }) {
   const { bg, border } = BIN_CONFIG[type];
   const w = size === 'sm' ? 40 : 52;
@@ -44,12 +43,10 @@ function BinIllustration({ type, size = 'md' }: { type: WasteType; size?: 'sm' |
       position: 'relative', flexShrink: 0,
       border: `2px solid ${border}`,
     }}>
-      {/* Deckel */}
       <div style={{
         position: 'absolute', top: -5, left: 6, right: 6, height: 6,
         background: border, borderRadius: '3px 3px 0 0',
       }} />
-      {/* Stripe */}
       <div style={{
         position: 'absolute', top: 12, left: 5, right: 5, height: 3,
         background: border, borderRadius: 2, opacity: 0.35,
@@ -58,7 +55,7 @@ function BinIllustration({ type, size = 'md' }: { type: WasteType; size?: 'sm' |
   );
 }
 
-// 26h Schwellenwert: Cronjob läuft täglich um 03:00, darf also ~26h alt sein
+// 26h: Cronjob läuft täglich 03:00, darf also ~26h alt sein
 function isStale(fetchedAt?: string, maxAgeMs = 26 * 60 * 60 * 1000): boolean {
   if (!fetchedAt) return false;
   return Date.now() - new Date(fetchedAt).getTime() > maxAgeMs;
@@ -68,15 +65,24 @@ function getTodayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+/** Tage bis zu einem YYYY-MM-DD-Datum (T00:00:00 verhindert den +12h-Rundungsfehler) */
 function daysUntil(dateStr: string): number {
-  const target = new Date(dateStr + 'T12:00:00');
+  const target = new Date(dateStr + 'T00:00:00');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 }
 
-function formatWeekday(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long' });
+/** Wochentag des Vortags (= Rausstell-Tag) */
+function prepWeekday(collectionDateStr: string): string {
+  const d = new Date(collectionDateStr + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString('de-DE', { weekday: 'long' });
+}
+
+/** Wochentag des Abfuhrtags */
+function collectionWeekday(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long' });
 }
 
 export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetProps) {
@@ -87,7 +93,6 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     padding: 18,
   };
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ ...card, height: 96 }} className="animate-pulse">
@@ -97,7 +102,6 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     );
   }
 
-  // ── Keine Daten ───────────────────────────────────────────────────────────────
   if (!data || data.events.length === 0) {
     return (
       <div style={card}>
@@ -111,11 +115,9 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
   const stale = isStale(fetched_at ?? data.fetched_at);
   const { active, events } = data;
   const firstDate = events[0].date;
-  const days = daysUntil(firstDate);
   const isTodayCollection = firstDate === getTodayStr();
   const binLabels = events.map(e => BIN_CONFIG[e.type].label);
 
-  // ── Header ─────────────────────────────────────────────────────────────────
   const header = (
     <div className="flex items-center justify-between mb-3">
       <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider"
@@ -124,10 +126,14 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     </div>
   );
 
-  // ── Passiv: kompakte Zeile ────────────────────────────────────────────────────
+  // ── Passiv: kompakte Zeile mit Rausstell-Tag als primäre Info ─────────────
   if (!active) {
-    const dateLabel = days <= 1 ? 'Morgen' : formatWeekday(firstDate);
-    const daysLabel = days > 1 ? `in ${days} Tagen` : '';
+    const daysToPrep = daysUntil(firstDate) - 1; // Vortag = Rausstell-Tag
+    const prep = prepWeekday(firstDate);
+    const collection = collectionWeekday(firstDate);
+
+    // Label rechts: nur wenn > 1 Tag bis zum Rausstellen
+    const daysLabel = daysToPrep <= 1 ? '' : `in ${daysToPrep} Tagen`;
 
     return (
       <div style={card}>
@@ -137,18 +143,20 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
           <div className="flex gap-1 flex-shrink-0">
             {events.map(e => (
               <div key={e.id} style={{
-                width: 5, height: 40,
+                width: 5, height: 44,
                 background: BIN_CONFIG[e.type].bg,
                 borderRadius: 3,
               }} />
             ))}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="text-[11px] font-sans uppercase tracking-wide"
-              style={{ color: '#a09d99', margin: 0 }}>Nächste Abholung</p>
             <p className="text-[15px] font-sans font-medium"
-              style={{ color: '#1a1814', margin: '3px 0 0', lineHeight: 1.2 }}>
-              {binLabels.join(' + ')} · {dateLabel}
+              style={{ color: '#1a1814', margin: 0, lineHeight: 1.3 }}>
+              {binLabels.join(' + ')}
+            </p>
+            <p className="text-[12px] font-sans"
+              style={{ color: '#a09d99', margin: '3px 0 0' }}>
+              {prep} rausstellen · Abfuhr {collection}
             </p>
           </div>
           {daysLabel && (
@@ -173,13 +181,11 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     <div style={card}>
       {header}
       <div className="flex items-center gap-4">
-        {/* Tonnen */}
         <div className="flex gap-2 flex-shrink-0">
           {events.map(e => (
             <BinIllustration key={e.id} type={e.type} size={binSize} />
           ))}
         </div>
-        {/* Text */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="text-[13px] font-sans" style={{ color: '#6b6760', margin: 0 }}>
             {actionText}
@@ -192,7 +198,6 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
             🕕 {timeText}
           </p>
         </div>
-        {/* Badge */}
         <div className="text-[12px] font-sans font-medium rounded-lg px-3 py-1.5 flex-shrink-0"
           style={{ background: badgeBg, color: badgeColor }}>
           {badgeText}
