@@ -150,17 +150,21 @@ wasteRouter.get('/today', async (_req: Request, res: Response) => {
         ORDER BY type
       `, [targetDate]);
 
-      const events = result.rows.map(r => ({
-        ...r,
-        fetched_at: (r.fetched_at as Date).toISOString(),
-      }));
-
-      return res.json(WasteTodayResponseSchema.parse({ active: true, events, next: events[0] ?? null, fetched_at }));
+      // Nur wirklich aktiv wenn auch Events für das Zieldatum existieren.
+      // Sonst: kein Abfuhrtermin morgen/heute → passiver Zustand.
+      if (result.rows.length > 0) {
+        const events = result.rows.map(r => ({
+          ...r,
+          fetched_at: (r.fetched_at as Date).toISOString(),
+        }));
+        return res.json(WasteTodayResponseSchema.parse({ active: true, events, next: events[0] ?? null, fetched_at }));
+      }
     }
 
     // Passiv: ALLE Events des nächsten Abfuhrtermins ab morgen.
-    // (Zwischen 10–15 Uhr hat die heutige Abfuhr bereits stattgefunden
-    // oder war nie geplant — wir schauen daher immer ab morgen.)
+    // Gilt für:
+    //   – Regulären passiven Zeitraum (10–15 Uhr)
+    //   – Aktiven Zeitraum aber kein Termin morgen/heute
     const nextResult = await pool.query(`
       SELECT id::text, source, date::text, type, title, fetched_at
       FROM external_events
