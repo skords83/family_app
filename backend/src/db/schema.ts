@@ -195,4 +195,18 @@ CREATE TABLE IF NOT EXISTS widget_cache (
   data JSONB NOT NULL,
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS external_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL,
+  date DATE NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  raw_data JSONB,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source, date, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_events_source_date
+  ON external_events (source, date);
 `;
