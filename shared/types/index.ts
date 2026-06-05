@@ -8,8 +8,8 @@ import { z } from 'zod';
 export interface User {
   id: string;
   name: string;
-  avatar: string; // emoji or url
-  color: string;  // hex
+  avatar: string;
+  color: string;
   pin: string | null;
   role: 'child' | 'parent';
 }
@@ -18,9 +18,9 @@ export interface TaskTemplate {
   id: string;
   title: string;
   points: number;
-  assigned_to: string | null; // user_id or null=all
+  assigned_to: string | null;
   recurrence: 'daily' | 'weekly' | 'once';
-  due_time: string | null; // "08:00"
+  due_time: string | null;
   active: boolean;
 }
 
@@ -28,18 +28,18 @@ export interface TaskInstance {
   id: string;
   template_id: string;
   assigned_to: string;
-  date: string; // ISO date
+  date: string;
   completed_at: string | null;
   completed_by: string | null;
-  title: string; // joined from template
-  points: number; // joined from template
+  title: string;
+  points: number;
 }
 
 export interface PointEvent {
   id: string;
   user_id: string;
   points: number;
-  reason: string; // "task:uuid" | "reward:uuid" | "manual"
+  reason: string;
   created_at: string;
 }
 
@@ -70,24 +70,8 @@ export interface WidgetItem {
   order: number;
 }
 
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  allDay: boolean;
-  color?: string;
-}
-
-export interface WeatherData {
-  temperature: number;
-  weathercode: number;
-  windspeed: number;
-  hourly?: { time: string; temperature: number; }[];
-}
-
 export interface MealPlan {
-  days: { date: string; lunch: string; dinner: string; }[];
+  days: { date: string; lunch: string; dinner: string }[];
 }
 
 export interface CachedWidget<T> {
@@ -98,16 +82,10 @@ export interface CachedWidget<T> {
 
 // ============================================================
 // Zod-Schemas
-// Validierung + Single Source of Truth für Frontend/Backend.
-// Begonnen mit Müllkalender; weitere Bereiche folgen.
 // ============================================================
 
-// --- Waste / Müllkalender ---------------------------------------
+// --- Waste / Müllkalender ------------------------------------
 
-/**
- * Bekannte Tonnen-Typen.
- * Erweiterbar bei Bedarf (z.B. 'tannenbaum' für saisonale Sammlungen).
- */
 export const WasteTypeSchema = z.enum([
   'restmuell',
   'bioabfall',
@@ -116,9 +94,6 @@ export const WasteTypeSchema = z.enum([
 ]);
 export type WasteType = z.infer<typeof WasteTypeSchema>;
 
-/**
- * Ein einzelnes Abholungs-Event, wie es in external_events gespeichert wird.
- */
 export const WasteEventSchema = z.object({
   id: z.string().uuid(),
   source: z.string(),
@@ -129,18 +104,6 @@ export const WasteEventSchema = z.object({
 });
 export type WasteEvent = z.infer<typeof WasteEventSchema>;
 
-/**
- * Response für GET /api/widgets/waste/today
- *
- * - active=true   → events enthält die heute/morgen relevanten Tonnen,
- *                   Widget zeigt den aktiven Zustand (Bild + großer Text).
- * - active=false  → events ist leer, next enthält die nächste Abholung,
- *                   Widget zeigt den passiven Zustand (kompakte Zeile).
- *
- * Das Backend entscheidet anhand der Uhrzeit:
- *   Vortag 15:00 → Abholtag 10:00 = active
- *   sonst                          = passive
- */
 export const WasteTodayResponseSchema = z.object({
   active: z.boolean(),
   events: z.array(WasteEventSchema),
@@ -149,11 +112,6 @@ export const WasteTodayResponseSchema = z.object({
 });
 export type WasteTodayResponse = z.infer<typeof WasteTodayResponseSchema>;
 
-/**
- * Response für GET /api/widgets/waste/upcoming
- *
- * Liefert die nächsten ~4 Abholungen für die Detailansicht.
- */
 export const WasteUpcomingResponseSchema = z.object({
   events: z.array(WasteEventSchema),
   fetched_at: z.string().datetime(),

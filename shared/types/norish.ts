@@ -48,7 +48,7 @@ export const MealsResponseSchema = z.object({
   items: z.array(PlannedRecipeSchema),
   byDate: z.record(
     z.string(),
-    z.record(MealSlotSchema, z.array(PlannedRecipeSchema)).partial(),
+    z.record(z.string(), z.array(PlannedRecipeSchema).optional()),
   ),
   fetched_at: z.string().datetime(),
   from_cache: z.boolean(),
