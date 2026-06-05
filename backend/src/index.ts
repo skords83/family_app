@@ -14,13 +14,14 @@ import { weatherRouter } from './widgets/weather';
 import { caldavRouter } from './widgets/caldav';
 import { norishRouter } from './widgets/norish';
 import { immichRouter } from './widgets/immich';
+import { wasteRouter, fetchAndStoreWasteEvents } from './widgets/waste';
 import { startDailyTaskCron, generateDailyTasks } from './jobs/generateDailyTasks';
+import { startWasteCron } from './jobs/refreshWaste';
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
 app.use(cors({ origin: '*' }));
-// Increase JSON limit to 10mb for base64 photo uploads
 app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/users', usersRouter);
@@ -33,6 +34,7 @@ app.use('/api/widgets/weather', weatherRouter);
 app.use('/api/widgets/calendar', caldavRouter);
 app.use('/api/widgets/meals', norishRouter);
 app.use('/api/widgets/immich', immichRouter);
+app.use('/api/widgets/waste', wasteRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -52,12 +54,22 @@ async function runMigrations(): Promise<void> {
 async function start(): Promise<void> {
   try {
     await runMigrations();
+
     try {
       await generateDailyTasks();
     } catch (err) {
       console.error('Initial task generation failed (non-fatal):', err);
     }
+
+    // Initialer Waste-Fetch beim Start — füllt external_events beim ersten Deploy.
+    // Danach übernimmt der Cronjob. Non-fatal: Server startet auch ohne Netzwerk.
+    fetchAndStoreWasteEvents().catch(err =>
+      console.error('[waste] Initial fetch failed (non-fatal):', err),
+    );
+
     startDailyTaskCron();
+    startWasteCron();
+
     app.listen(PORT, () => {
       console.log(`Family Organizer backend running on port ${PORT}`);
     });
