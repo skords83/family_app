@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import PinModal from '@/components/ui/PinModal';
+import { useSSE } from '@/hooks/useSSE';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -147,6 +148,37 @@ export default function AdminPage() {
   useEffect(() => {
     if (authenticated) fetchData();
   }, [authenticated, fetchData]);
+
+  // ── Granulare Fetcher für SSE-Updates ──
+  const fetchUsers = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+    if (Array.isArray(res)) setUsers(res);
+  }, []);
+
+  const fetchTemplates = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/templates`).then(r => r.json());
+    if (Array.isArray(res)) setTemplates(res);
+  }, []);
+
+  const fetchRewards = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/rewards?admin=true`).then(r => r.json());
+    if (Array.isArray(res)) setRewards(res);
+  }, []);
+
+  const fetchClaims = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/rewards/claims`).then(r => r.json());
+    if (Array.isArray(res)) setClaims(res);
+  }, []);
+
+  // SSE-Subscription nur wenn authentifiziert
+  useSSE(authenticated ? {
+    points_updated: fetchUsers,
+    task_updated: fetchTemplates,
+    reward_claimed: useCallback(() => {
+      fetchClaims();
+      fetchRewards();
+    }, [fetchClaims, fetchRewards]),
+  } : {});
 
   const handlePinSuccess = (pin: string) => {
     setAdminPin(pin);

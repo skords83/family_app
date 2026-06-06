@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useSSE } from '@/hooks/useSSE';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -81,6 +82,32 @@ export default function UserPage() {
     return () => clearInterval(iv);
   }, [fetchData]);
 
+  const fetchTasks = useCallback(async () => {
+    if (!userId) return;
+    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
+    if (Array.isArray(res)) {
+      setTasks(res.filter((t: TaskInstance) => t.assigned_to === userId));
+    }
+  }, [userId]);
+
+  const fetchUser = useCallback(async () => {
+    if (!userId) return;
+    const res = await fetch(`${API_BASE}/api/users/${userId}`).then(r => r.json());
+    if (res.id) setUser(res);
+  }, [userId]);
+
+  const fetchRewards = useCallback(async () => {
+    if (!userId) return;
+    const res = await fetch(`${API_BASE}/api/rewards?user_id=${userId}`).then(r => r.json());
+    if (Array.isArray(res)) setRewards(res);
+  }, [userId]);
+
+  useSSE({
+    task_updated: fetchTasks,
+    points_updated: fetchUser,
+    reward_claimed: fetchRewards,
+  });
+
   const handleComplete = async (taskId: string) => {
     const res = await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
       method: 'POST',
@@ -89,10 +116,9 @@ export default function UserPage() {
     });
     if (res.ok) {
       const data = await res.json();
+      // Optimistisches Update — SSE aktualisiert tasks + user im Hintergrund
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t));
       showNotification(`+${data.points_earned} ⭐ verdient!`);
-      const fresh = await fetch(`${API_BASE}/api/users/${userId}`).then(r => r.json());
-      if (fresh.id) setUser(fresh);
     }
   };
 
@@ -103,8 +129,9 @@ export default function UserPage() {
       body: JSON.stringify({ user_id: userId }),
     });
     const data = await res.json();
-    if (res.ok) { showNotification(`Beantragt! -${data.points_spent} ⭐`); fetchData(); }
+    if (res.ok) showNotification(`Beantragt! -${data.points_spent} ⭐`);
     else showNotification(data.error ?? 'Fehler', false);
+    // SSE triggert reward_claimed + points_updated → fetchRewards + fetchUser
   };
 
   if (loading) return (

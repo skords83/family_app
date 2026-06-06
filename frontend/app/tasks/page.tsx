@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AvatarButton from '@/components/ui/AvatarButton';
+import { useSSE } from '@/hooks/useSSE';
+import { useClientDate } from '@/hooks/useClientDate';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -45,22 +47,33 @@ export default function TasksPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  const fetchUsers = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+    if (Array.isArray(res)) setUsers(res);
+  }, []);
+
+  const fetchTasks = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
+    if (Array.isArray(res)) setTasks(res);
+  }, []);
+
+  useSSE({
+    task_updated: fetchTasks,
+    points_updated: fetchUsers,
+  });
+
   const handleComplete = async (taskId: string, userId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || task.completed_at) return;
-    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
+    await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: userId }),
     });
-    const data = await res.json();
+    // Optimistisches Update — SSE aktualisiert tasks + users im Hintergrund
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
     ));
-    if (!data.pending_approval) {
-      const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
-      if (Array.isArray(fresh)) setUsers(fresh);
-    }
   };
 
   const handleUncomplete = async (taskId: string) => {
@@ -71,8 +84,7 @@ export default function TasksPage() {
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, completed_at: null, approved_at: null } : t
     ));
-    const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
-    if (Array.isArray(fresh)) setUsers(fresh);
+    // SSE übernimmt users-Refetch
   };
 
   const handleApprove = async (taskId: string) => {
@@ -91,11 +103,13 @@ export default function TasksPage() {
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, approved_at: new Date().toISOString() } : t
     ));
-    const fresh = await fetch(`${API_BASE}/api/users`).then(r => r.json());
-    if (Array.isArray(fresh)) setUsers(fresh);
+    // SSE übernimmt users-Refetch
   };
 
-  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const now = useClientDate();
+  const today = now
+    ? now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '\u00a0';
 
   if (loading) {
     return (
