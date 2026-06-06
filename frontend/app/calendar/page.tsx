@@ -280,28 +280,37 @@ export default function CalendarPage() {
     });
   }
 
-  // Calculate collision groups and assign column slots
+  // Assign each event to the first column where the previous event has ended,
+  // then compute cols = max simultaneous column index + 1 per event.
   function layoutEvents(evs: CalendarEvent[]): Array<CalendarEvent & { col: number; cols: number }> {
     if (evs.length === 0) return [];
     const sorted = [...evs].sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
-    const result: Array<CalendarEvent & { col: number; cols: number }> = [];
-    const groups: CalendarEvent[][] = [];
+
+    // Pass 1: greedy column assignment
+    const colEndTimes: number[] = [];
+    const colAssignments: number[] = [];
     for (const ev of sorted) {
-      let placed = false;
-      for (const group of groups) {
-        if (group.some(g => toMinutes(g.start) < toMinutes(ev.end) && toMinutes(ev.start) < toMinutes(g.end === ev.end ? g.end : g.end))) {
-          group.push(ev);
-          placed = true;
-          break;
+      const startMin = toMinutes(ev.start);
+      const endMin   = toMinutes(ev.end);
+      let col = colEndTimes.findIndex(t => t <= startMin);
+      if (col === -1) col = colEndTimes.length;
+      colEndTimes[col] = endMin;
+      colAssignments.push(col);
+    }
+
+    // Pass 2: for each event, cols = highest column index among all events
+    //         that truly overlap with it, + 1
+    return sorted.map((ev, idx) => {
+      const startMin = toMinutes(ev.start);
+      const endMin   = toMinutes(ev.end);
+      let maxCol = colAssignments[idx];
+      sorted.forEach((other, j) => {
+        if (toMinutes(other.start) < endMin && toMinutes(other.end) > startMin) {
+          maxCol = Math.max(maxCol, colAssignments[j]);
         }
-      }
-      if (!placed) groups.push([ev]);
-    }
-    for (const group of groups) {
-      const cols = group.length;
-      group.forEach((ev, i) => result.push({ ...ev, col: i, cols }));
-    }
-    return result;
+      });
+      return { ...ev, col: colAssignments[idx], cols: maxCol + 1 };
+    });
   }
 
   function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
