@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/ui/Sidebar';
 import Topbar from '@/components/ui/Topbar';
+import { BurnInProvider } from '@/components/burn-in';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -32,13 +33,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
         }}
       >
-        <Topbar />
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          <Sidebar />
-          <main style={{ flex: 1, overflowY: 'auto' }}>
-            {children}
-          </main>
-        </div>
+        <BurnInProvider>
+          <Topbar />
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <Sidebar />
+            <main style={{ flex: 1, overflowY: 'auto' }}>
+              {children}
+            </main>
+          </div>
+        </BurnInProvider>
       </body>
     </html>
   );
