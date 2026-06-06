@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { emitSSE } from '../sse';
 
 export const rewardsRouter = Router();
 
@@ -240,6 +241,8 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
       VALUES ($1, $2, $3)
     `, [user_id, -reward.points_cost, `reward:${claimResult.rows[0].id}`]);
 
+    emitSSE({ type: 'reward_claimed', data: { reward_id: id, user_id } });
+    emitSSE({ type: 'points_updated', data: { user_id } });
     res.status(201).json({
       ...claimResult.rows[0],
       reward_title: reward.title,
@@ -278,6 +281,7 @@ rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Claim not found or already approved' });
     }
 
+    emitSSE({ type: 'reward_claimed', data: { claim_id: id } });
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error approving reward claim:', err);

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { emitSSE } from '../sse';
 
 // Router for /api/points routes
 export const pointsRouter = Router();
@@ -84,6 +85,7 @@ pointsRouter.post('/manual', async (req: Request, res: Response) => {
       RETURNING *
     `, [user_id, points, reason ?? 'manual']);
 
+    emitSSE({ type: 'points_updated', data: { user_id } });
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error creating manual point event:', err);

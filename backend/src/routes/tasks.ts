@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { v4 as uuidv4 } from 'uuid';
+import { emitSSE } from '../sse';
 
 export const tasksRouter = Router();
 
@@ -121,9 +122,12 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
         INSERT INTO point_events (user_id, points, reason)
         VALUES ($1, $2, $3)
       `, [assignedTo, task.points, `task:${id}`]);
+      emitSSE({ type: 'task_updated', data: { task_id: id, date: task.date } });
+      emitSSE({ type: 'points_updated', data: { user_id: assignedTo } });
       return res.json({ success: true, points_earned: task.points, pending_approval: false });
     }
 
+    emitSSE({ type: 'task_updated', data: { task_id: id, date: task.date } });
     return res.json({ success: true, points_earned: 0, pending_approval: true });
   } catch (err) {
     console.error('Error completing task:', err);
@@ -187,6 +191,8 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
       VALUES ($1, $2, $3)
     `, [assignedTo, task.points, `task:${id}`]);
 
+    emitSSE({ type: 'task_updated', data: { task_id: id } });
+    emitSSE({ type: 'points_updated', data: { user_id: assignedTo } });
     res.json({ success: true, points_earned: task.points });
   } catch (err) {
     console.error('Error approving task:', err);
@@ -235,6 +241,10 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
       WHERE id = $1
     `, [id]);
 
+    emitSSE({ type: 'task_updated', data: { task_id: id } });
+    if (pointsWereGranted) {
+      emitSSE({ type: 'points_updated', data: { user_id: assignedTo } });
+    }
     res.json({ success: true });
   } catch (err) {
     console.error('Error uncompleting task:', err);

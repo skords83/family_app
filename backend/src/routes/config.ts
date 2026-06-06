@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { emitSSE } from '../sse';
 
 const DEFAULT_WIDGETS = [
   { type: 'clock', enabled: true, order: 0 },
@@ -77,6 +78,7 @@ configRouter.patch('/widgets', async (req: Request, res: Response) => {
       `, [JSON.stringify(widgets), existing.rows[0].id]);
     }
 
+    emitSSE({ type: 'config_updated', data: {} });
     res.json({ widgets: result.rows[0].widgets });
   } catch (err) {
     console.error('Error updating widget config:', err);
