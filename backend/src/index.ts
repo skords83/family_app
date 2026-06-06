@@ -17,12 +17,16 @@ import { immichRouter } from './widgets/immich';
 import { wasteRouter, fetchAndStoreWasteEvents } from './widgets/waste';
 import { startDailyTaskCron, generateDailyTasks } from './jobs/generateDailyTasks';
 import { startWasteCron } from './jobs/refreshWaste';
+import { sseHandler } from './sse';
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
+
+// SSE — vor compression und anderen Middlewares registrieren
+app.get('/api/events', sseHandler);
 
 app.use('/api/users', usersRouter);
 app.use('/api/users/:id/points', userPointsRouter);
