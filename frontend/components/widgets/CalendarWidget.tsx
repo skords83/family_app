@@ -26,6 +26,7 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
     const startDate = new Date(event.start);
     if (startDate >= cutoff) continue;
     const dateKey = startDate.toISOString().split('T')[0];
+    if (dateKey < todayStr) continue; // vergangene Events überspringen
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
