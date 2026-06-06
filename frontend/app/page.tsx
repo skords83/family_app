@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSSE } from '@/hooks/useSSE';
+import { useClientDate } from '@/hooks/useClientDate';
 import CalendarWidget from '@/components/widgets/CalendarWidget';
 import WeatherWidget from '@/components/widgets/WeatherWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
@@ -24,9 +25,13 @@ type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
 interface WasteTodayData { active: boolean; events: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
 
 function Clock() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => { const iv = setInterval(() => setTime(new Date()), 30_000); return () => clearInterval(iv); }, []);
-  const hm = time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const [time, setTime] = useState<Date | null>(null);
+  useEffect(() => {
+    setTime(new Date());
+    const iv = setInterval(() => setTime(new Date()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+  const hm = time ? time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '\u00a0\u00a0:\u00a0\u00a0';
   return (
     <div className="text-right">
       <div className="text-5xl font-light tracking-tight tabular-nums" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
@@ -37,6 +42,7 @@ function Clock() {
 }
 
 export default function HomePage() {
+  const now = useClientDate();
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [weather, setWeather] = useState<{ data?: WeatherData; fetched_at?: string }>({});
@@ -112,14 +118,15 @@ export default function HomePage() {
         <div>
           <h1 className="text-3xl font-normal" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>
             {(() => {
-              const h = new Date().getHours();
+              if (!now) return 'Hallo 👋';
+              const h = now.getHours();
               if (h < 12) return 'Guten Morgen 👋';
               if (h < 18) return 'Guten Tag 👋';
               return 'Guten Abend 👋';
             })()}
           </h1>
           <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>
-            {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {now ? now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '\u00a0'}
           </p>
         </div>
         <Clock />
