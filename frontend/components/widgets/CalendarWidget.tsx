@@ -16,6 +16,14 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
   return Date.now() - new Date(fetchedAt).getTime() > maxAgeMs;
 }
 
+// Lokales Datum als YYYY-MM-DD — niemals toISOString() verwenden (UTC-Verschiebung!)
+function toLocalDateStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // ✅ todayStr passed in — no new Date() inside
 function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: number): Map<string, CalendarEvent[]> {
   const map = new Map<string, CalendarEvent[]>();
@@ -25,8 +33,8 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
   for (const event of events) {
     const startDate = new Date(event.start);
     if (startDate >= cutoff) continue;
-    const dateKey = startDate.toISOString().split('T')[0];
-    if (dateKey < todayStr) continue; // vergangene Events überspringen
+    const dateKey = toLocalDateStr(startDate); // lokal, nicht UTC
+    if (dateKey < todayStr) continue;           // vergangene Events überspringen
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
@@ -82,7 +90,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   // Build tomorrow string (safe — client-side only)
   const tomorrowDate = new Date(todayStr + 'T00:00:00');
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+  const tomorrowStr = toLocalDateStr(tomorrowDate); // lokal, nicht UTC
 
   const grouped = groupEventsByDay(events, todayStr, daysAhead);
 
@@ -91,7 +99,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   for (let i = 0; i < daysAhead; i++) {
     const d = new Date(todayStr + 'T00:00:00');
     d.setDate(d.getDate() + i);
-    days.push(d.toISOString().split('T')[0]);
+    days.push(toLocalDateStr(d)); // lokal, nicht UTC
   }
   const hasEvents = days.some(d => grouped.has(d));
 
