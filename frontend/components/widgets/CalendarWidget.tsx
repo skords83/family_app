@@ -1,12 +1,14 @@
 'use client';
 
+import { useClientDateStr } from '@/hooks/useClientDate';
+
 interface CalendarEvent {
   id: string; title: string; start: string; end: string;
   allDay: boolean; color?: string; calendarName?: string;
 }
 interface CalendarWidgetProps {
   events?: CalendarEvent[]; fetched_at?: string; loading?: boolean;
-  daysAhead?: number; // default 7, set to 1 for dashboard
+  daysAhead?: number;
 }
 
 function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
@@ -14,13 +16,15 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
   return Date.now() - new Date(fetchedAt).getTime() > maxAgeMs;
 }
 
-function groupEventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
+// ✅ todayStr passed in — no new Date() inside
+function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: number): Map<string, CalendarEvent[]> {
   const map = new Map<string, CalendarEvent[]>();
-  const now = new Date();
-  const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // still fetch 7 days, prop filters display
+  const todayDate = new Date(todayStr + 'T00:00:00');
+  const cutoff = new Date(todayDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
   for (const event of events) {
     const startDate = new Date(event.start);
-    if (startDate > sevenDaysLater) continue;
+    if (startDate >= cutoff) continue;
     const dateKey = startDate.toISOString().split('T')[0];
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
@@ -28,13 +32,11 @@ function groupEventsByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]>
   return map;
 }
 
-function formatDateLabel(dateStr: string): string {
+// ✅ todayStr / tomorrowStr passed in
+function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
   const date = new Date(dateStr + 'T12:00:00');
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  if (dateStr === today.toISOString().split('T')[0]) return 'Heute';
-  if (dateStr === tomorrow.toISOString().split('T')[0]) return 'Morgen';
+  if (dateStr === todayStr) return 'Heute';
+  if (dateStr === tomorrowStr) return 'Morgen';
   return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long' }).toUpperCase();
 }
 
@@ -44,6 +46,9 @@ function formatEventTime(event: CalendarEvent): string {
 }
 
 export default function CalendarWidget({ events = [], fetched_at, loading, daysAhead = 7 }: CalendarWidgetProps) {
+  // ✅ null on server render — no hydration mismatch
+  const todayStr = useClientDateStr();
+
   if (loading) {
     return (
       <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
@@ -59,12 +64,32 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   }
 
   const stale = isStale(fetched_at);
-  const grouped = groupEventsByDay(events);
+
+  // Render shell before hydration — no date-dependent content
+  if (!todayStr) {
+    return (
+      <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
+            Kalender
+          </h3>
+        </div>
+      </div>
+    );
+  }
+
+  // Build tomorrow string (safe — client-side only)
+  const tomorrowDate = new Date(todayStr + 'T00:00:00');
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+
+  const grouped = groupEventsByDay(events, todayStr, daysAhead);
+
+  // Build the list of day keys to display
   const days: string[] = [];
-  const today = new Date();
   for (let i = 0; i < daysAhead; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
+    const d = new Date(todayStr + 'T00:00:00');
+    d.setDate(d.getDate() + i);
     days.push(d.toISOString().split('T')[0]);
   }
   const hasEvents = days.some(d => grouped.has(d));
@@ -95,11 +120,9 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
             if (!dayEvents?.length) return null;
             return (
               <div key={day}>
-                {/* Day label */}
                 <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
-                  {formatDateLabel(day)}
+                  {formatDateLabel(day, todayStr, tomorrowStr)}
                 </p>
-                {/* Events */}
                 <div className="space-y-1.5">
                   {dayEvents.map(event => (
                     <div
@@ -111,11 +134,9 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                         borderRadius: '0 10px 10px 0',
                       }}
                     >
-                      {/* Time */}
                       <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 48 }}>
                         {formatEventTime(event)}
                       </span>
-                      {/* Title + calendar name */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>
                           {event.title}

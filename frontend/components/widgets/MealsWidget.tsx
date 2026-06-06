@@ -1,5 +1,7 @@
 'use client';
 
+import { useClientDateStr } from '@/hooks/useClientDate';
+
 type Slot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 
 interface PlannedRecipe {
@@ -26,13 +28,10 @@ const SLOT_ICONS: Record<Slot, string> = {
 };
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
-function formatDateLabel(dateStr: string): string {
+// ✅ todayStr and tomorrowStr come from the caller (client-side state),
+//    so this function is now pure and safe to call during render.
+function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
   const date = new Date(dateStr + 'T12:00:00');
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const todayStr = today.toISOString().split('T')[0];
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
   if (dateStr === todayStr) return 'Heute';
   if (dateStr === tomorrowStr) return 'Morgen';
   return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -44,6 +43,9 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
 }
 
 export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsWidgetProps) {
+  // ✅ null on server render → no hydration mismatch
+  const todayStr = useClientDateStr();
+
   if (loading) {
     return (
       <div className="rounded-2xl p-4 border animate-pulse" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
@@ -59,8 +61,26 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
   }
 
   const stale = isStale(fetched_at);
-  const today = new Date().toISOString().split('T')[0];
-  const sortedDates = Object.keys(byDate).filter(d => d >= today).sort().slice(0, 1);
+
+  // Before hydration: render shell without any date-dependent content
+  if (!todayStr) {
+    return (
+      <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
+            Essensplan
+          </h3>
+        </div>
+      </div>
+    );
+  }
+
+  // Build tomorrow string client-side (safe — only reached after hydration)
+  const tomorrowDate = new Date(todayStr + 'T00:00:00');
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+
+  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 1);
 
   return (
     <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
@@ -91,7 +111,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
             return (
               <div key={date}>
                 <p className="text-[10px] font-sans font-semibold uppercase mb-1.5" style={{ color: '#a09d99' }}>
-                  {formatDateLabel(date)}
+                  {formatDateLabel(date, todayStr, tomorrowStr)}
                 </p>
                 <div className="space-y-1">
                   {presentSlots.map(slot => (

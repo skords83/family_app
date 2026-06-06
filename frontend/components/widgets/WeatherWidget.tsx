@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+
 interface WeatherData {
   temperature: number; weathercode: number; windspeed: number;
   hourly?: { time: string; temperature: number }[];
@@ -37,6 +39,12 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
 }
 
 export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidgetProps) {
+  // ✅ currentHour only available after hydration — null prevents server/client mismatch
+  const [currentHour, setCurrentHour] = useState<number | null>(null);
+  useEffect(() => {
+    setCurrentHour(new Date().getHours());
+  }, []);
+
   const card = { background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18 };
 
   if (loading) return (
@@ -54,10 +62,13 @@ export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidg
   );
 
   const stale = isStale(fetched_at);
-  const currentHour = new Date().getHours();
-  const hourlyItems = (data.hourly ?? [])
-    .filter(h => { const hr = new Date(h.time).getHours(); return hr >= currentHour && hr <= currentHour + 6; })
-    .slice(0, 6);
+
+  // ✅ Only filter hourly items once we know the client's current hour
+  const hourlyItems = currentHour !== null
+    ? (data.hourly ?? [])
+        .filter(h => { const hr = new Date(h.time).getHours(); return hr >= currentHour && hr <= currentHour + 6; })
+        .slice(0, 6)
+    : [];
 
   return (
     <div style={card}>
@@ -65,7 +76,11 @@ export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidg
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>Wetter</h3>
         <div className="flex items-center gap-2">
           {stale && <span className="text-xs" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
-          {fetched_at && <span className="text-xs font-sans" style={{ color: '#a09d99' }}>{new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>}
+          {fetched_at && (
+            <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
+              {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
       </div>
 

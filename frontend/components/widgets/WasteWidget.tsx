@@ -1,5 +1,7 @@
 'use client';
 
+import { useClientDateStr } from '@/hooks/useClientDate';
+
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
 
 interface WasteEvent {
@@ -24,7 +26,6 @@ interface WasteWidgetProps {
   loading?: boolean;
 }
 
-// Farben der Hamburger Stadtreinigung
 const BIN_CONFIG: Record<WasteType, { label: string; bg: string; border: string }> = {
   bioabfall: { label: 'Biotonne',    bg: '#97C459', border: '#3B6D11' },
   restmuell: { label: 'Restmüll',   bg: '#5A5A57', border: '#2C2C2A' },
@@ -61,15 +62,10 @@ function isStale(fetchedAt?: string, maxAgeMs = 26 * 60 * 60 * 1000): boolean {
   return Date.now() - new Date(fetchedAt).getTime() > maxAgeMs;
 }
 
-function getTodayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-/** Tage bis zu einem YYYY-MM-DD-Datum (T00:00:00 verhindert den +12h-Rundungsfehler) */
-function daysUntil(dateStr: string): number {
+/** Tage bis zu einem YYYY-MM-DD-Datum */
+function daysUntil(dateStr: string, todayStr: string): number {
   const target = new Date(dateStr + 'T00:00:00');
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(todayStr + 'T00:00:00');
   return Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 }
 
@@ -86,6 +82,9 @@ function collectionWeekday(dateStr: string): string {
 }
 
 export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetProps) {
+  // ✅ Only available client-side — null on the first (server) render
+  const todayStr = useClientDateStr();
+
   const card = {
     background: '#fff',
     border: '0.5px solid rgba(0,0,0,0.07)',
@@ -112,10 +111,17 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     );
   }
 
+  // Render nothing date-dependent until we're on the client
+  if (!todayStr) {
+    return (
+      <div style={{ ...card, height: 96 }} />
+    );
+  }
+
   const stale = isStale(fetched_at ?? data.fetched_at);
   const { active, events } = data;
   const firstDate = events[0].date;
-  const isTodayCollection = firstDate === getTodayStr();
+  const isTodayCollection = firstDate === todayStr;
   const binLabels = events.map(e => BIN_CONFIG[e.type].label);
 
   const header = (
@@ -126,20 +132,17 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     </div>
   );
 
-  // ── Passiv: kompakte Zeile mit Rausstell-Tag als primäre Info ─────────────
+  // ── Passiv ──────────────────────────────────────────────────────────────────
   if (!active) {
-    const daysToPrep = daysUntil(firstDate) - 1; // Vortag = Rausstell-Tag
+    const daysToPrep = daysUntil(firstDate, todayStr) - 1;
     const prep = prepWeekday(firstDate);
     const collection = collectionWeekday(firstDate);
-
-    // Label rechts: nur wenn > 1 Tag bis zum Rausstellen
     const daysLabel = daysToPrep <= 1 ? '' : `in ${daysToPrep} Tagen`;
 
     return (
       <div style={card}>
         {header}
         <div className="flex items-center gap-3">
-          {/* Farbstreifen je Tonne */}
           <div className="flex gap-1 flex-shrink-0">
             {events.map(e => (
               <div key={e.id} style={{
@@ -168,7 +171,7 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     );
   }
 
-  // ── Aktiv: Tonnen-Illustration + Aktion ────────────────────────────────────
+  // ── Aktiv ───────────────────────────────────────────────────────────────────
   const binSize: 'sm' | 'md' = events.length > 2 ? 'sm' : 'md';
   const titleSize = events.length > 2 ? 17 : events.length > 1 ? 20 : 26;
   const actionText = isTodayCollection ? 'Wird heute abgeholt' : 'Heute Abend rausstellen';
