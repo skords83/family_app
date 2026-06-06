@@ -38,7 +38,8 @@ export function useSSE(handlers: Partial<Record<SSEEventType, SSEHandler>>): voi
   const esRef = useRef<EventSource | null>(null);
 
   const connect = useCallback(() => {
-    const url = `${process.env.NEXT_PUBLIC_API_URL}/events`;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+    const url = `${apiBase}/api/events`;
     const es = new EventSource(url);
     esRef.current = es;
 
