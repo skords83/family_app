@@ -170,14 +170,16 @@ export default function AdminPage() {
     if (Array.isArray(res)) setClaims(res);
   }, []);
 
+  const handleRewardClaimed = useCallback(() => {
+    fetchClaims();
+    fetchRewards();
+  }, [fetchClaims, fetchRewards]);
+
   // SSE-Subscription nur wenn authentifiziert
   useSSE(authenticated ? {
     points_updated: fetchUsers,
     task_updated: fetchTemplates,
-    reward_claimed: useCallback(() => {
-      fetchClaims();
-      fetchRewards();
-    }, [fetchClaims, fetchRewards]),
+    reward_claimed: handleRewardClaimed,
   } : {});
 
   const handlePinSuccess = (pin: string) => {
