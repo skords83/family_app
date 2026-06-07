@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 interface TaskCardTask {
   id: string; title: string; points: number;
@@ -17,10 +18,11 @@ interface TaskCardProps {
 export default function TaskCard({ task, onComplete, onUncomplete, userColor = '#6366f1', compact = false }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
+  const { isOnline } = useOnlineStatus();
   const isCompleted = !!task.completed_at;
 
   const handleClick = async () => {
-    if (loading) return;
+    if (loading || !isOnline) return;
     setLoading(true);
     try {
       if (isCompleted && onUncomplete) {
@@ -51,8 +53,9 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
   return (
     <button
       onClick={handleClick}
-      disabled={loading}
-      className={`w-full flex items-center gap-3 rounded-xl px-3 text-left transition-all duration-200 active:scale-95 ${compact ? 'py-2' : 'py-2.5'} ${justCompleted ? 'scale-95' : ''} ${loading ? 'opacity-60' : ''}`}
+      disabled={loading || !isOnline}
+      title={!isOnline ? 'Keine Verbindung' : undefined}
+      className={`w-full flex items-center gap-3 rounded-xl px-3 text-left transition-all duration-200 ${compact ? 'py-2' : 'py-2.5'} ${justCompleted ? 'scale-95' : ''} ${loading ? 'opacity-60' : ''} ${!isOnline ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'}`}
       style={{ background: `${userColor}14`, border: `0.5px solid ${userColor}30` }}
     >
       <div
@@ -60,6 +63,7 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
         style={{ borderColor: userColor }}
       >
         {loading && <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: userColor }} />}
+        {!isOnline && !loading && <i className="ti ti-wifi-off" style={{ fontSize: 9, color: userColor }} />}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{task.title}</p>
