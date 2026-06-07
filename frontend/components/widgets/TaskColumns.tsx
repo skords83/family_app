@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import TaskCard from '../ui/TaskCard';
 
 interface User {
@@ -45,16 +46,27 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
           <div key={user.id} className="rounded-2xl p-4" style={{ background: bg, border: `0.5px solid ${user.color}25` }}>
             {/* Header */}
             <div className="flex items-center gap-2.5 mb-3">
-              {user.photo ? (
-                <img src={user.photo} alt={user.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" style={{ border: `2px solid ${user.color}` }} />
-              ) : (
-                <span className="text-2xl flex-shrink-0">{user.avatar}</span>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold font-sans text-sm truncate" style={{ color: user.color }}>{user.name}</p>
-                <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedTasks.length}/{userTasks.length} erledigt</p>
-              </div>
-              <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full" style={{ color: user.color, background: `${user.color}18` }}>
+              <Link
+                href={`/user/${user.id}`}
+                className="flex items-center gap-2.5 flex-1 min-w-0 active:opacity-70 transition-opacity"
+                title={`${user.name}s Aufgaben`}
+              >
+                {user.photo ? (
+                  <img
+                    src={user.photo}
+                    alt={user.name}
+                    className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                    style={{ border: `2px solid ${user.color}` }}
+                  />
+                ) : (
+                  <span className="text-2xl flex-shrink-0">{user.avatar}</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold font-sans text-sm truncate" style={{ color: user.color }}>{user.name}</p>
+                  <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedTasks.length}/{userTasks.length} erledigt</p>
+                </div>
+              </Link>
+              <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ color: user.color, background: `${user.color}18` }}>
                 ⭐{user.points}
               </span>
             </div>
