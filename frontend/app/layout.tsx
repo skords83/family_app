@@ -4,6 +4,7 @@ import './globals.css';
 import Sidebar from '@/components/ui/Sidebar';
 import Topbar from '@/components/ui/Topbar';
 import { BurnInProvider } from '@/components/burn-in';
+import { OfflineBanner } from '@/components/ui/OfflineBanner';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -21,6 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.x/dist/tabler-icons.min.css"
         />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#f5f2ee" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       <body
         className={inter.className}
@@ -33,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
         }}
       >
+        <OfflineBanner />
         <BurnInProvider>
           <Topbar />
           <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
