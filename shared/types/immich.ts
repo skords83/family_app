@@ -9,8 +9,8 @@ export const ImmichAssetSchema = z.object({
   exifInfo: z
     .object({
       description: z.string().optional(),
-      city: z.string().optional(),
-      country: z.string().optional(),
+      city: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
     })
     .optional(),
 });
