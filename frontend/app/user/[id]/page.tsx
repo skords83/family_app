@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useSSE } from '@/hooks/useSSE';
+import { useIdleTimer } from '@/hooks/useIdleTimer';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -50,6 +51,27 @@ export default function UserPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'tasks' | 'calendar' | 'rewards'>('tasks');
   const [notification, setNotification] = useState<{ text: string; ok: boolean } | null>(null);
+  const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCountdown = useCallback(() => {
+    setIdleCountdown(5);
+    countdownRef.current = setInterval(() => {
+      setIdleCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // Navigate home when idle timer fires (25s quiet → 5s countdown → home)
+  useIdleTimer(() => {
+    startCountdown();
+    setTimeout(() => router.push('/'), 5000);
+  }, 25_000);
 
   const showNotification = (text: string, ok = true) => {
     setNotification({ text, ok });
@@ -190,6 +212,20 @@ export default function UserPage() {
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-2xl px-6 py-3 text-sm font-sans font-semibold text-white shadow-xl"
           style={{ background: notification.ok ? '#5cb85c' : '#e85d3a' }}>
           {notification.text}
+        </div>
+      )}
+
+      {/* Idle countdown banner */}
+      {idleCountdown !== null && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-2xl px-6 py-3 text-sm font-sans font-semibold text-white shadow-xl flex items-center gap-3"
+          style={{ background: 'rgba(26,24,20,0.85)', backdropFilter: 'blur(8px)' }}>
+          <span>Zurück zur Startseite in {idleCountdown}s</span>
+          <button
+            onClick={() => { if (countdownRef.current) clearInterval(countdownRef.current); setIdleCountdown(null); }}
+            className="rounded-lg px-3 py-1 text-xs font-sans"
+            style={{ background: 'rgba(255,255,255,0.2)' }}>
+            Bleiben
+          </button>
         </div>
       )}
 

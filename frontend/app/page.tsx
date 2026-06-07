@@ -181,13 +181,13 @@ export default function HomePage() {
                       {/* Pending tasks (max 3) */}
                       <div className="space-y-1">
                         {pending.slice(0, 3).map(task => (
-                          <button key={task.id} onClick={() => handleTaskComplete(task.id, user.id)}
-                            className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5 transition-all active:scale-95"
-                            style={{ background: `${user.color}10` }}>
+                          <div key={task.id}
+                            className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5"
+                            style={{ background: `${user.color}10`, cursor: 'default' }}>
                             <div className="w-4 h-4 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
                             <span className="text-xs font-sans flex-1 truncate" style={{ color: '#1a1814' }}>{task.title}</span>
                             <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>⭐{task.points}</span>
-                          </button>
+                          </div>
                         ))}
                         {done.slice(0, 2).map(task => (
                           <div key={task.id} className="flex items-center gap-2 px-2 py-1 opacity-40">
