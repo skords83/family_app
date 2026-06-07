@@ -1,55 +1,75 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import './globals.css';
-import Sidebar from '@/components/ui/Sidebar';
-import Topbar from '@/components/ui/Topbar';
-import { BurnInProvider } from '@/components/burn-in';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import withPWA from '@ducanh2912/next-pwa';
 
-const inter = Inter({ subsets: ['latin'] });
+const pwa = withPWA({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  register: true,
+  skipWaiting: true,
+  workboxOptions: {
+    runtimeCaching: [
+      // SSE-Endpoint niemals cachen
+      {
+        urlPattern: /\/api\/events/,
+        handler: 'NetworkOnly',
+      },
+      // Schreibende Requests niemals cachen
+      {
+        urlPattern: ({ request }) =>
+          request.method === 'POST' ||
+          request.method === 'PATCH' ||
+          request.method === 'DELETE',
+        handler: 'NetworkOnly',
+      },
+      // API GET-Calls: bei Offline letzten Stand zeigen
+      {
+        urlPattern: /\/api\/.*/,
+        handler: 'StaleWhileRevalidate',
+        options: {
+          cacheName: 'api-cache',
+          expiration: {
+            maxEntries: 50,
+            maxAgeSeconds: 60 * 60 * 2,
+          },
+          cacheableResponse: {
+            statuses: [200],
+          },
+        },
+      },
+      // Statische Assets: Netz bevorzugen, bei Ausfall Cache
+      {
+        urlPattern: /^https?.*/,
+        handler: 'NetworkFirst',
+        options: {
+          cacheName: 'static-cache',
+          expiration: {
+            maxEntries: 100,
+            maxAgeSeconds: 60 * 60 * 24,
+          },
+          networkTimeoutSeconds: 10,
+        },
+      },
+    ],
+  },
+});
 
-export const metadata: Metadata = {
-  title: 'Family Organizer',
-  description: 'Family wall calendar and organizer',
-  viewport: 'width=device-width, initial-scale=1, user-scalable=no',
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '**' },
+      { protocol: 'http', hostname: '**' },
+    ],
+  },
+  async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${apiUrl}/api/:path*`,
+      },
+    ];
+  },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="de" style={{ height: '100%' }}>
-      <head>
-        <link
-          rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.x/dist/tabler-icons.min.css"
-        />
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#f5f2ee" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-      </head>
-      <body
-        className={inter.className}
-        style={{
-          background: '#f5f2ee',
-          color: '#1a1814',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          margin: 0,
-        }}
-      >
-        <OfflineBanner />
-        <BurnInProvider>
-          <Topbar />
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-            <Sidebar />
-            <main style={{ flex: 1, overflowY: 'auto' }}>
-              {children}
-            </main>
-          </div>
-        </BurnInProvider>
-      </body>
-    </html>
-  );
-}
+export default pwa(nextConfig);
