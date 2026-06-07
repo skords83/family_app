@@ -31,7 +31,7 @@ interface TaskTemplate {
   id: string;
   title: string;
   points: number;
-  assigned_to: string | string[] | null;   // legacy: single UUID or new: UUID[]
+  assigned_to: string | string[] | null;
   assigned_to_name?: string;
   recurrence: string;
   due_time: string | null;
@@ -60,6 +60,20 @@ interface RewardClaim {
   user_color: string;
   user_photo?: string;
   points_cost: number;
+}
+
+interface PendingTaskApproval {
+  id: string;
+  template_id: string;
+  assigned_to: string;
+  date: string;
+  completed_at: string;
+  title: string;
+  points: number;
+  user_name: string;
+  user_avatar: string;
+  user_photo?: string;
+  user_color: string;
 }
 
 type AdminTab = 'tasks' | 'rewards' | 'users' | 'points';
@@ -109,13 +123,14 @@ export default function AdminPage() {
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [claims, setClaims] = useState<RewardClaim[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingTaskApproval[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
 
   // Forms
   const [newTask, setNewTask] = useState({
     title: '',
     points: 1,
-    assigned_to: [] as string[],   // multi-select
+    assigned_to: [] as string[],
     recurrence: 'daily',
     due_time: '',
     weekdays: [] as string[],
@@ -132,17 +147,19 @@ export default function AdminPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [usersRes, templatesRes, rewardsRes, claimsRes] = await Promise.allSettled([
+    const [usersRes, templatesRes, rewardsRes, claimsRes, pendingRes] = await Promise.allSettled([
       fetch(`${API_BASE}/api/users`).then((r) => r.json()),
       fetch(`${API_BASE}/api/tasks/templates`).then((r) => r.json()),
       fetch(`${API_BASE}/api/rewards?admin=true`).then((r) => r.json()),
       fetch(`${API_BASE}/api/rewards/claims`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/tasks/instances/pending-approval`).then((r) => r.json()),
     ]);
 
     if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value)) setUsers(usersRes.value);
     if (templatesRes.status === 'fulfilled' && Array.isArray(templatesRes.value)) setTemplates(templatesRes.value);
     if (rewardsRes.status === 'fulfilled' && Array.isArray(rewardsRes.value)) setRewards(rewardsRes.value);
     if (claimsRes.status === 'fulfilled' && Array.isArray(claimsRes.value)) setClaims(claimsRes.value);
+    if (pendingRes.status === 'fulfilled' && Array.isArray(pendingRes.value)) setPendingApprovals(pendingRes.value);
   }, []);
 
   useEffect(() => {
@@ -170,15 +187,25 @@ export default function AdminPage() {
     if (Array.isArray(res)) setClaims(res);
   }, []);
 
+  const fetchPendingApprovals = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/instances/pending-approval`).then(r => r.json());
+    if (Array.isArray(res)) setPendingApprovals(res);
+  }, []);
+
   const handleRewardClaimed = useCallback(() => {
     fetchClaims();
     fetchRewards();
   }, [fetchClaims, fetchRewards]);
 
+  const handleTaskUpdated = useCallback(() => {
+    fetchTemplates();
+    fetchPendingApprovals();
+  }, [fetchTemplates, fetchPendingApprovals]);
+
   // SSE-Subscription nur wenn authentifiziert
   useSSE(authenticated ? {
     points_updated: fetchUsers,
-    task_updated: fetchTemplates,
+    task_updated: handleTaskUpdated,
     reward_claimed: handleRewardClaimed,
   } : {});
 
@@ -280,7 +307,6 @@ export default function AdminPage() {
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    // For weekday recurrence, encode selected days into recurrence string, e.g. "weekdays:mon,tue,wed"
     let recurrenceValue = newTask.recurrence;
     if (newTask.recurrence === 'weekdays') {
       if (newTask.weekdays.length === 0) {
@@ -394,6 +420,22 @@ export default function AdminPage() {
     }
   };
 
+  const handleApproveTask = async (instanceId: string) => {
+    const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: adminPin }),
+    });
+    if (res.ok) {
+      showNotification('Aufgabe bestätigt! Punkte gutgeschrieben.');
+      fetchPendingApprovals();
+      fetchUsers();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
   const handleManualPoints = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await fetch(`${API_BASE}/api/points/manual`, {
@@ -451,7 +493,7 @@ export default function AdminPage() {
   const tabConfig: { id: AdminTab; label: string; icon: string }[] = [
     { id: 'tasks', label: 'Aufgaben', icon: 'checklist' },
     { id: 'rewards', label: `Belohnungen${pendingClaims.length > 0 ? ` (${pendingClaims.length})` : ''}`, icon: 'gift' },
-    { id: 'users', label: 'Nutzer', icon: 'users' },
+    { id: 'users', label: `Nutzer${pendingApprovals.length > 0 ? ` (${pendingApprovals.length})` : ''}`, icon: 'users' },
     { id: 'points', label: 'Punkte', icon: 'star' },
   ];
 
@@ -562,7 +604,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Weekday picker — shown only when recurrence = weekdays */}
+                {/* Weekday picker */}
                 {newTask.recurrence === 'weekdays' && (
                   <div>
                     <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
@@ -644,6 +686,7 @@ export default function AdminPage() {
                     style={inputStyle}
                   />
                 </div>
+
                 {/* Requires approval toggle */}
                 <label
                   className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
@@ -662,6 +705,7 @@ export default function AdminPage() {
                     Muss von Elternteil bestätigt werden
                   </span>
                 </label>
+
                 <button
                   type="submit"
                   className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
@@ -935,31 +979,93 @@ export default function AdminPage() {
 
         {/* ── Users Tab ── */}
         {tab === 'users' && (
-          <div className="space-y-2">
-            {users.map((user) => (
+          <div className="space-y-4">
+
+            {/* Offene Aufgaben-Genehmigungen */}
+            {pendingApprovals.length > 0 && (
               <div
-                key={user.id}
-                className="flex items-center gap-3 rounded-xl px-4 py-3 border"
-                style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+                className="rounded-2xl border p-4"
+                style={{ background: '#fffbeb', borderColor: '#fbbf24' }}
               >
-                <UserAvatar user={user} size={44} />
-                <div className="flex-1">
-                  <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
-                  <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
-                    {user.role === 'parent'
-                      ? <><Icon name="crown" />&nbsp;Elternteil</>
-                      : <><Icon name="user" />&nbsp;Kind</>
-                    }
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
-                    <Icon name="star" />{user.points}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
+                <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: '#92400e' }}>
+                  <Icon name="clock" />
+                  Aufgaben – wartend auf Bestätigung
+                </h3>
+                <div className="space-y-2">
+                  {pendingApprovals.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-xl px-3 py-3 border"
+                      style={{ background: '#fef3c7', borderColor: '#fcd34d' }}
+                    >
+                      {item.user_photo ? (
+                        <img
+                          src={item.user_photo}
+                          alt={item.user_name}
+                          style={{
+                            width: 36, height: 36, borderRadius: '50%', objectFit: 'cover',
+                            flexShrink: 0, border: `2px solid ${item.user_color}`,
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                          background: item.user_color + '22', border: `2px solid ${item.user_color}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+                        }}>
+                          {item.user_avatar}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>
+                          {item.title}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
+                          {item.user_name} • {item.points} Pkt.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleApproveTask(item.id)}
+                        className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                        style={{ background: '#16a34a' }}
+                      >
+                        <Icon name="check" />
+                        Bestätigen
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* Nutzerliste */}
+            <div className="space-y-2">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+                >
+                  <UserAvatar user={user} size={44} />
+                  <div className="flex-1">
+                    <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
+                    <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
+                      {user.role === 'parent'
+                        ? <><Icon name="crown" />&nbsp;Elternteil</>
+                        : <><Icon name="user" />&nbsp;Kind</>
+                      }
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
+                      <Icon name="star" />{user.points}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
           </div>
         )}
 
@@ -1056,7 +1162,6 @@ export default function AdminPage() {
             className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto"
             style={{ background: 'var(--family-bg)', maxHeight: '92dvh' }}
           >
-            {/* Drawer header */}
             <div className="flex items-center gap-3 mb-5">
               <div className="flex-1">
                 <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--family-text3)' }}>Aufgabe bearbeiten</p>
@@ -1072,7 +1177,6 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
-              {/* Title */}
               <div>
                 <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Aufgabenname</label>
                 <input
@@ -1085,7 +1189,6 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* Points + Recurrence */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
@@ -1229,6 +1332,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
       {/* ── Edit Reward Drawer ── */}
       {editingReward && (
         <div
