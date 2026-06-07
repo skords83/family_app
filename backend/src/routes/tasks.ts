@@ -79,6 +79,39 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/tasks/instances/pending-approval - all completed but not yet approved instances
+// IMPORTANT: must be registered before /:id/... routes to prevent Express matching
+// "pending-approval" as :id
+tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        ti.id,
+        ti.template_id,
+        ti.assigned_to,
+        ti.date,
+        ti.completed_at,
+        tt.title,
+        tt.points,
+        u.name        AS user_name,
+        u.avatar      AS user_avatar,
+        u.photo       AS user_photo,
+        u.color       AS user_color
+      FROM task_instances ti
+      JOIN task_templates tt ON ti.template_id = tt.id
+      JOIN users u           ON ti.assigned_to  = u.id
+      WHERE ti.completed_at IS NOT NULL
+        AND ti.approved_at  IS NULL
+        AND tt.requires_approval = true
+      ORDER BY ti.completed_at ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching pending approvals:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/:id/complete - mark task as completed (or pending if requires_approval)
 tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
   try {
