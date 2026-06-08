@@ -7,7 +7,7 @@ import CalendarWidget from '@/components/widgets/CalendarWidget';
 import WeatherWidget from '@/components/widgets/WeatherWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
 import ImmichWidget from '@/components/widgets/ImmichWidget';
-import WasteWidget from '@/components/widgets/WasteWidget';          // ← neu
+import WasteWidget from '@/components/widgets/WasteWidget';
 import AvatarButton from '@/components/ui/AvatarButton';
 import Link from 'next/link';
 
@@ -20,7 +20,6 @@ interface TaskInstance { id: string; title: string; points: number; assigned_to:
 interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
-// ← neu: Waste-Response ist der direkte API-Response (kein data-Wrapper wie bei Weather)
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
 interface WasteTodayData { active: boolean; events: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
 
@@ -49,19 +48,19 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
-  const [waste, setWaste] = useState<WasteTodayData | undefined>();  // ← neu
+  const [waste, setWaste] = useState<WasteTodayData | undefined>();
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [ur, tr, wr, cr, mr, ir, wasteR] = await Promise.allSettled([  // ← wasteR hinzu
+      const [ur, tr, wr, cr, mr, ir, wasteR] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),  // ← neu
+        fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value)) setTasks(tr.value);
@@ -69,7 +68,7 @@ export default function HomePage() {
       if (cr.status === 'fulfilled' && cr.value?.events) setCalendar({ events: cr.value.events, fetched_at: cr.value.fetched_at });
       if (mr.status === 'fulfilled' && mr.value?.byDate) setMeals({ byDate: mr.value.byDate, fetched_at: mr.value.fetched_at });
       if (ir.status === 'fulfilled' && ir.value?.data) setImmich({ data: ir.value.data, fetched_at: ir.value.fetched_at });
-      if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);  // ← neu
+      if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -92,17 +91,6 @@ export default function HomePage() {
     reward_claimed: fetchUsers,
     config_updated: useCallback(() => window.location.reload(), []),
   });
-
-  const handleTaskComplete = async (taskId: string, userId: string) => {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId }),
-    });
-    // Optimistisches Update — SSE aktualisiert tasks + users im Hintergrund
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t));
-  };
 
   const handleImmichRefresh = async () => {
     try {
@@ -135,21 +123,17 @@ export default function HomePage() {
       {/* Main 2-col grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        {/* LEFT col (2/3): Calendar big + tasks below */}
+        {/* LEFT col (2/3): Calendar + tasks */}
         <div className="lg:col-span-2 flex flex-col gap-5">
 
-          {/* Calendar widget – prominent */}
           <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
           {/* Tasks per user */}
           {!loading && users.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
-                  Aufgaben heute
-                </h2>
-                <Link href="/tasks" className="text-xs font-sans" style={{ color: '#e85d3a' }}>Alle →</Link>
-              </div>
+              <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+                Aufgaben heute
+              </h2>
               <div className={`grid gap-3 ${users.length <= 2 ? 'grid-cols-2' : users.length === 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4'}`}>
                 {users.map(user => {
                   const userTasks = tasks.filter(t => t.assigned_to === user.id);
@@ -165,7 +149,12 @@ export default function HomePage() {
                   const bg = PASTELS[user.color] ?? `${user.color}18`;
 
                   return (
-                    <div key={user.id} className="rounded-2xl p-4" style={{ background: bg, border: `0.5px solid ${user.color}25` }}>
+                    <Link
+                      key={user.id}
+                      href={`/user/${user.id}`}
+                      className="rounded-2xl p-4 block active:opacity-75 transition-opacity"
+                      style={{ background: bg, border: `0.5px solid ${user.color}25` }}
+                    >
                       {/* User header */}
                       <div className="flex items-center gap-2 mb-2">
                         <AvatarButton user={{ ...user, tasks_total: userTasks.length, tasks_done: done.length }} size="topbar" />
@@ -183,7 +172,7 @@ export default function HomePage() {
                         {pending.slice(0, 3).map(task => (
                           <div key={task.id}
                             className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5"
-                            style={{ background: `${user.color}10`, cursor: 'default' }}>
+                            style={{ background: `${user.color}10` }}>
                             <div className="w-4 h-4 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
                             <span className="text-xs font-sans flex-1 truncate" style={{ color: '#1a1814' }}>{task.title}</span>
                             <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>⭐{task.points}</span>
@@ -201,7 +190,7 @@ export default function HomePage() {
                           <p className="text-xs font-sans text-center py-2" style={{ color: '#a09d99' }}>Keine Aufgaben</p>
                         )}
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>
@@ -213,7 +202,7 @@ export default function HomePage() {
         <div className="flex flex-col gap-5">
           <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
           <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
-          <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />  {/* ← neu */}
+          <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
           <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
         </div>
 
