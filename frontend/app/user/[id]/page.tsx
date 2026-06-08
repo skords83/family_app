@@ -49,7 +49,6 @@ export default function UserPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'tasks' | 'calendar' | 'rewards'>('tasks');
   const [notification, setNotification] = useState<{ text: string; ok: boolean } | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -199,14 +198,9 @@ export default function UserPage() {
   const affordable = rewards.filter(r => r.points_cost <= user.points);
   const unaffordable = rewards.filter(r => r.points_cost > user.points);
 
-  const TABS = [
-    { key: 'tasks',    label: `Aufgaben (${pending.length})` },
-    { key: 'calendar', label: 'Kalender'                     },
-    { key: 'rewards',  label: 'Belohnungen'                  },
-  ] as const;
-
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4" style={{ minHeight: '100vh', background: '#f5f2ee' }}>
+
       {/* Notification */}
       {notification && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-2xl px-6 py-3 text-sm font-sans font-semibold text-white shadow-xl"
@@ -230,13 +224,12 @@ export default function UserPage() {
       )}
 
       {/* Back */}
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm font-sans mb-6 transition-opacity hover:opacity-70" style={{ color: '#a09d99' }}>
+      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm font-sans mb-3 transition-opacity hover:opacity-70" style={{ color: '#a09d99' }}>
         <i className="ti ti-arrow-left" style={{ fontSize: 16 }} /> Zurück
       </button>
 
-      {/* Profile hero */}
-      <div className="rounded-2xl p-6 mb-6 flex items-center gap-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-        {/* Avatar with progress ring */}
+      {/* Profile hero — full width */}
+      <div className="rounded-2xl p-5 mb-4 flex items-center gap-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
         <div className="relative flex-shrink-0">
           {user.photo ? (
             <img src={user.photo} alt={user.name} className="rounded-full object-cover block" style={{ width: 72, height: 72, border: `3px solid ${user.color}` }} />
@@ -253,7 +246,6 @@ export default function UserPage() {
               strokeLinecap="round" />
           </svg>
         </div>
-
         <div className="flex-1">
           <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>{user.name}</h1>
           <p className="text-sm font-sans mt-0.5" style={{ color: '#a09d99' }}>{user.role === 'parent' ? 'Elternteil' : 'Kind'}</p>
@@ -265,154 +257,222 @@ export default function UserPage() {
               {done.length}/{tasks.length} erledigt · {pct}%
             </div>
           </div>
-          {/* Progress bar */}
           {tasks.length > 0 && (
-            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: '#f0ede8' }}>
+            <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ background: '#f0ede8', maxWidth: 280 }}>
               <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: user.color }} />
             </div>
           )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-5">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className="flex-1 py-2.5 rounded-xl text-sm font-sans font-medium transition-all"
-            style={{
-              background: tab === t.key ? user.color : '#fff',
-              color: tab === t.key ? '#fff' : '#6b6760',
-              border: `0.5px solid ${tab === t.key ? user.color : 'rgba(0,0,0,0.1)'}`,
-            }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Two-column grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 14, alignItems: 'start' }}>
 
-      {/* TASKS TAB */}
-      {tab === 'tasks' && (
-        <div className="space-y-2">
-          {pending.length === 0 && done.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-4xl mb-3">🎉</div>
-              <p className="font-sans" style={{ color: '#a09d99' }}>Keine Aufgaben für heute!</p>
-            </div>
-          )}
-          {pending.length === 0 && done.length > 0 && (
-            <div className="text-center py-8 rounded-2xl" style={{ background: '#f2fbf2' }}>
-              <div className="text-4xl mb-2">🏆</div>
-              <p className="font-sans font-semibold" style={{ color: '#5cb85c' }}>Alle Aufgaben erledigt!</p>
-            </div>
-          )}
-          {pending.map(task => (
-            <button key={task.id} onClick={() => handleComplete(task.id)}
-              className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-95"
-              style={{ background: `${user.color}12`, border: `0.5px solid ${user.color}25` }}>
-              <div className="w-5 h-5 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
-              <span className="flex-1 text-sm font-sans font-medium" style={{ color: '#1a1814' }}>{task.title}</span>
-              {task.due_time && <span className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time}</span>}
-              <span className="text-xs font-sans rounded-full px-2 py-0.5" style={{ background: `${user.color}18`, color: user.color }}>+{task.points}⭐</span>
-            </button>
-          ))}
-          {done.length > 0 && (
-            <>
-              <p className="text-[10px] font-sans font-semibold uppercase tracking-wider pt-2" style={{ color: '#a09d99' }}>Erledigt</p>
-              {done.map(task => (
-                <div key={task.id} className="flex items-center gap-3 rounded-xl px-4 py-3 opacity-50" style={{ background: 'rgba(0,0,0,0.03)' }}>
-                  <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: user.color }}>
-                    <i className="ti ti-check" style={{ fontSize: 10, color: '#fff' }} />
-                  </div>
-                  <span className="flex-1 text-sm font-sans line-through" style={{ color: '#6b6760' }}>{task.title}</span>
-                  <span className="text-xs font-sans" style={{ color: '#a09d99' }}>+{task.points}⭐</span>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      )}
+        {/* LEFT — Aufgaben + Kalender */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* CALENDAR TAB */}
-      {tab === 'calendar' && (
-        <div>
-          {userEvents.length === 0 ? (
-            <div className="text-center py-12 rounded-2xl" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-              <div className="text-3xl mb-3">📅</div>
-              <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Termine gefunden</p>
-              <p className="text-xs font-sans mt-1" style={{ color: '#c0bbb5' }}>
-                Kalender-Name muss "{user.name}" enthalten
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(eventsByDate).map(([date, dayEvs]) => (
-                <div key={date}>
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
-                    {formatDateLabel(date)}
-                  </p>
-                  <div className="space-y-1.5">
-                    {dayEvs.map(ev => (
-                      <div key={ev.id} className="flex items-start gap-3 rounded-xl px-4 py-3"
-                        style={{ background: '#f7f4f0', borderLeft: `3px solid ${ev.color ?? user.color}`, borderRadius: '0 10px 10px 0' }}>
-                        <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 52 }}>
-                          {formatEventTime(ev)}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{ev.title}</p>
-                          {ev.calendarName && (
-                            <p className="text-xs font-sans mt-0.5" style={{ color: ev.color ?? user.color, opacity: 0.8 }}>{ev.calendarName}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* REWARDS TAB */}
-      {tab === 'rewards' && (
-        <div className="space-y-3">
-          {affordable.length > 0 && (
-            <>
-              <p className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#5cb85c' }}>Verfügbar</p>
-              {affordable.map(r => (
-                <button key={r.id} onClick={() => handleClaim(r.id)}
-                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-95"
-                  style={{ background: '#f2fbf2', border: '0.5px solid #5cb85c30' }}>
-                  <span className="text-xl">🎁</span>
-                  <span className="flex-1 text-sm font-sans font-medium" style={{ color: '#1a1814' }}>{r.title}</span>
-                  <span className="text-sm font-sans font-semibold" style={{ color: '#5cb85c' }}>-{r.points_cost}⭐</span>
+          {/* Aufgaben */}
+          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <i className="ti ti-checks" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+              Aufgaben heute ({tasks.length})
+            </p>
+            {pending.length === 0 && done.length === 0 && (
+              <div className="text-center py-10">
+                <div className="text-4xl mb-3">🎉</div>
+                <p className="font-sans text-sm" style={{ color: '#a09d99' }}>Keine Aufgaben für heute!</p>
+              </div>
+            )}
+            {pending.length === 0 && done.length > 0 && (
+              <div className="text-center py-6 rounded-xl mb-3" style={{ background: '#f2fbf2' }}>
+                <div className="text-3xl mb-1">🏆</div>
+                <p className="font-sans font-semibold text-sm" style={{ color: '#5cb85c' }}>Alle Aufgaben erledigt!</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {pending.map(task => (
+                <button key={task.id} onClick={() => handleComplete(task.id)}
+                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                  style={{ background: `${user.color}10`, border: `0.5px solid ${user.color}30` }}>
+                  <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
+                  <span className="flex-1 text-sm font-sans font-medium" style={{ color: '#1a1814' }}>{task.title}</span>
+                  {task.due_time && <span className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time}</span>}
+                  <span className="text-xs font-sans rounded-full px-2.5 py-0.5" style={{ background: `${user.color}18`, color: user.color }}>+{task.points}⭐</span>
                 </button>
               ))}
-            </>
-          )}
-          {unaffordable.length > 0 && (
-            <>
-              <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mt-2" style={{ color: '#a09d99' }}>Noch nicht verfügbar</p>
-              {unaffordable.map(r => (
-                <div key={r.id} className="flex items-center gap-3 rounded-xl px-4 py-3 opacity-50"
-                  style={{ background: '#f5f2ee', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-                  <span className="text-xl">🔒</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-sans" style={{ color: '#6b6760' }}>{r.title}</p>
-                    <p className="text-xs font-sans" style={{ color: '#a09d99' }}>Noch {r.points_cost - user.points}⭐ nötig</p>
+              {done.length > 0 && (
+                <>
+                  {pending.length > 0 && <div style={{ height: 4 }} />}
+                  <p className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>Erledigt</p>
+                  {done.map(task => (
+                    <div key={task.id} className="flex items-center gap-3 rounded-xl px-4 py-3 opacity-50" style={{ background: 'rgba(0,0,0,0.03)' }}>
+                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: user.color }}>
+                        <i className="ti ti-check" style={{ fontSize: 11, color: '#fff' }} />
+                      </div>
+                      <span className="flex-1 text-sm font-sans line-through" style={{ color: '#6b6760' }}>{task.title}</span>
+                      <span className="text-xs font-sans" style={{ color: '#a09d99' }}>+{task.points}⭐</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Kalender */}
+          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <i className="ti ti-calendar" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+              Heute &amp; morgen
+            </p>
+            {userEvents.length === 0 ? (
+              <div className="text-center py-8 rounded-xl" style={{ background: '#f7f4f0' }}>
+                <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Termine</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(eventsByDate).map(([date, dayEvs]) => (
+                  <div key={date}>
+                    <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
+                      {formatDateLabel(date)}
+                    </p>
+                    <div className="space-y-1.5">
+                      {dayEvs.map(ev => (
+                        <div key={ev.id} className="flex items-start gap-3 px-4 py-3"
+                          style={{ background: '#f7f4f0', borderLeft: `3px solid ${ev.color ?? user.color}`, borderRadius: '0 10px 10px 0' }}>
+                          <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 52 }}>
+                            {formatEventTime(ev)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{ev.title}</p>
+                            {ev.calendarName && (
+                              <p className="text-xs font-sans mt-0.5" style={{ color: ev.color ?? user.color, opacity: 0.8 }}>{ev.calendarName}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <span className="text-sm font-sans" style={{ color: '#a09d99' }}>{r.points_cost}⭐</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>{/* end LEFT */}
+
+        {/* RIGHT — Punktestand + Streak + Belohnungen */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Punktestand */}
+          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <i className="ti ti-star" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+              Punktestand
+            </p>
+            <div className="flex items-center gap-2 mb-2" style={{ fontSize: 40, fontWeight: 500, color: user.color }}>
+              ⭐ {user.points}
+            </div>
+            <p className="text-sm font-sans" style={{ color: '#a09d99', lineHeight: 1.6 }}>
+              {done.length} von {tasks.length} Aufgaben erledigt
+              {pending.length > 0 && (
+                <><br />Noch {pending.reduce((s, t) => s + t.points, 0)} Punkte heute möglich</>
+              )}
+            </p>
+          </div>
+
+          {/* Streak */}
+          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <i className="ti ti-flame" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+              Diese Woche
+            </p>
+            <WeekStreak color={user.color} tasksDone={done.length} tasksTotal={tasks.length} />
+          </div>
+
+          {/* Belohnungen */}
+          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <i className="ti ti-gift" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+              Belohnungen
+            </p>
+            {rewards.length === 0 && (
+              <div className="text-center py-8 rounded-xl" style={{ background: '#f7f4f0' }}>
+                <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Belohnungen verfügbar</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {affordable.map(r => (
+                <button key={r.id} onClick={() => handleClaim(r.id)}
+                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                  style={{ background: '#f2fbf2', border: '0.5px solid #5cb85c30' }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#dcfce7' }}>
+                    <i className="ti ti-gift" style={{ fontSize: 20, color: '#16a34a' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#5cb85c' }}>⭐ {r.points_cost} Punkte · du hast genug!</p>
+                  </div>
+                  <span className="text-xs font-sans rounded-full px-3 py-1 font-medium flex-shrink-0" style={{ background: '#bbf7d0', color: '#15803d' }}>Einlösen</span>
+                </button>
+              ))}
+              {unaffordable.map(r => (
+                <div key={r.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
+                  style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)', opacity: 0.6 }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
+                    <i className="ti ti-gift" style={{ fontSize: 20, color: '#a09d99' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans truncate" style={{ color: '#6b6760' }}>{r.title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>⭐ {r.points_cost} · noch {r.points_cost - user.points} fehlen</p>
+                  </div>
                 </div>
               ))}
-            </>
-          )}
-          {rewards.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-3xl mb-3">🎁</div>
-              <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Belohnungen verfügbar</p>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+
+        </div>{/* end RIGHT */}
+
+      </div>{/* end grid */}
+    </div>
+  );
+}
+
+function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone: number; tasksTotal: number }) {
+  const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  // Wochentag 0=So → index in Mo-So-Raster
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, marginBottom: 4 }}>
+        {days.map(d => (
+          <div key={d} style={{ textAlign: 'center', fontSize: 10, color: '#a09d99' }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+        {days.map((_, i) => {
+          const isToday = i === todayIdx;
+          const isPast = i < todayIdx;
+          return (
+            <div key={i} style={{
+              aspectRatio: '1',
+              borderRadius: 6,
+              background: isToday && tasksTotal > 0 && tasksDone === tasksTotal
+                ? `${color}30`
+                : isPast ? `${color}20` : 'rgba(0,0,0,0.04)',
+              border: isToday ? `1.5px solid ${color}` : '1.5px solid transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {isPast && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
+              {isToday && tasksTotal > 0 && tasksDone === tasksTotal && (
+                <i className="ti ti-check" style={{ fontSize: 11, color }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-sm font-sans mt-2" style={{ color: '#a09d99' }}>
+        {todayIdx > 0 ? `${todayIdx} Tage diese Woche aktiv` : 'Woche beginnt heute'}
+        {todayIdx >= 2 && <span style={{ color, fontWeight: 500 }}> · Streak!</span>}
+      </p>
     </div>
   );
 }
