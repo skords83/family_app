@@ -5,9 +5,11 @@ const pwa = withPWA({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  cleanupOutdatedCaches: true,
   workboxOptions: {
+    clientsClaim: true,
     runtimeCaching: [
-      // SSE-Endpoint niemals cachen
+      // SSE-Endpoint und events-Route niemals cachen
       {
         urlPattern: /\/api\/events/,
         handler: 'NetworkOnly',
