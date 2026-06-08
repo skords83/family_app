@@ -22,7 +22,10 @@ export function BurnInProvider({ children, config }: BurnInProviderProps) {
         style={{
           transform: `translate(${shift.x}px, ${shift.y}px)`,
           transition: "transform 4s ease-in-out",
-          minHeight: "100%",
+          display: "flex",
+          flex: 1,
+          minHeight: "100vh",
+          minWidth: 0,
         }}
       >
         {children}
