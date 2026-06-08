@@ -66,8 +66,8 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
                   <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedTasks.length}/{userTasks.length} erledigt</p>
                 </div>
               </Link>
-              <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ color: user.color, background: `${user.color}18` }}>
-                ⭐{user.points}
+              <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full flex-shrink-0 flex items-center gap-1" style={{ color: user.color, background: `${user.color}18` }}>
+                <i className="ti ti-star-filled" style={{ fontSize: 10, color: '#c9a020' }} aria-hidden="true" />{user.points}
               </span>
             </div>
 

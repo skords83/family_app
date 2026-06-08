@@ -96,12 +96,14 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
           Essensplan
         </h3>
-        <div className="flex items-center gap-2">
-          {stale && <span className="text-xs" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
+        <div className="flex items-center gap-1.5">
           {fetched_at && (
-            <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-              {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-            </span>
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: stale ? '#e0a020' : '#3a9a6e', flexShrink: 0, display: 'inline-block' }} />
+              <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+                {stale ? 'veraltet' : 'aktuell'}
+              </span>
+            </>
           )}
         </div>
       </div>
@@ -125,7 +127,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
                     <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: '#f5f2ee' }}>
                       <span className="text-sm flex-shrink-0">{SLOT_ICONS[slot]}</span>
                       <div>
-                        <p className="text-[10px] font-sans font-medium" style={{ color: '#a09d99' }}>{SLOT_LABELS[slot]}</p>
+                        <p className="text-[10px] font-sans font-medium" style={{ color: '#6b6760' }}>{SLOT_LABELS[slot]}</p>
                         <p className="text-xs font-sans" style={{ color: '#1a1814' }}>
                           {daySlots[slot]!.map(r => r.recipeName ?? '–').join(', ')}
                         </p>

@@ -74,12 +74,14 @@ export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidg
     <div style={card}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>Wetter</h3>
-        <div className="flex items-center gap-2">
-          {stale && <span className="text-xs" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
+        <div className="flex items-center gap-1.5">
           {fetched_at && (
-            <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-              {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-            </span>
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: stale ? '#e0a020' : '#3a9a6e', flexShrink: 0, display: 'inline-block' }} />
+              <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+                {stale ? 'veraltet' : 'aktuell'}
+              </span>
+            </>
           )}
         </div>
       </div>
@@ -89,7 +91,7 @@ export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidg
         <div>
           <p className="text-4xl font-bold" style={{ color: '#1a1814', fontFamily: 'Georgia, serif' }}>{Math.round(data.temperature)}°C</p>
           <p className="text-sm font-sans" style={{ color: '#6b6760' }}>{getWeatherDesc(data.weathercode)}</p>
-          <p className="text-xs font-sans" style={{ color: '#a09d99' }}>💨 {data.windspeed} km/h</p>
+          <p className="text-xs font-sans flex items-center gap-1" style={{ color: '#a09d99' }}><i className="ti ti-wind" style={{ fontSize: 12 }} aria-hidden="true" /> {data.windspeed} km/h</p>
         </div>
       </div>
 

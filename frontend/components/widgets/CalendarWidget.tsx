@@ -116,12 +116,14 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
           Kalender
         </h3>
-        <div className="flex items-center gap-2">
-          {stale && <span className="text-xs font-sans" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
+        <div className="flex items-center gap-1.5">
           {fetched_at && (
-            <span className="text-xs font-sans" style={{ color: '#a09d99' }}>
-              {new Date(fetched_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-            </span>
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: stale ? '#e0a020' : '#3a9a6e', flexShrink: 0, display: 'inline-block' }} />
+              <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+                {stale ? 'veraltet' : 'aktuell'}
+              </span>
+            </>
           )}
         </div>
       </div>

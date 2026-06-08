@@ -142,29 +142,25 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     return (
       <div style={card}>
         {header}
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1 flex-shrink-0">
+        <div className="flex items-start gap-3">
+          <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
             {events.map(e => (
-              <div key={e.id} style={{
-                width: 5, height: 44,
-                background: BIN_CONFIG[e.type].bg,
-                borderRadius: 3,
-              }} />
+              <span key={e.id} className="inline-flex items-center gap-1.5 text-xs font-sans font-medium rounded-full px-2.5 py-1"
+                style={{
+                  background: `${BIN_CONFIG[e.type].bg}22`,
+                  border: `0.5px solid ${BIN_CONFIG[e.type].bg}`,
+                  color: BIN_CONFIG[e.type].border,
+                }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: BIN_CONFIG[e.type].bg, display: 'inline-block', flexShrink: 0 }} />
+                {BIN_CONFIG[e.type].label}
+              </span>
             ))}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="text-[15px] font-sans font-medium"
-              style={{ color: '#1a1814', margin: 0, lineHeight: 1.3 }}>
-              {binLabels.join(' + ')}
-            </p>
-            <p className="text-[12px] font-sans"
-              style={{ color: '#a09d99', margin: '3px 0 0' }}>
+            <p className="w-full text-[12px] font-sans mt-1" style={{ color: '#a09d99' }}>
               {prep} rausstellen · Abfuhr {collection}
             </p>
           </div>
           {daysLabel && (
-            <p className="text-[13px] font-sans flex-shrink-0"
-              style={{ color: '#a09d99' }}>{daysLabel}</p>
+            <p className="text-[13px] font-sans flex-shrink-0" style={{ color: '#a09d99' }}>{daysLabel}</p>
           )}
         </div>
       </div>
@@ -197,8 +193,8 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
             style={{ fontSize: titleSize, color: '#1a1814', margin: '3px 0', lineHeight: 1.2 }}>
             {binLabels.join(' + ')}
           </p>
-          <p className="text-[13px] font-sans" style={{ color: '#a09d99', margin: 0 }}>
-            🕕 {timeText}
+          <p className="text-[13px] font-sans flex items-center gap-1" style={{ color: '#a09d99', margin: 0 }}>
+            <i className="ti ti-clock" style={{ fontSize: 13 }} aria-hidden="true" /> {timeText}
           </p>
         </div>
         <div className="text-[12px] font-sans font-medium rounded-lg px-3 py-1.5 flex-shrink-0"
