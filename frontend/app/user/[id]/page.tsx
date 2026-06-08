@@ -197,7 +197,10 @@ export default function UserPage() {
     })
     .filter(e => {
       const d = e.start.split('T')[0];
-      return d >= todayStr && d <= tomorrowStr;
+      if (d < todayStr || d > tomorrowStr) return false;
+      // Vergangene Termine heute ausblenden (Ganztags immer zeigen)
+      if (d === todayStr && !e.allDay && new Date(e.start) < now) return false;
+      return true;
     })
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
