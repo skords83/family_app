@@ -38,20 +38,34 @@ const SLOT_BG: Record<Slot, string> = {
   Snack: '#f2fbf2',
 };
 
+/** Gibt YYYY-MM-DD in Ortszeit zurück – nie toISOString() verwenden (UTC-Versatz!). */
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getTodayStr(): string {
+  return toLocalDateStr(new Date());
+}
+
+function getTomorrowStr(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return toLocalDateStr(d);
+}
+
 function formatDateLabel(dateStr: string): string {
+  if (dateStr === getTodayStr()) return 'Heute';
+  if (dateStr === getTomorrowStr()) return 'Morgen';
+  // 'T12:00:00' anhängen damit new Date() local midnight-Versatz vermeidet
   const date = new Date(dateStr + 'T12:00:00');
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const todayStr = today.toISOString().split('T')[0];
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
-  if (dateStr === todayStr) return 'Heute';
-  if (dateStr === tomorrowStr) return 'Morgen';
   return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 function isToday(dateStr: string): boolean {
-  return dateStr === new Date().toISOString().split('T')[0];
+  return dateStr === getTodayStr();
 }
 
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
@@ -81,7 +95,8 @@ export default function MealsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const today = new Date().toISOString().split('T')[0];
+  // ✅ Ortszeit-sicher — kein UTC-Versatz
+  const today = getTodayStr();
   const sortedDates = Object.keys(byDate)
     .filter(d => d >= today)
     .sort()
@@ -204,12 +219,10 @@ export default function MealsPage() {
                                   className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                                   style={{ border: '0.5px solid rgba(0,0,0,0.07)' }}
                                   onError={e => {
-                                    // Bild nicht erreichbar → Element ausblenden
                                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                                   }}
                                 />
                               ) : (
-                                // Platzhalter wenn kein Bild vorhanden
                                 <div
                                   className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-base"
                                   style={{ background: SLOT_BG[slot], border: '0.5px solid rgba(0,0,0,0.05)' }}

@@ -28,8 +28,14 @@ const SLOT_ICONS: Record<Slot, string> = {
 };
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
-// ✅ todayStr and tomorrowStr come from the caller (client-side state),
-//    so this function is now pure and safe to call during render.
+/** Ortszeit-sicheres YYYY-MM-DD — nie toISOString() (UTC-Versatz!). */
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
   const date = new Date(dateStr + 'T12:00:00');
   if (dateStr === todayStr) return 'Heute';
@@ -43,7 +49,7 @@ function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
 }
 
 export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsWidgetProps) {
-  // ✅ null on server render → no hydration mismatch
+  // null on server render → kein Hydration-Mismatch
   const todayStr = useClientDateStr();
 
   if (loading) {
@@ -62,7 +68,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
 
   const stale = isStale(fetched_at);
 
-  // Before hydration: render shell without any date-dependent content
+  // Vor Hydration: leere Shell ohne datumsabhängigen Inhalt
   if (!todayStr) {
     return (
       <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
@@ -75,12 +81,13 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
     );
   }
 
-  // Build tomorrow string client-side (safe — only reached after hydration)
+  // ✅ toLocalDateStr statt toISOString — kein UTC-Versatz in Berlin (UTC+2)
   const tomorrowDate = new Date(todayStr + 'T00:00:00');
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+  const tomorrowStr = toLocalDateStr(tomorrowDate);
 
-  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 1);
+  // ✅ slice(0, 4): heute + die nächsten 3 Tage anzeigen (war fälschlich 1)
+  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 4);
 
   return (
     <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
