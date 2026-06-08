@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AvatarButton from '@/components/ui/AvatarButton';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -108,12 +109,13 @@ export default function MembersPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>Familienmitglieder</h1>
-          <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>{users.length} Mitglieder</p>
-        </div>
+    <div>
+      <PageHeader title="Familienmitglieder" variant="page" />
+
+      <div className="px-6 pb-6">
+      {/* Aktionsleiste */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-sans" style={{ color: '#a09d99' }}>{users.length} Mitglieder</p>
         <button
           onClick={openAdd}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-sans font-medium text-white transition-all active:scale-95"
@@ -150,7 +152,9 @@ export default function MembersPage() {
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl px-3 py-2.5 text-center" style={{ background: '#f5f2ee' }}>
-                    <div className="text-lg font-sans font-semibold" style={{ color: u.color }}>⭐ {u.points}</div>
+                    <div className="text-lg font-sans font-semibold flex items-center justify-center gap-1" style={{ color: u.color }}>
+                      <i className="ti ti-star-filled" style={{ fontSize: 13, color: '#c9a020' }} aria-hidden="true" /> {u.points}
+                    </div>
                     <div className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Punkte</div>
                   </div>
                   <div className="rounded-xl px-3 py-2.5 text-center" style={{ background: '#f5f2ee' }}>
@@ -316,6 +320,7 @@ export default function MembersPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

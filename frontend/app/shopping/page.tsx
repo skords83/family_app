@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -263,18 +264,16 @@ export default function ShoppingPage() {
   // ── JSX ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 max-w-3xl">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>
-            Einkaufsliste
-          </h1>
-          <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>
-            {pending.length} Artikel offen
-            {done.length > 0 && ` · ${done.length} erledigt`}
-          </p>
-        </div>
+    <div>
+      <PageHeader title="Einkaufsliste" variant="page" />
+
+      <div className="px-6 pb-6 max-w-3xl">
+      {/* Aktionsleiste */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-sans" style={{ color: '#a09d99' }}>
+          {pending.length} Artikel offen
+          {done.length > 0 && ` · ${done.length} erledigt`}
+        </p>
         <div className="flex items-center gap-2">
           <button
             onClick={refreshNoriish}
@@ -463,6 +462,7 @@ export default function ShoppingPage() {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

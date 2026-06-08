@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import PinModal from '@/components/ui/PinModal';
 import { useSSE } from '@/hooks/useSSE';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -507,7 +508,9 @@ export default function AdminPage() {
   } as React.CSSProperties;
 
   return (
-    <main className="min-h-screen p-4" style={{ background: 'var(--family-bg)' }}>
+    <main className="min-h-screen" style={{ background: 'var(--family-bg)' }}>
+      <PageHeader title="Einstellungen" variant="page" />
+
       {/* Notification */}
       {notification && (
         <div
@@ -518,20 +521,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6 max-w-2xl mx-auto">
-        <button
-          onClick={() => router.push('/')}
-          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl border transition-all active:scale-95"
-          style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf', color: 'var(--family-text2)' }}
-        >
-          <Icon name="arrow-left" />
-        </button>
-        <h1 className="text-xl font-bold flex-1 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
-          <Icon name="settings" className="text-[var(--family-accent)]" />
-          Admin
-        </h1>
-      </div>
+      <div className="px-4 pb-4 max-w-2xl mx-auto">
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 max-w-2xl mx-auto overflow-x-auto pb-1">
@@ -1437,6 +1427,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      </div>
     </main>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -103,19 +104,13 @@ export default function MealsPage() {
     .slice(0, 7);
 
   return (
-    <div className="p-6 max-w-2xl">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>
-            Essensplan
-          </h1>
-          <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>
-            {fetchedAt
-              ? `Aktualisiert: ${new Date(fetchedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
-              : 'Norish-Synchronisation'}
-          </p>
-        </div>
+    <div>
+      <PageHeader title="Essensplan" variant="page" />
+
+      <div className="px-6 pb-6 max-w-2xl">
+      {/* Refresh button — jetzt rechts neben dem PageHeader-Titel wäre ideal,
+          als Workaround bleibt er als kleiner floating Button */}
+      <div className="flex justify-end mb-4">
         <button
           onClick={load}
           className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-black/5"
@@ -261,6 +256,7 @@ export default function MealsPage() {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

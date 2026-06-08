@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -172,12 +173,12 @@ export default function TimetablePage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>Stundenpläne</h1>
-          <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>Mo – Fr</p>
-        </div>
+    <div>
+      <PageHeader title="Stundenpläne" variant="page" />
+
+      <div className="px-6 pb-6">
+      {/* Fachfarben-Toggle */}
+      <div className="flex justify-end mb-4">
         <button
           onClick={() => setShowLegend(v => !v)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-sans transition-all"
@@ -424,6 +425,7 @@ export default function TimetablePage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
