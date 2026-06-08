@@ -86,8 +86,8 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = toLocalDateStr(tomorrowDate);
 
-  // ✅ slice(0, 4): heute + die nächsten 3 Tage anzeigen (war fälschlich 1)
-  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 4);
+  // Nur heute anzeigen — Ausblick gibt es in der Gesamtübersicht
+  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 1);
 
   return (
     <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
