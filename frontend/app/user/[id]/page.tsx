@@ -25,17 +25,24 @@ interface Reward {
   available_to: string | null; active: boolean;
 }
 
+// Lokales Datum als YYYY-MM-DD ohne UTC-Verschiebung
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function formatEventTime(event: CalendarEvent): string {
   if (event.allDay) return 'Ganztags';
   return new Date(event.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
+
 function formatDateLabel(dateStr: string): string {
+  const now = new Date();
+  const todayStr = toLocalDateStr(now);
+  const tom = new Date(now); tom.setDate(now.getDate() + 1);
+  const tomorrowStr = toLocalDateStr(tom);
+  if (dateStr === todayStr) return 'Heute';
+  if (dateStr === tomorrowStr) return 'Morgen';
   const date = new Date(dateStr + 'T12:00:00');
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  if (dateStr === today.toISOString().split('T')[0]) return 'Heute';
-  if (dateStr === tomorrow.toISOString().split('T')[0]) return 'Morgen';
   return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
@@ -173,8 +180,13 @@ export default function UserPage() {
   const pct = tasks.length ? Math.round(done.length / tasks.length * 100) : 0;
 
   // Filter calendar events: user's own calendar + shared "Familie" calendar
+  // Nur heute & morgen — mit lokalem Datum (kein UTC-Offset-Bug)
   const SHARED_CALENDARS = ['familie', 'family'];
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const todayStr = toLocalDateStr(now);
+  const tom = new Date(now); tom.setDate(now.getDate() + 1);
+  const tomorrowStr = toLocalDateStr(tom);
+
   const userEvents = events
     .filter(e => {
       const cal = e.calendarName?.toLowerCase() ?? '';
@@ -183,9 +195,11 @@ export default function UserPage() {
       const isShared = SHARED_CALENDARS.some(s => cal.includes(s));
       return isOwn || isShared;
     })
-    .filter(e => e.start.split('T')[0] >= today)
-    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
-    .slice(0, 10);
+    .filter(e => {
+      const d = e.start.split('T')[0];
+      return d >= todayStr && d <= tomorrowStr;
+    })
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   // Group by date
   const eventsByDate = userEvents.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
