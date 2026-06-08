@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 const NAV = [
   { href: '/',          icon: 'ti-layout-dashboard', label: 'Dashboard'     },
   { href: '/calendar',  icon: 'ti-calendar',          label: 'Kalender'      },
-  { href: '/tasks',     icon: 'ti-checkbox',           label: 'Aufgaben'      },
   { href: '/timetable', icon: 'ti-school',             label: 'Stundenpläne'  },
   { href: '/meals',     icon: 'ti-bowl',               label: 'Essensplan'    },
   { href: '/shopping',  icon: 'ti-shopping-cart',      label: 'Einkaufsliste' },
@@ -26,11 +25,10 @@ function NavItem({ href, icon, label, active }: { href: string; icon: string; la
       style={{
         width: 44, height: 44,
         background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
-        color: active ? '#ffffff' : 'rgba(255,255,255,0.4)',
+        color: active ? '#ffffff' : 'rgba(255,255,255,0.6)',
       }}
     >
       <i className={`ti ${icon}`} style={{ fontSize: 22 }} aria-hidden="true" />
-      {/* Tooltip */}
       <span
         className="pointer-events-none absolute left-[52px] px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50 font-sans"
         style={{ background: '#1e1b18', color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
