@@ -121,7 +121,7 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
           font-weight: 300;
           letter-spacing: 0.12em;
           text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.07);
+          color: rgba(255, 255, 255, 0.10);
           font-family: ui-sans-serif, system-ui, sans-serif;
         }
       `}</style>
