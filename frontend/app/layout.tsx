@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" style={{ height: '100%' }}>
+    <html lang="de">
       <head>
         <link
           rel="stylesheet"
@@ -33,18 +33,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         style={{
           background: '#f5f2ee',
           color: '#1a1814',
-          height: '100%',
+          minHeight: '100vh',
           display: 'flex',
           flexDirection: 'column',
           margin: 0,
         }}
       >
-        <OfflineBanner />
         <BurnInProvider>
           <Topbar />
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flex: 1 }}>
             <Sidebar />
-            <main style={{ flex: 1, overflowY: 'auto' }}>
+            <main style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              <OfflineBanner />
               {children}
             </main>
           </div>

@@ -113,7 +113,7 @@ export default function HomePage() {
               return 'Guten Abend 👋';
             })()}
           </h1>
-          <p className="text-sm font-sans mt-1" style={{ color: '#a09d99' }}>
+          <p className="text-sm font-sans mt-1" style={{ color: '#7a7874' }}>
             {now ? now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '\u00a0'}
           </p>
         </div>
@@ -131,7 +131,7 @@ export default function HomePage() {
           {/* Tasks per user */}
           {!loading && users.length > 0 && (
             <div>
-              <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+              <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#7a7874' }}>
                 Aufgaben heute
               </h2>
               <div className={`grid gap-3 ${users.length <= 2 ? 'grid-cols-2' : users.length === 3 ? 'grid-cols-3' : 'grid-cols-2 xl:grid-cols-4'}`}>
@@ -159,8 +159,8 @@ export default function HomePage() {
                       <div className="flex items-center gap-2 mb-2">
                         <AvatarButton user={{ ...user, tasks_total: userTasks.length, tasks_done: done.length }} size="topbar" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold font-sans truncate" style={{ color: user.color }}>{user.name}</p>
-                          <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{done.length}/{userTasks.length} · ⭐{user.points}</p>
+                          <p className="text-sm font-semibold font-sans" style={{ color: user.color }}>{user.name}</p>
+                          <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{done.length}/{userTasks.length} · <i className="ti ti-star-filled" style={{ fontSize: 10, color: '#c9a020', verticalAlign: '-1px' }} aria-hidden="true" />{user.points}</p>
                         </div>
                       </div>
                       {/* Progress */}
@@ -174,8 +174,8 @@ export default function HomePage() {
                             className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5"
                             style={{ background: `${user.color}10` }}>
                             <div className="w-4 h-4 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
-                            <span className="text-xs font-sans flex-1 truncate" style={{ color: '#1a1814' }}>{task.title}</span>
-                            <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>⭐{task.points}</span>
+                            <span className="text-xs font-sans flex-1 leading-tight line-clamp-2" style={{ color: '#1a1814' }}>{task.title}</span>
+                            <span className="text-[10px] font-sans flex items-center gap-0.5" style={{ color: '#a09d99' }}><i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" />{task.points}</span>
                           </div>
                         ))}
                         {done.slice(0, 2).map(task => (
@@ -183,7 +183,7 @@ export default function HomePage() {
                             <div className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: user.color }}>
                               <i className="ti ti-check" style={{ fontSize: 8, color: '#fff' }} />
                             </div>
-                            <span className="text-xs font-sans line-through flex-1 truncate" style={{ color: '#6b6760' }}>{task.title}</span>
+                            <span className="text-xs font-sans line-through flex-1 leading-tight line-clamp-2" style={{ color: '#6b6760' }}>{task.title}</span>
                           </div>
                         ))}
                         {userTasks.length === 0 && (

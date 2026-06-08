@@ -26,7 +26,7 @@ function NavItem({ href, icon, label, active }: { href: string; icon: string; la
       style={{
         width: 44, height: 44,
         background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
-        color: active ? '#ffffff' : 'rgba(255,255,255,0.4)',
+        color: active ? '#ffffff' : 'rgba(255,255,255,0.6)',
       }}
     >
       <i className={`ti ${icon}`} style={{ fontSize: 22 }} aria-hidden="true" />

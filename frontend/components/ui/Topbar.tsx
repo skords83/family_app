@@ -64,7 +64,7 @@ export default function Topbar() {
       }}
     >
       {/* Page title */}
-      <span className="text-[15px] font-medium text-[#6b6760] flex-1 font-sans">
+      <span className="text-[15px] font-medium text-[#3a3730] flex-1 font-sans">
         {title}
       </span>
 
