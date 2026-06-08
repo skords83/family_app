@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Sidebar from '@/components/ui/Sidebar';
-import Topbar from '@/components/ui/Topbar';
 import { BurnInProvider } from '@/components/burn-in';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 
@@ -35,16 +34,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: '#1a1814',
           minHeight: '100vh',
           display: 'flex',
-          flexDirection: 'column',
           margin: 0,
         }}
       >
         <BurnInProvider>
-          <Topbar />
-          <div style={{ display: 'flex', flex: 1 }}>
-            <Sidebar />
-            <main style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              <OfflineBanner />
+          <Sidebar />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', minWidth: 0 }}>
+            <OfflineBanner />
+            <main style={{ flex: 1, overflowY: 'auto' }}>
               {children}
             </main>
           </div>

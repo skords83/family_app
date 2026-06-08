@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -345,7 +346,8 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="flex flex-col h-full p-6 gap-4">
+    <div className="flex flex-col h-full">
+      <PageHeader title="Kalender" variant="page" />
 
       {showModal && (
         <NewEventModal
@@ -355,6 +357,7 @@ export default function CalendarPage() {
         />
       )}
 
+      <div className="flex flex-col flex-1 overflow-hidden px-6 pb-6 gap-4">
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-shrink-0">
         <button
@@ -470,6 +473,7 @@ export default function CalendarPage() {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );

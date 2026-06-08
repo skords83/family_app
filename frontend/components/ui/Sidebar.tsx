@@ -26,7 +26,7 @@ function NavItem({ href, icon, label, active }: { href: string; icon: string; la
       style={{
         width: 44, height: 44,
         background: active ? 'rgba(255,255,255,0.13)' : 'transparent',
-        color: active ? '#ffffff' : 'rgba(255,255,255,0.6)',
+        color: active ? '#ffffff' : 'rgba(255,255,255,0.4)',
       }}
     >
       <i className={`ti ${icon}`} style={{ fontSize: 22 }} aria-hidden="true" />
@@ -46,7 +46,7 @@ export default function Sidebar() {
   return (
     <nav
       className="flex-shrink-0 flex flex-col items-center py-4 gap-1"
-      style={{ width: 64, background: '#1e1b18', alignSelf: 'stretch' }}
+      style={{ width: 64, background: '#1e1b18', minHeight: '100vh', position: 'sticky', top: 0, alignSelf: 'flex-start' }}
     >
       {NAV.map(({ href, icon, label }) => (
         <NavItem key={href} href={href} icon={icon} label={label}

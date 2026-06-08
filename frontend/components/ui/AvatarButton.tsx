@@ -85,7 +85,7 @@ export default function AvatarButton({
     <Wrap
       onClick={onClick}
       className={`flex flex-col items-center gap-1.5 ${onClick ? 'cursor-pointer' : ''}`}
-      title={`${user.name} · ⭐${user.points ?? 0} · ${pct}% erledigt`}
+      title={`${user.name} · ${user.points ?? 0} Punkte · ${pct}% erledigt`}
     >
       {/* Ring + photo */}
       <div
@@ -145,8 +145,8 @@ export default function AvatarButton({
             {user.name}
           </div>
           {showPoints && user.points !== undefined && (
-            <div className="text-[11px] font-sans" style={{ color: user.color, opacity: 0.75 }}>
-              ⭐ {user.points}
+            <div className="text-[11px] font-sans flex items-center gap-0.5 justify-center" style={{ color: user.color, opacity: 0.75 }}>
+              <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {user.points}
             </div>
           )}
         </div>
