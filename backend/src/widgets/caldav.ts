@@ -20,6 +20,17 @@ const FALLBACK_COLORS = [
   '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6',
 ];
 
+// ICS-Titel können HTML-Entities enthalten (z.B. Nextcloud liefert &amp; statt &)
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
@@ -91,7 +102,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
           const endDate = new Date(startDate.getTime() + duration);
           events.push(CalendarEventSchema.parse({
             id: `${event.uid ?? key}-${startDate.toISOString()}`,
-            title: event.summary ?? '(no title)',
+            title: decodeHtmlEntities(event.summary ?? '(no title)'),
             start: startDate.toISOString(),
             end: endDate.toISOString(),
             allDay,
@@ -105,7 +116,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         if (originalStart >= rangeStart && originalStart <= futureLimit) {
           events.push(CalendarEventSchema.parse({
             id: event.uid ?? key,
-            title: event.summary ?? '(no title)',
+            title: decodeHtmlEntities(event.summary ?? '(no title)'),
             start: originalStart.toISOString(),
             end: endDate.toISOString(),
             allDay,
@@ -123,7 +134,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
 
     events.push(CalendarEventSchema.parse({
       id: event.uid ?? key,
-      title: event.summary ?? '(no title)',
+      title: decodeHtmlEntities(event.summary ?? '(no title)'),
       start: originalStart.toISOString(),
       end: endDate.toISOString(),
       allDay,
