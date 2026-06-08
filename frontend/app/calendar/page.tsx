@@ -45,9 +45,13 @@ function toLocalTimeStr(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// Kombiniert Datum-String + Zeit-String zu ISO (lokal, nicht UTC)
+// Kombiniert Datum-String + Zeit-String zu lokalem ISO — kein UTC-Versatz
 function toLocalISO(dateStr: string, timeStr: string): string {
-  return new Date(`${dateStr}T${timeStr}:00`).toISOString();
+  const [h, m] = timeStr.split(':').map(Number);
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setHours(h, m, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${dateStr}T${pad(h)}:${pad(m)}:00`;
 }
 
 // ---- Neuer-Termin-Modal ----
@@ -132,7 +136,9 @@ function NewEventModal({
           <h2 className="text-base font-semibold font-sans" style={{ color: '#1a1814' }}>
             Neuer Termin
           </h2>
-          <button onClick={onClose} className="text-lg" style={{ color: '#a09d99', lineHeight: 1 }}>✕</button>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-black/5" style={{ color: '#a09d99' }} aria-label="Schließen">
+            <i className="ti ti-x" style={{ fontSize: 16 }} />
+          </button>
         </div>
 
         {/* Titel */}
@@ -195,7 +201,7 @@ function NewEventModal({
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: cal.color, flexShrink: 0, display: 'inline-block' }} />
                 <span className="text-sm font-sans" style={{ color: '#1a1814' }}>{cal.name}</span>
                 {calendarUrl === cal.url && (
-                  <span className="ml-auto text-xs" style={{ color: cal.color }}>✓</span>
+                  <i className="ti ti-check ml-auto" style={{ fontSize: 14, color: cal.color }} aria-hidden="true" />
                 )}
               </button>
             ))}
@@ -328,7 +334,7 @@ export default function CalendarPage() {
       left,
       right,
       width,
-      background: `${ev.color ?? '#6366f1'}20`,
+      background: `${ev.color ?? '#6366f1'}28`,
       borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
       borderRadius: 6,
       padding: '3px 6px',
@@ -353,14 +359,16 @@ export default function CalendarPage() {
       <div className="flex items-center gap-3 flex-shrink-0">
         <button
           onClick={() => setWeekOffset(w => w - 1)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:bg-black/5"
+          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-black/5"
           style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
-        >‹</button>
+          aria-label="Vorherige Woche"
+        ><i className="ti ti-chevron-left" style={{ fontSize: 16, color: '#6b6760' }} /></button>
         <button
           onClick={() => setWeekOffset(w => w + 1)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:bg-black/5"
+          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-black/5"
           style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
-        >›</button>
+          aria-label="Nächste Woche"
+        ><i className="ti ti-chevron-right" style={{ fontSize: 16, color: '#6b6760' }} /></button>
         <span className="text-sm font-medium font-sans" style={{ color: '#1a1814', minWidth: 200 }}>
           {weekLabel}
         </span>
@@ -374,10 +382,10 @@ export default function CalendarPage() {
         {/* Neuer Termin Button */}
         <button
           onClick={() => openModal()}
-          className="ml-auto px-4 py-1.5 rounded-lg text-xs font-sans font-medium transition-all hover:opacity-90"
+          className="ml-auto px-4 py-1.5 rounded-lg text-xs font-sans font-medium transition-all hover:opacity-90 flex items-center gap-1.5"
           style={{ background: '#e85d3a', color: '#fff', border: 'none' }}
         >
-          + Termin
+          <i className="ti ti-plus" style={{ fontSize: 13 }} aria-hidden="true" /> Termin
         </button>
       </div>
 
@@ -398,7 +406,7 @@ export default function CalendarPage() {
                 style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}
                 onClick={() => openModal(d)}
               >
-                <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#a09d99' }}>
+                <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#7a7874' }}>
                   {DAYS_SHORT[d.getDay()]}
                 </div>
                 <div className={`text-lg font-[Georgia] mt-0.5 mx-auto leading-tight ${isToday ? 'w-8 h-8 rounded-full flex items-center justify-center text-white' : ''}`}
@@ -413,7 +421,7 @@ export default function CalendarPage() {
         {/* All-day row */}
         <div className="grid flex-shrink-0" style={{ gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)', minHeight: 28 }}>
           <div className="flex items-center justify-end pr-2">
-            <span className="text-[9px] font-sans" style={{ color: '#a09d99' }}>ganztags</span>
+            <span className="text-[9px] font-sans" style={{ color: '#7a7874' }}>ganztags</span>
           </div>
           {days.map(d => (
             <div key={d.toISOString()} className="p-0.5" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
@@ -433,7 +441,7 @@ export default function CalendarPage() {
           <div className="flex flex-col">
             {Array.from({ length: HOURS }, (_, i) => (
               <div key={i} className="flex-shrink-0 flex items-start justify-end pr-2 pt-0.5" style={{ height: SLOT_H, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
-                <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>{START_H + i}:00</span>
+                <span className="text-[10px] font-sans" style={{ color: '#7a7874' }}>{START_H + i}:00</span>
               </div>
             ))}
           </div>
