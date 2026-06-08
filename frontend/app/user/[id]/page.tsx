@@ -146,7 +146,7 @@ export default function UserPage() {
       const data = await res.json();
       // Optimistisches Update — SSE aktualisiert tasks + user im Hintergrund
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t));
-      showNotification(`+${data.points_earned} ⭐ verdient!`);
+      showNotification(`+${data.points_earned} Punkte verdient!`);
     }
   };
 
@@ -157,7 +157,7 @@ export default function UserPage() {
       body: JSON.stringify({ user_id: userId }),
     });
     const data = await res.json();
-    if (res.ok) showNotification(`Beantragt! -${data.points_spent} ⭐`);
+    if (res.ok) showNotification(`Beantragt! -${data.points_spent} Punkte`);
     else showNotification(data.error ?? 'Fehler', false);
     // SSE triggert reward_claimed + points_updated → fetchRewards + fetchUser
   };
@@ -265,17 +265,19 @@ export default function UserPage() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-[Georgia] tracking-tight" style={{ color: '#1a1814' }}>{user.name}</h1>
-          <p className="text-sm font-sans mt-0.5" style={{ color: '#a09d99' }}>{user.role === 'parent' ? 'Elternteil' : 'Kind'}</p>
+          <span className="inline-block text-xs font-sans font-medium rounded-full px-2.5 py-0.5 mt-1" style={{ background: 'rgba(0,0,0,0.05)', color: '#6b6760' }}>
+            {user.role === 'parent' ? 'Elternteil' : 'Kind'}
+          </span>
           <div className="flex items-center gap-3 mt-3">
-            <div className="rounded-xl px-3 py-1.5 text-sm font-sans font-semibold" style={{ background: `${user.color}18`, color: user.color }}>
-              ⭐ {user.points} Punkte
+            <div className="rounded-xl px-3 py-1.5 text-sm font-sans font-semibold flex items-center gap-1.5" style={{ background: `${user.color}18`, color: user.color }}>
+              <i className="ti ti-star-filled" style={{ fontSize: 12, color: '#c9a020' }} aria-hidden="true" /> {user.points} Punkte
             </div>
             <div className="text-sm font-sans" style={{ color: '#a09d99' }}>
               {done.length}/{tasks.length} erledigt · {pct}%
             </div>
           </div>
           {tasks.length > 0 && (
-            <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ background: '#f0ede8', maxWidth: 280 }}>
+            <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ background: '#f0ede8' }}>
               <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: user.color }} />
             </div>
           )}
@@ -314,7 +316,7 @@ export default function UserPage() {
                   <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
                   <span className="flex-1 text-sm font-sans font-medium" style={{ color: '#1a1814' }}>{task.title}</span>
                   {task.due_time && <span className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time}</span>}
-                  <span className="text-xs font-sans rounded-full px-2.5 py-0.5" style={{ background: `${user.color}18`, color: user.color }}>+{task.points}⭐</span>
+                  <span className="text-xs font-sans rounded-full px-2.5 py-0.5 flex items-center gap-1 flex-shrink-0" style={{ background: `${user.color}18`, color: user.color }}>+{task.points}<i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /></span>
                 </button>
               ))}
               {done.length > 0 && (
@@ -327,7 +329,7 @@ export default function UserPage() {
                         <i className="ti ti-check" style={{ fontSize: 11, color: '#fff' }} />
                       </div>
                       <span className="flex-1 text-sm font-sans line-through" style={{ color: '#6b6760' }}>{task.title}</span>
-                      <span className="text-xs font-sans" style={{ color: '#a09d99' }}>+{task.points}⭐</span>
+                      <span className="text-xs font-sans flex items-center gap-1" style={{ color: '#a09d99' }}>+{task.points}<i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /></span>
                     </div>
                   ))}
                 </>
@@ -360,7 +362,7 @@ export default function UserPage() {
                             {formatEventTime(ev)}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{ev.title}</p>
+                            <p className="text-sm font-sans font-semibold leading-tight line-clamp-2" style={{ color: '#1a1814' }}>{ev.title}</p>
                             {ev.calendarName && (
                               <p className="text-xs font-sans mt-0.5" style={{ color: ev.color ?? user.color, opacity: 0.8 }}>{ev.calendarName}</p>
                             )}
@@ -385,8 +387,10 @@ export default function UserPage() {
               <i className="ti ti-star" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Punktestand
             </p>
-            <div className="flex items-center gap-2 mb-2" style={{ fontSize: 40, fontWeight: 500, color: user.color }}>
-              ⭐ {user.points}
+            <div className="flex items-baseline gap-2 mb-2">
+              <i className="ti ti-star-filled" style={{ fontSize: 22, color: '#c9a020' }} aria-hidden="true" />
+              <span style={{ fontSize: 44, fontWeight: 500, color: user.color, lineHeight: 1 }}>{user.points}</span>
+              <span className="text-sm font-sans" style={{ color: '#a09d99' }}>Punkte</span>
             </div>
             <p className="text-sm font-sans" style={{ color: '#a09d99', lineHeight: 1.6 }}>
               {done.length} von {tasks.length} Aufgaben erledigt
@@ -426,7 +430,7 @@ export default function UserPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
-                    <p className="text-xs font-sans mt-0.5" style={{ color: '#5cb85c' }}>⭐ {r.points_cost} Punkte · du hast genug!</p>
+                    <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#5cb85c' }}><i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} Punkte · du hast genug!</p>
                   </div>
                   <span className="text-xs font-sans rounded-full px-3 py-1 font-medium flex-shrink-0" style={{ background: '#bbf7d0', color: '#15803d' }}>Einlösen</span>
                 </button>
@@ -435,11 +439,11 @@ export default function UserPage() {
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
                   style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)', opacity: 0.6 }}>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
-                    <i className="ti ti-gift" style={{ fontSize: 20, color: '#a09d99' }} />
+                    <i className="ti ti-lock" style={{ fontSize: 18, color: '#a09d99' }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans truncate" style={{ color: '#6b6760' }}>{r.title}</p>
-                    <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>⭐ {r.points_cost} · noch {r.points_cost - user.points} fehlen</p>
+                    <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#a09d99' }}><i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} · noch {r.points_cost - user.points} fehlen</p>
                   </div>
                 </div>
               ))}
@@ -474,7 +478,7 @@ function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone
               borderRadius: 6,
               background: isToday && tasksTotal > 0 && tasksDone === tasksTotal
                 ? `${color}30`
-                : isPast ? `${color}20` : 'rgba(0,0,0,0.04)',
+                : isPast ? `${color}35` : 'rgba(0,0,0,0.04)',
               border: isToday ? `1.5px solid ${color}` : '1.5px solid transparent',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
