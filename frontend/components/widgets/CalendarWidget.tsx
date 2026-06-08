@@ -29,12 +29,18 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
   const map = new Map<string, CalendarEvent[]>();
   const todayDate = new Date(todayStr + 'T00:00:00');
   const cutoff = new Date(todayDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+  const now = new Date();
 
   for (const event of events) {
     const startDate = new Date(event.start);
     if (startDate >= cutoff) continue;
     const dateKey = toLocalDateStr(startDate); // lokal, nicht UTC
-    if (dateKey < todayStr) continue;           // vergangene Events überspringen
+    if (dateKey < todayStr) continue;           // vergangene Tage überspringen
+    // Heute: abgelaufene Termine ausblenden — Ganztags-Termine immer zeigen
+    if (dateKey === todayStr && !event.allDay) {
+      const endDate = new Date(event.end);
+      if (endDate < now) continue;
+    }
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
