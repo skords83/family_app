@@ -113,6 +113,63 @@ tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Respon
   }
 });
 
+// GET /api/tasks/week-activity/:userId
+// Gibt zurück, an welchen Tagen der aktuellen Kalenderwoche (Mo–So, Europe/Berlin)
+// mindestens eine Task des Users erledigt wurde.
+// Response: { activeDays: boolean[7] }  — Index 0 = Montag, 6 = Sonntag
+tasksRouter.get('/week-activity/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    // Wochenanfang (Montag) in Europe/Berlin bestimmen
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
+    const dayOfWeek = now.getDay(); // 0=So, 1=Mo … 6=Sa
+    const diffToMonday = (dayOfWeek + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    // YYYY-MM-DD Strings
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toStr = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    const mondayStr = toStr(monday);
+    const sundayStr = toStr(sunday);
+
+    const result = await pool.query(`
+      SELECT DISTINCT ti.date
+      FROM task_instances ti
+      WHERE ti.assigned_to = $1
+        AND ti.completed_at IS NOT NULL
+        AND ti.date >= $2
+        AND ti.date <= $3
+    `, [userId, mondayStr, sundayStr]);
+
+    // Tage mit Completion als Set
+    const completedDates = new Set<string>(result.rows.map((r: { date: string }) => {
+      // date kann als JS Date ankommen (pg gibt DATE-Spalten als Date-Objekte zurück)
+      const d = r.date instanceof Date ? r.date : new Date(r.date + 'T12:00:00');
+      return toStr(d);
+    }));
+
+    // activeDays[0]=Mo … activeDays[6]=So
+    const activeDays: boolean[] = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return completedDates.has(toStr(d));
+    });
+
+    res.json({ activeDays });
+  } catch (err) {
+    console.error('Error fetching week activity:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/:id/complete - mark task as completed (or pending if requires_approval)
 tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
   try {

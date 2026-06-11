@@ -55,6 +55,7 @@ export default function UserPage() {
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
+  const [activeDays, setActiveDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ text: string; ok: boolean } | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
@@ -84,14 +85,23 @@ export default function UserPage() {
     setTimeout(() => setNotification(null), 2500);
   };
 
+  const fetchWeekActivity = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/week-activity/${userId}`).then(r => r.json());
+      if (Array.isArray(res.activeDays)) setActiveDays(res.activeDays);
+    } catch (e) { console.error(e); }
+  }, [userId]);
+
   const fetchData = useCallback(async () => {
     if (!userId) return;
     try {
-      const [ur, tr, cr, rr] = await Promise.allSettled([
+      const [ur, tr, cr, rr, wr] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users/${userId}`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/rewards?user_id=${userId}`).then(r => r.json()),
+        fetch(`${API_BASE}/api/tasks/week-activity/${userId}`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && ur.value.id) setUser(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value))
@@ -100,6 +110,8 @@ export default function UserPage() {
         setEvents(cr.value.events);
       if (rr.status === 'fulfilled' && Array.isArray(rr.value))
         setRewards(rr.value);
+      if (wr.status === 'fulfilled' && Array.isArray(wr.value.activeDays))
+        setActiveDays(wr.value.activeDays);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [userId]);
@@ -116,7 +128,9 @@ export default function UserPage() {
     if (Array.isArray(res)) {
       setTasks(res.filter((t: TaskInstance) => t.assigned_to === userId));
     }
-  }, [userId]);
+    // Auch Wochenaktivität aktualisieren, da eine Task gerade erledigt wurde
+    fetchWeekActivity();
+  }, [userId, fetchWeekActivity]);
 
   const fetchUser = useCallback(async () => {
     if (!userId) return;
@@ -406,7 +420,7 @@ export default function UserPage() {
               <i className="ti ti-flame" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Diese Woche
             </p>
-            <WeekStreak color={user.color} tasksDone={done.length} tasksTotal={tasks.length} />
+            <WeekStreak color={user.color} activeDays={activeDays} tasksDone={done.length} tasksTotal={tasks.length} />
           </div>
 
           {/* Belohnungen */}
@@ -457,10 +471,26 @@ export default function UserPage() {
   );
 }
 
-function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone: number; tasksTotal: number }) {
+function WeekStreak({
+  color,
+  activeDays,
+  tasksDone,
+  tasksTotal,
+}: {
+  color: string;
+  activeDays: boolean[];   // [Mo, Di, Mi, Do, Fr, Sa, So] — echte DB-Daten
+  tasksDone: number;
+  tasksTotal: number;
+}) {
   const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  // Wochentag 0=So → index in Mo-So-Raster
   const todayIdx = (new Date().getDay() + 6) % 7;
+
+  // Anzahl aktiver Tage diese Woche (ohne heute, der noch offen ist)
+  const activePastCount = activeDays.slice(0, todayIdx).filter(Boolean).length;
+  // Heute gilt als aktiv wenn alle Tasks erledigt sind
+  const todayComplete = tasksTotal > 0 && tasksDone === tasksTotal;
+  const totalActiveCount = activePastCount + (todayComplete ? 1 : 0);
+
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, marginBottom: 4 }}>
@@ -472,27 +502,35 @@ function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone
         {days.map((_, i) => {
           const isToday = i === todayIdx;
           const isPast = i < todayIdx;
+          const isFuture = i > todayIdx;
+          const wasActive = isPast && activeDays[i];
+          const isActiveToday = isToday && todayComplete;
+
           return (
             <div key={i} style={{
               aspectRatio: '1',
               borderRadius: 6,
-              background: isToday && tasksTotal > 0 && tasksDone === tasksTotal
+              background: (wasActive || isActiveToday)
                 ? `${color}30`
-                : isPast ? `${color}35` : 'rgba(0,0,0,0.04)',
+                : isFuture ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.04)',
               border: isToday ? `1.5px solid ${color}` : '1.5px solid transparent',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: isFuture ? 0.4 : 1,
             }}>
-              {isPast && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
-              {isToday && tasksTotal > 0 && tasksDone === tasksTotal && (
-                <i className="ti ti-check" style={{ fontSize: 11, color }} />
+              {wasActive && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
+              {isActiveToday && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
+              {isPast && !wasActive && (
+                <i className="ti ti-x" style={{ fontSize: 10, color: '#c9c5c0' }} />
               )}
             </div>
           );
         })}
       </div>
       <p className="text-sm font-sans mt-2" style={{ color: '#a09d99' }}>
-        {todayIdx > 0 ? `${todayIdx} Tage diese Woche aktiv` : 'Woche beginnt heute'}
-        {todayIdx >= 2 && <span style={{ color, fontWeight: 500 }}> · Streak!</span>}
+        {totalActiveCount === 0
+          ? 'Diese Woche noch keine Aufgaben erledigt'
+          : `${totalActiveCount} ${totalActiveCount === 1 ? 'Tag' : 'Tage'} diese Woche aktiv`}
+        {totalActiveCount >= 2 && <span style={{ color, fontWeight: 500 }}> · Streak!</span>}
       </p>
     </div>
   );
