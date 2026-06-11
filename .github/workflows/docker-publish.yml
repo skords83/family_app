@@ -10,6 +10,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,8 +21,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Backend: Build-Context = Repo-Root, damit shared/ und Root-package.json
-      # im Build sichtbar sind. Dockerfile-Pfad explizit angegeben.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push backend
         uses: docker/build-push-action@v5
         with:
@@ -29,12 +31,23 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/family-backend:latest
+          no-cache: true
 
-      # Frontend: bleibt unverändert, solange es nichts aus @family/shared importiert.
-      # Wird beim WasteWidget-Schritt nachgezogen.
       - name: Build & push frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/family-frontend:latest
+          no-cache: true
+
+      - name: Redeploy on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /app/data/stacks/VPS/family
+            docker compose pull
+            docker compose up -d
