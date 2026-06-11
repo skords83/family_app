@@ -3,11 +3,16 @@ import { z } from 'zod';
 export const WeatherHourlySchema = z.object({
   time: z.string(),
   temperature: z.number(),
+  apparentTemperature: z.number(),
+  precipitationProbability: z.number(),
+  weathercode: z.number(),
 });
 export type WeatherHourly = z.infer<typeof WeatherHourlySchema>;
 
 export const WeatherDataSchema = z.object({
   temperature: z.number(),
+  apparentTemperature: z.number(),
+  precipitationProbability: z.number(),
   weathercode: z.number(),
   windspeed: z.number(),
   hourly: z.array(WeatherHourlySchema).optional(),
