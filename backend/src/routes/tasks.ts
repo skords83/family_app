@@ -150,9 +150,10 @@ tasksRouter.get('/week-activity/:userId', async (req: Request, res: Response) =>
     `, [userId, mondayStr, sundayStr]);
 
     // Tage mit Completion als Set
-    const completedDates = new Set<string>(result.rows.map((r: { date: string }) => {
-      // date kann als JS Date ankommen (pg gibt DATE-Spalten als Date-Objekte zurück)
-      const d = r.date instanceof Date ? r.date : new Date(r.date + 'T12:00:00');
+    // pg gibt DATE-Spalten je nach Konfiguration als Date-Objekt oder String zurück
+    const completedDates = new Set<string>(result.rows.map((r: { date: unknown }) => {
+      const raw = r.date;
+      const d = raw instanceof Date ? raw : new Date(String(raw) + 'T12:00:00');
       return toStr(d);
     }));
 
