@@ -26,6 +26,7 @@ export function BurnInProvider({ children, config }: BurnInProviderProps) {
           flex: 1,
           minHeight: "100vh",
           minWidth: 0,
+          overflow: "hidden",
         }}
       >
         {children}
