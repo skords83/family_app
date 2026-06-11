@@ -1,9 +1,10 @@
 import cron from 'node-cron';
 import { pool } from '../db/pool';
+import { toBerlinDateStr } from '../utils/date';
 
 export async function generateDailyTasks(dateOverride?: string): Promise<void> {
-  const today = dateOverride ?? new Date().toISOString().split('T')[0];
-  const dayOfWeek = new Date(today + 'T12:00:00Z').getDay(); // 0=Sunday, 1=Monday
+  const today = dateOverride ?? toBerlinDateStr();
+  const dayOfWeek = new Date(today + 'T12:00:00').getDay(); // 0=Sunday, 1=Monday
   const isMonday = dayOfWeek === 1;
 
   console.log(`[generateDailyTasks] Generating tasks for ${today} (day ${dayOfWeek})`);

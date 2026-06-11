@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { v4 as uuidv4 } from 'uuid';
 import { emitSSE } from '../sse';
+import { toBerlinDateStr } from '../utils/date';
 
 export const tasksRouter = Router();
 
@@ -48,7 +49,7 @@ async function verifyParentPin(pin: string): Promise<boolean> {
 // GET /api/tasks/today - return task_instances for today, joined with template
 tasksRouter.get('/today', async (_req: Request, res: Response) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toBerlinDateStr();
     const result = await pool.query(`
       SELECT
         ti.id,

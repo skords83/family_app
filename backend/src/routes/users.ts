@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { toBerlinDateStr } from '../utils/date';
 
 export const usersRouter = Router();
 
 // GET /api/users – all users with points + today's task progress
 usersRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toBerlinDateStr();
     const result = await pool.query(`
       SELECT
         u.id,
@@ -46,7 +47,7 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
 usersRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const today = new Date().toISOString().split('T')[0];
+    const today = toBerlinDateStr();
     const result = await pool.query(`
       SELECT
         u.id,
