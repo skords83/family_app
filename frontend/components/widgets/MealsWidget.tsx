@@ -36,13 +36,6 @@ function toLocalDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
-  const date = new Date(dateStr + 'T12:00:00');
-  if (dateStr === todayStr) return 'Heute';
-  if (dateStr === tomorrowStr) return 'Morgen';
-  return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
 function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
   if (!fetchedAt) return false;
   return Date.now() - new Date(fetchedAt).getTime() > maxAgeMs;
@@ -81,13 +74,9 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
     );
   }
 
-  // ✅ toLocalDateStr statt toISOString — kein UTC-Versatz in Berlin (UTC+2)
-  const tomorrowDate = new Date(todayStr + 'T00:00:00');
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = toLocalDateStr(tomorrowDate);
-
-  // Nur heute anzeigen — Ausblick gibt es in der Gesamtübersicht
-  const sortedDates = Object.keys(byDate).filter(d => d >= todayStr).sort().slice(0, 1);
+  // Nur heute anzeigen
+  const todaySlots = byDate[todayStr] ?? {};
+  const presentSlots = SLOT_ORDER.filter(s => todaySlots[s]?.length);
 
   return (
     <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
@@ -108,36 +97,23 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
         </div>
       </div>
 
-      {sortedDates.length === 0 ? (
+      {presentSlots.length === 0 ? (
         <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>
           Kein Essensplan verfügbar
         </p>
       ) : (
-        <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
-          {sortedDates.map(date => {
-            const daySlots = byDate[date] ?? {};
-            const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
-            return (
-              <div key={date}>
-                <p className="text-[10px] font-sans font-semibold uppercase mb-1.5" style={{ color: '#a09d99' }}>
-                  {formatDateLabel(date, todayStr, tomorrowStr)}
+        <div className="space-y-1">
+          {presentSlots.map(slot => (
+            <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: '#f5f2ee' }}>
+              <span className="text-sm flex-shrink-0">{SLOT_ICONS[slot]}</span>
+              <div>
+                <p className="text-[10px] font-sans font-medium" style={{ color: '#6b6760' }}>{SLOT_LABELS[slot]}</p>
+                <p className="text-xs font-sans" style={{ color: '#1a1814' }}>
+                  {todaySlots[slot]!.map(r => r.recipeName ?? '–').join(', ')}
                 </p>
-                <div className="space-y-1">
-                  {presentSlots.map(slot => (
-                    <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: '#f5f2ee' }}>
-                      <span className="text-sm flex-shrink-0">{SLOT_ICONS[slot]}</span>
-                      <div>
-                        <p className="text-[10px] font-sans font-medium" style={{ color: '#6b6760' }}>{SLOT_LABELS[slot]}</p>
-                        <p className="text-xs font-sans" style={{ color: '#1a1814' }}>
-                          {daySlots[slot]!.map(r => r.recipeName ?? '–').join(', ')}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
