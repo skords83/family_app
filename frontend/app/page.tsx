@@ -62,13 +62,21 @@ export default function HomePage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useSSE(`${API_BASE}/api/events`, {
-    users:    () => fetch(`${API_BASE}/api/users`).then(r => r.json()).then(d => { if (Array.isArray(d)) setUsers(d); }),
-    tasks:    () => fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()).then(d => { if (Array.isArray(d)) setTasks(d); }),
-    calendar: () => fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()).then(d => { if (d.events) setCalendar(d); }),
-    meals:    () => fetch(`${API_BASE}/api/widgets/meals`).then(r => r.json()).then(d => { if (d.byDate) setMeals(d); }),
-    weather:  () => fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()).then(d => { if (d.data) setWeather(d); }),
-    waste:    () => fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()).then(d => { if (d && !d.error) setWaste(d); }),
+  const fetchTasks = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
+    if (Array.isArray(res)) setTasks(res);
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+    if (Array.isArray(res)) setUsers(res);
+  }, []);
+
+  useSSE({
+    task_updated: fetchTasks,
+    points_updated: fetchUsers,
+    reward_claimed: fetchUsers,
+    config_updated: useCallback(() => window.location.reload(), []),
   });
 
   const handleImmichRefresh = async () => {
