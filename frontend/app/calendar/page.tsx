@@ -28,9 +28,13 @@ interface CalendarOption {
 
 const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const SLOT_H = 52;
+// ↓ 52 → 36 px/h: 7–23 Uhr = 576 px — kein Scrollen auf 1080p
+const SLOT_H = 36;
 const START_H = 7;
-const HOURS = 15;
+// ↓ 15 → 16 h: Abendtermine bis 23 Uhr sichtbar
+const HOURS = 16;
+// Mindesthöhe: immer zwei Zeilen (Titel + Zeit) lesbar, auch bei 15/30-min-Terminen
+const MIN_EVENT_H = 44;
 
 function getWeekStart(offset: number): Date {
   const now = new Date();
@@ -97,8 +101,10 @@ function layoutEvents(events: CalendarEvent[]): LayoutEvent[] {
 function eventStyle(ev: LayoutEvent, col: number, cols: number): React.CSSProperties {
   const startMin = toMinutes(ev.start) - START_H * 60;
   const endMin   = toMinutes(ev.end)   - START_H * 60;
-  const top    = (startMin / 60) * SLOT_H;
-  const height = Math.max(((endMin - startMin) / 60) * SLOT_H - 2, 18);
+  const top            = (startMin / 60) * SLOT_H;
+  const naturalHeight  = ((endMin - startMin) / 60) * SLOT_H - 2;
+  // MIN_EVENT_H stellt sicher, dass Titel + Zeit immer zweizeilig Platz haben
+  const height         = Math.max(naturalHeight, MIN_EVENT_H);
   const width  = `calc(${100 / cols}% - 3px)`;
   const left   = `calc(${(col / cols) * 100}% + 2px)`;
   const color  = ev.color ?? '#6366f1';
@@ -492,18 +498,25 @@ export default function CalendarPage() {
                       className={isNext ? 'next-event-pulse' : ''}
                       style={{
                         ...eventStyle(ev, ev.col, ev.cols),
-                        // Nächster Termin: leicht kräftigerer Rand
                         borderLeft: isNext ? `3px solid ${color}` : `2.5px solid ${color}`,
                       }}
                     >
-                      {/* Haupttitel */}
+                      {/* Titel — bei Kurzterminen bis zu 2 Zeilen, nie abgeschnitten */}
                       <div
-                        className="font-semibold font-sans truncate leading-tight"
-                        style={{ fontSize: 11, color }}
+                        className="font-semibold font-sans leading-tight"
+                        style={{
+                          fontSize: 11,
+                          color,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          wordBreak: 'break-word',
+                        }}
                       >
                         {ev.title}
                       </div>
-                      {/* Person */}
+                      {/* Kalender/Person */}
                       {ev.calendarName && (
                         <div
                           className="font-sans truncate mt-0.5"
@@ -512,7 +525,7 @@ export default function CalendarPage() {
                           {ev.calendarName}
                         </div>
                       )}
-                      {/* Uhrzeit */}
+                      {/* Uhrzeit — immer sichtbar */}
                       <div
                         className="font-sans mt-0.5"
                         style={{ fontSize: 9, color, opacity: 0.65 }}
