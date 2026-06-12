@@ -24,28 +24,23 @@ function toLocalDateStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-// ✅ todayStr passed in — no new Date() inside
 function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: number): Map<string, CalendarEvent[]> {
   const map = new Map<string, CalendarEvent[]>();
   const todayDate = new Date(todayStr + 'T00:00:00');
   const cutoff = new Date(todayDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-  const now = new Date();
 
   for (const event of events) {
     const startDate = new Date(event.start);
-    // Lokales Datum des Termins bestimmen (kein UTC-Versatz-Bug)
+    // Lokales Datum des Termins (kein UTC-Bug)
     const dateKey = toLocalDateStr(startDate);
 
-    // Vergangene Tage überspringen — strikt: nur ab heute
+    // Vergangene Tage überspringen
     if (dateKey < todayStr) continue;
     // Termine jenseits des Fensters überspringen
     if (startDate >= cutoff) continue;
 
-    // Heute: abgelaufene Timed-Termine ausblenden — Ganztags-Termine immer zeigen
-    if (dateKey === todayStr && !event.allDay) {
-      const endDate = new Date(event.end);
-      if (endDate < now) continue;
-    }
+    // KEIN endDate-Filter — abgelaufene heutige Termine werden weiterhin angezeigt.
+    // (Kiosk läuft 24h, man will sehen was heute alles war/ist.)
 
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
@@ -59,7 +54,6 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
   return map;
 }
 
-// ✅ todayStr / tomorrowStr passed in
 function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
   if (dateStr === todayStr) return 'Heute';
   if (dateStr === tomorrowStr) return 'Morgen';
@@ -73,14 +67,14 @@ function formatEventTime(event: CalendarEvent): string {
 }
 
 export default function CalendarWidget({ events = [], fetched_at, loading, daysAhead = 7 }: CalendarWidgetProps) {
-  // ✅ null on server render — no hydration mismatch
+  // null on server render — no hydration mismatch
   const todayStr = useClientDateStr();
 
   if (loading) {
     return (
       <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
         <div style={{ background: '#e8e4de', borderRadius: 4, height: 12, width: 80, marginBottom: 16 }} />
-        {[0,1,2].map(i => (
+        {[0, 1, 2].map(i => (
           <div key={i} style={{ marginBottom: 12 }}>
             <div style={{ background: '#e8e4de', borderRadius: 4, height: 10, width: 60, marginBottom: 8 }} />
             <div style={{ background: '#e8e4de', borderRadius: 10, height: 40 }} />
@@ -108,7 +102,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   // Build tomorrow string (safe — client-side only)
   const tomorrowDate = new Date(todayStr + 'T00:00:00');
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = toLocalDateStr(tomorrowDate); // lokal, nicht UTC
+  const tomorrowStr = toLocalDateStr(tomorrowDate);
 
   const grouped = groupEventsByDay(events, todayStr, daysAhead);
 
@@ -117,7 +111,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   for (let i = 0; i < daysAhead; i++) {
     const d = new Date(todayStr + 'T00:00:00');
     d.setDate(d.getDate() + i);
-    days.push(toLocalDateStr(d)); // lokal, nicht UTC
+    days.push(toLocalDateStr(d));
   }
   const hasEvents = days.some(d => grouped.has(d));
 
@@ -153,24 +147,29 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                   {formatDateLabel(day, todayStr, tomorrowStr)}
                 </p>
                 <div className="space-y-1">
-                  {dayEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className="flex items-center gap-3 px-3 py-2"
-                      style={{
-                        background: '#f7f4f0',
-                        borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
-                        borderRadius: '0 8px 8px 0',
-                      }}
-                    >
-                      <span className="text-xs font-sans flex-shrink-0 tabular-nums" style={{ color: '#a09d99', minWidth: 44 }}>
-                        {formatEventTime(event)}
-                      </span>
-                      <p className="text-sm font-sans font-medium truncate flex-1" style={{ color: '#1a1814' }}>
-                        {event.title}
-                      </p>
-                    </div>
-                  ))}
+                  {dayEvents.map(event => {
+                    // Abgelaufene Termine leicht ausgegraut darstellen
+                    const isPast = !event.allDay && new Date(event.end) < new Date();
+                    return (
+                      <div
+                        key={event.id}
+                        className="flex items-center gap-3 px-3 py-2"
+                        style={{
+                          background: isPast ? '#f0ede8' : '#f7f4f0',
+                          borderLeft: `3px solid ${isPast ? '#c8c4be' : (event.color ?? '#6366f1')}`,
+                          borderRadius: '0 8px 8px 0',
+                          opacity: isPast ? 0.6 : 1,
+                        }}
+                      >
+                        <span className="text-xs font-sans flex-shrink-0 tabular-nums" style={{ color: '#a09d99', minWidth: 44 }}>
+                          {formatEventTime(event)}
+                        </span>
+                        <p className="text-sm font-sans font-medium truncate flex-1" style={{ color: '#1a1814' }}>
+                          {event.title}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
