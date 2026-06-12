@@ -37,6 +37,11 @@ function extractUserId(value: unknown): string {
 }
 
 async function verifyParentPin(pin: string): Promise<boolean> {
+  const adminPin = process.env.ADMIN_PIN;
+  if (adminPin) {
+    return pin === adminPin;
+  }
+  // Fallback: check against any parent user's pin in DB
   const result = await pool.query(
     `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
     [pin]
