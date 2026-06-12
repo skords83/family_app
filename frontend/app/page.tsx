@@ -15,8 +15,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
+interface WeatherState { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; [key: string]: unknown; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
-interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; apparentTemperature?: number; precipitationProbability?: number; [key: string]: unknown; }
+[]; apparentTemperature?: number; precipitationProbability?: number; [key: string]: unknown; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
@@ -32,7 +33,7 @@ const PASTELS: Record<string, string> = {
 export default function HomePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
-  const [weather, setWeather] = useState<{ data?: WeatherData; fetched_at?: string }>({});
+  const [weather, setWeather] = useState<{ data?: WeatherState; fetched_at?: string }>({});
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
@@ -189,7 +190,7 @@ export default function HomePage() {
 
           {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
+            <WeatherWidget data={weather.data as any} fetched_at={weather.fetched_at} loading={loading} />
             <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
             <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
             <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
