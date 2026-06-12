@@ -35,7 +35,7 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
-  const [waste, setWaste] = useState<WasteTodayData | null>(null);
+  const [waste, setWaste] = useState<WasteTodayData | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
