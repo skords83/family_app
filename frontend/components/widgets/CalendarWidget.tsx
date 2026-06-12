@@ -36,9 +36,11 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
     if (startDate >= cutoff) continue;
     const dateKey = toLocalDateStr(startDate); // lokal, nicht UTC
     if (dateKey < todayStr) continue;           // vergangene Tage überspringen
-    // Heute: abgelaufene Termine ausblenden — nach start-Zeit (konsistent mit Benutzerseite)
-    // Ganztags-Termine immer zeigen
-    if (dateKey === todayStr && !event.allDay && startDate < now) continue;
+    // Heute: abgelaufene Termine ausblenden — Ganztags-Termine immer zeigen
+    if (dateKey === todayStr && !event.allDay) {
+      const endDate = new Date(event.end);
+      if (endDate < now) continue;
+    }
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
@@ -64,7 +66,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
 
   if (loading) {
     return (
-      <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+      <div className="rounded-2xl p-4" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
         <div style={{ background: '#e8e4de', borderRadius: 4, height: 12, width: 80, marginBottom: 16 }} />
         {[0,1,2].map(i => (
           <div key={i} style={{ marginBottom: 12 }}>
@@ -81,8 +83,8 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   // Render shell before hydration — no date-dependent content
   if (!todayStr) {
     return (
-      <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-        <div className="flex items-center justify-between mb-4">
+      <div className="rounded-2xl p-4" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+        <div className="flex items-center justify-between">
           <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
             Kalender
           </h3>
@@ -108,48 +110,53 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   const hasEvents = days.some(d => grouped.has(d));
 
   return (
-    <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="rounded-2xl px-4 py-3" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+      {/* Header — always single row */}
+      <div className="flex items-center justify-between">
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
           Kalender
         </h3>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          {/* "Keine Termine" inline badge when no events */}
+          {!hasEvents && (
+            <span className="text-[11px] font-sans" style={{ color: '#c4c0bb' }}>
+              Keine Termine heute
+            </span>
+          )}
           {fetched_at && (
-            <>
+            <div className="flex items-center gap-1">
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: stale ? '#e0a020' : '#3a9a6e', flexShrink: 0, display: 'inline-block' }} />
               <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
                 {stale ? 'veraltet' : 'aktuell'}
               </span>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      {!hasEvents ? (
-        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine heute</p>
-      ) : (
-        <div className="space-y-4">
+      {/* Events — only rendered when present */}
+      {hasEvents && (
+        <div className="space-y-3 mt-3">
           {days.map(day => {
             const dayEvents = grouped.get(day);
             if (!dayEvents?.length) return null;
             return (
               <div key={day}>
-                <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
+                <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#a09d99' }}>
                   {formatDateLabel(day, todayStr, tomorrowStr)}
                 </p>
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {dayEvents.map(event => (
                     <div
                       key={event.id}
-                      className="flex items-start gap-3 rounded-xl px-4 py-3"
+                      className="flex items-start gap-3 rounded-xl px-3 py-2"
                       style={{
                         background: '#f7f4f0',
                         borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
                         borderRadius: '0 10px 10px 0',
                       }}
                     >
-                      <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 48 }}>
+                      <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 44 }}>
                         {formatEventTime(event)}
                       </span>
                       <div className="flex-1 min-w-0">

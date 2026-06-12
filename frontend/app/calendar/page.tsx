@@ -29,11 +29,11 @@ interface CalendarOption {
 
 const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-// ↓ 52 → 36 px/h: 7–23 Uhr = 576 px — kein Scrollen auf 1080p
+// 36 px/h: 8–22 Uhr = 504 px — kein Scrollen auf 1080p bei 150% Zoom
 const SLOT_H = 36;
-const START_H = 7;
-// ↓ 15 → 16 h: Abendtermine bis 23 Uhr sichtbar
-const HOURS = 16;
+const START_H = 8;
+// 14 h: 8:00–22:00
+const HOURS = 14;
 // Mindesthöhe: immer zwei Zeilen (Titel + Zeit) lesbar, auch bei 15/30-min-Terminen
 const MIN_EVENT_H = 44;
 
@@ -104,7 +104,6 @@ function eventStyle(ev: LayoutEvent, col: number, cols: number): React.CSSProper
   const endMin   = toMinutes(ev.end)   - START_H * 60;
   const top            = (startMin / 60) * SLOT_H;
   const naturalHeight  = ((endMin - startMin) / 60) * SLOT_H - 2;
-  // MIN_EVENT_H stellt sicher, dass Titel + Zeit immer zweizeilig Platz haben
   const height         = Math.max(naturalHeight, MIN_EVENT_H);
   const width  = `calc(${100 / cols}% - 3px)`;
   const left   = `calc(${(col / cols) * 100}% + 2px)`;
@@ -321,10 +320,10 @@ export default function CalendarPage() {
 
   useEffect(() => { loadEvents(); }, []);
 
-  // Scroll to 8:00 on mount
+  // START_H = 8 → scrollTop = 0
   useEffect(() => {
     if (bodyRef.current) {
-      bodyRef.current.scrollTop = (8 - START_H) * SLOT_H;
+      bodyRef.current.scrollTop = 0;
     }
   }, [loading]);
 
@@ -417,7 +416,7 @@ export default function CalendarPage() {
           className="flex-1 overflow-hidden rounded-2xl flex flex-col"
           style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
         >
-          {/* Day headers */}
+          {/* Day headers — Wochentag + Datum nebeneinander in einer Zeile */}
           <div className="grid flex-shrink-0" style={{ gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
             <div />
             {days.map(d => {
@@ -425,19 +424,26 @@ export default function CalendarPage() {
               return (
                 <div
                   key={d.toISOString()}
-                  className="py-2 text-center cursor-pointer hover:bg-black/[0.02] transition-colors"
+                  className="flex items-center justify-center gap-1.5 py-2 cursor-pointer hover:bg-black/[0.02] transition-colors"
                   style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}
                   onClick={() => openModal(d)}
                 >
-                  <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#7a7874' }}>
+                  <span
+                    className="text-[10px] font-sans font-semibold uppercase tracking-wide"
+                    style={{ color: isToday ? '#e85d3a' : '#7a7874' }}
+                  >
                     {DAYS_SHORT[d.getDay()]}
-                  </div>
-                  <div
-                    className={`text-lg font-[Georgia] mt-0.5 mx-auto leading-tight ${isToday ? 'w-8 h-8 rounded-full flex items-center justify-center text-white' : ''}`}
-                    style={isToday ? { background: '#e85d3a' } : { color: '#1a1814' }}
+                  </span>
+                  <span
+                    className="text-sm font-[Georgia] tabular-nums flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 24, height: 24, borderRadius: '50%',
+                      background: isToday ? '#e85d3a' : 'transparent',
+                      color: isToday ? '#fff' : '#1a1814',
+                    }}
                   >
                     {d.getDate()}
-                  </div>
+                  </span>
                 </div>
               );
             })}
@@ -505,7 +511,6 @@ export default function CalendarPage() {
                         borderLeft: isNext ? `3px solid ${color}` : `2.5px solid ${color}`,
                       }}
                     >
-                      {/* Titelzeile mit optionalem Recurring-Icon rechts */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
                         <div
                           className="font-semibold font-sans leading-tight"
@@ -530,7 +535,6 @@ export default function CalendarPage() {
                           />
                         )}
                       </div>
-                      {/* Uhrzeit — immer sichtbar, keine calendarName-Zeile mehr */}
                       <div
                         className="font-sans mt-0.5"
                         style={{ fontSize: 9, color, opacity: 0.65, whiteSpace: 'nowrap' }}

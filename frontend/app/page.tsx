@@ -15,6 +15,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
+interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
@@ -30,53 +31,44 @@ const PASTELS: Record<string, string> = {
 export default function HomePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [weather, setWeather] = useState<{ data?: any; fetched_at?: string }>({});
+  const [weather, setWeather] = useState<{ data?: WeatherData; fetched_at?: string }>({});
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
-  const [waste, setWaste] = useState<WasteTodayData | undefined>();
+  const [waste, setWaste] = useState<WasteTodayData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [ur, tr, wr, cr, mr, ir, wasteR] = await Promise.allSettled([
+      const [usersRes, tasksRes, weatherRes, calRes, mealsRes, immichRes, wasteRes] = await Promise.all([
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/meals`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),
       ]);
-      if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
-      if (tr.status === 'fulfilled' && Array.isArray(tr.value)) setTasks(tr.value);
-      if (wr.status === 'fulfilled' && wr.value?.data) setWeather({ data: wr.value.data, fetched_at: wr.value.fetched_at });
-      if (cr.status === 'fulfilled' && cr.value?.events) setCalendar({ events: cr.value.events, fetched_at: cr.value.fetched_at });
-      if (mr.status === 'fulfilled' && mr.value?.byDate) setMeals({ byDate: mr.value.byDate, fetched_at: mr.value.fetched_at });
-      if (ir.status === 'fulfilled' && ir.value?.data) setImmich({ data: ir.value.data, fetched_at: ir.value.fetched_at });
-      if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);
+      if (Array.isArray(usersRes)) setUsers(usersRes);
+      if (Array.isArray(tasksRes)) setTasks(tasksRes);
+      if (weatherRes.data) setWeather(weatherRes);
+      if (calRes.events) setCalendar(calRes);
+      if (mealsRes.byDate) setMeals(mealsRes);
+      if (immichRes.data) setImmich(immichRes);
+      if (wasteRes && !wasteRes.error) setWaste(wasteRes);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAll(); const iv = setInterval(fetchAll, 5 * 60_000); return () => clearInterval(iv); }, [fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const fetchTasks = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
-    if (Array.isArray(res)) setTasks(res);
-  }, []);
-
-  const fetchUsers = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
-    if (Array.isArray(res)) setUsers(res);
-  }, []);
-
-  useSSE({
-    task_updated: fetchTasks,
-    points_updated: fetchUsers,
-    reward_claimed: fetchUsers,
-    config_updated: useCallback(() => window.location.reload(), []),
+  useSSE(`${API_BASE}/api/events`, {
+    users:    () => fetch(`${API_BASE}/api/users`).then(r => r.json()).then(d => { if (Array.isArray(d)) setUsers(d); }),
+    tasks:    () => fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()).then(d => { if (Array.isArray(d)) setTasks(d); }),
+    calendar: () => fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()).then(d => { if (d.events) setCalendar(d); }),
+    meals:    () => fetch(`${API_BASE}/api/widgets/meals`).then(r => r.json()).then(d => { if (d.byDate) setMeals(d); }),
+    weather:  () => fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()).then(d => { if (d.data) setWeather(d); }),
+    waste:    () => fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()).then(d => { if (d && !d.error) setWaste(d); }),
   });
 
   const handleImmichRefresh = async () => {
@@ -86,30 +78,34 @@ export default function HomePage() {
     } catch (e) { console.error(e); }
   };
 
+  // Tasks-Grid: ≤4 User → 2 Spalten, ≤6 User → 3 Spalten (aber bei 5–6 besser 2 Reihen à 3)
+  // Bei 150% Zoom (1280px effektiv): 5–6 User in grid-cols-3 ist zu eng → grid-cols-2
+  const taskGridCols = users.length <= 4
+    ? 'grid-cols-2'
+    : users.length <= 6
+      ? 'grid-cols-3'
+      : 'grid-cols-3';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="flex flex-col" style={{ minHeight: '100vh' }}>
       <PageHeader variant="home" />
 
-      {/* Scrollable content area */}
-      <div className="px-5 pb-4" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+      <div className="px-4 pb-4 flex flex-col gap-4 flex-1">
         {/* Main 2-col grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, height: '100%' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* LEFT col (2/3): Calendar + tasks */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="lg:col-span-2 flex flex-col gap-4">
 
             <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
+            {/* Tasks per user */}
             {!loading && users.length > 0 && (
               <div>
                 <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#7a7874' }}>
                   Aufgaben heute
                 </h2>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${Math.min(users.length, 3)}, 1fr)`,
-                  gap: 10,
-                }}>
+                <div className={`grid gap-2.5 ${taskGridCols}`}>
                   {users.map(user => {
                     const userTasks = tasks.filter(t => t.assigned_to === user.id);
                     const done = userTasks.filter(t => t.completed_at);
@@ -121,31 +117,34 @@ export default function HomePage() {
                       <Link
                         key={user.id}
                         href={`/user/${user.id}`}
-                        className="rounded-2xl block active:opacity-75 transition-opacity"
-                        style={{ background: bg, border: `0.5px solid ${user.color}25`, padding: '12px 14px' }}
+                        className="rounded-2xl p-3 block active:opacity-75 transition-opacity"
+                        style={{ background: bg, border: `0.5px solid ${user.color}25` }}
                       >
+                        {/* User header */}
                         <div className="flex items-center gap-2 mb-2">
                           {user.photo ? (
                             <img src={user.photo} alt={user.name}
-                              style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: `2px solid ${user.color}` }} />
+                              className="rounded-full object-cover flex-shrink-0"
+                              style={{ width: 28, height: 28 }} />
                           ) : (
-                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${user.color}22`, border: `2px solid ${user.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
-                              {user.avatar}
+                            <div className="rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-semibold"
+                              style={{ width: 28, height: 28, background: user.color }}>
+                              {user.name[0]}
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{user.name}</p>
-                            <p className="text-[10px] font-sans flex items-center gap-1" style={{ color: '#a09d99' }}>
-                              {done.length}/{userTasks.length}
-                              <span style={{ marginLeft: 2 }}>·</span>
-                              <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} aria-hidden="true" />
-                              {user.points}
+                            <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+                              {done.length}/{userTasks.length} · <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} />{user.points}
                             </p>
                           </div>
                         </div>
-                        <div className="rounded-full overflow-hidden mb-2" style={{ height: 3, background: `${user.color}20` }}>
-                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: user.color }} />
+                        {/* Progress bar */}
+                        <div className="h-0.5 rounded-full mb-2 overflow-hidden" style={{ background: `${user.color}25` }}>
+                          <div className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${pct}%`, background: user.color }} />
                         </div>
+                        {/* Pending tasks (max 3) */}
                         <div className="space-y-1">
                           {pending.slice(0, 3).map(task => (
                             <div key={task.id}
@@ -167,7 +166,7 @@ export default function HomePage() {
                             </div>
                           ))}
                           {userTasks.length === 0 && (
-                            <p className="text-xs font-sans text-center py-2" style={{ color: '#a09d99' }}>Keine Aufgaben</p>
+                            <p className="text-xs font-sans text-center py-1" style={{ color: '#a09d99' }}>Keine Aufgaben</p>
                           )}
                         </div>
                       </Link>
@@ -179,7 +178,7 @@ export default function HomePage() {
           </div>
 
           {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="flex flex-col gap-4">
             <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
             <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
             <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
