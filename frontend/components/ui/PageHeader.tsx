@@ -101,15 +101,6 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
               onClick={() => router.push(`/user/${user.id}`)}
             />
           ))}
-          <div style={{ width: 1, height: 28, background: 'rgba(0,0,0,0.1)', margin: '0 4px' }} />
-          <button
-            onClick={() => router.push('/members')}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-black/5"
-            style={{ color: '#6b6760' }}
-            title="Mitglieder"
-          >
-            <i className="ti ti-user-plus" style={{ fontSize: 18 }} aria-hidden="true" />
-          </button>
         </div>
 
         {/* Clock — only on homepage */}
