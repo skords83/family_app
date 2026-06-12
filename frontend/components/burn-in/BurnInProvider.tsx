@@ -24,7 +24,7 @@ export function BurnInProvider({ children, config }: BurnInProviderProps) {
           transition: "transform 4s ease-in-out",
           display: "flex",
           flex: 1,
-          minHeight: "100vh",
+          height: "100dvh",
           minWidth: 0,
           overflow: "hidden",
         }}

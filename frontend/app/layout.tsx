@@ -32,18 +32,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         style={{
           background: '#f5f2ee',
           color: '#1a1814',
-          height: '100vh',
-          overflow: 'hidden',
+          height: '100dvh',
           display: 'flex',
+          overflow: 'hidden',
           margin: 0,
         }}
       >
         <BurnInProvider>
           <Sidebar />
-          {/* flex-col so OfflineBanner + main stack vertically, capped at 100vh */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', minWidth: 0 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100dvh', minWidth: 0 }}>
             <OfflineBanner />
-            <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <main style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
               {children}
             </main>
           </div>
