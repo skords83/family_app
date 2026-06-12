@@ -9,14 +9,14 @@ import ImmichWidget from '@/components/widgets/ImmichWidget';
 import WasteWidget from '@/components/widgets/WasteWidget';
 import PageHeader from '@/components/ui/PageHeader';
 import Link from 'next/link';
-import type { WeatherData } from '@family/shared';
+
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
-// WeatherData kommt aus @family/shared — keine lokale Redefinition
+interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; apparentTemperature?: number; precipitationProbability?: number; [key: string]: unknown; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
