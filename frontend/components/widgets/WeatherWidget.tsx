@@ -189,33 +189,35 @@ export default function WeatherWidget({ data, fetched_at, loading }: WeatherWidg
 
       {/* Hourly forecast — crosses midnight thanks to forecast_days=2 */}
       {hourlyItems.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {hourlyItems.map((h, idx) => (
-            <div
-              key={idx}
-              className="flex flex-col items-center gap-0.5 flex-shrink-0 rounded-lg px-2 py-1.5"
-              style={{ background: '#f5f2ee', minWidth: 52 }}
-            >
-              <span className="text-[11px] font-sans" style={{ color: '#a09d99' }}>
-                {formatTime(h.time)}
-              </span>
-              <span className="text-sm font-semibold font-sans" style={{ color: '#1a1814' }}>
-                {Math.round(h.temperature)}°
-              </span>
-              {h.precipitationProbability > 0 && (
-                <div className="flex items-center gap-0.5">
-                  <i
-                    className="ti ti-droplet"
-                    style={{ fontSize: 10, color: '#378ADD' }}
-                    aria-hidden="true"
-                  />
-                  <span className="text-[10px] font-sans" style={{ color: '#378ADD' }}>
-                    {Math.round(h.precipitationProbability)}%
-                  </span>
-                </div>
-              )}
-            </div>
-          ))}
+        <div style={{ overflow: 'hidden' }}>
+          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${hourlyItems.length}, 1fr)` }}>
+            {hourlyItems.map((h, idx) => (
+              <div
+                key={idx}
+                className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5"
+                style={{ background: '#f5f2ee', minWidth: 0 }}
+              >
+                <span className="text-[10px] font-sans truncate w-full text-center" style={{ color: '#a09d99' }}>
+                  {formatTime(h.time)}
+                </span>
+                <span className="text-sm font-semibold font-sans" style={{ color: '#1a1814' }}>
+                  {Math.round(h.temperature)}°
+                </span>
+                {h.precipitationProbability > 0 && (
+                  <div className="flex items-center gap-0.5">
+                    <i
+                      className="ti ti-droplet"
+                      style={{ fontSize: 10, color: '#378ADD' }}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[10px] font-sans" style={{ color: '#378ADD' }}>
+                      {Math.round(h.precipitationProbability)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
