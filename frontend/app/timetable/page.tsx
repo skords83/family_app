@@ -42,31 +42,6 @@ const COLORS = [
   { bg: '#e8eaf6', fg: '#5c6bc0', label: 'Indigo' },
 ];
 
-const STORAGE_KEY = 'family_timetables';
-const SUBJECT_STORAGE_KEY = 'family_subject_colors';
-
-function loadTimetables(): AllTimetables {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    return s ? JSON.parse(s) : {};
-  } catch { return {}; }
-}
-
-function saveTimetables(data: AllTimetables) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
-}
-
-function loadSubjectColors(): Record<string, { bg: string; fg: string }> {
-  try {
-    const s = localStorage.getItem(SUBJECT_STORAGE_KEY);
-    return s ? JSON.parse(s) : {};
-  } catch { return {}; }
-}
-
-function saveSubjectColors(data: Record<string, { bg: string; fg: string }>) {
-  try { localStorage.setItem(SUBJECT_STORAGE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
-}
-
 // Collects all unique subject names across all timetables
 function collectSubjects(timetables: AllTimetables): string[] {
   const names = new Set<string>();
@@ -78,8 +53,20 @@ function collectSubjects(timetables: AllTimetables): string[] {
   return Array.from(names).sort();
 }
 
+// Derives subject→color map from existing timetable data
+function deriveSubjectColors(timetables: AllTimetables): Record<string, { bg: string; fg: string }> {
+  const sc: Record<string, { bg: string; fg: string }> = {};
+  for (const tt of Object.values(timetables)) {
+    for (const lesson of Object.values(tt)) {
+      if (lesson.name && !sc[lesson.name]) {
+        sc[lesson.name] = { bg: lesson.bg, fg: lesson.fg };
+      }
+    }
+  }
+  return sc;
+}
+
 export default function TimetablePage() {
-  const [mounted, setMounted] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [timetables, setTimetables] = useState<AllTimetables>({});
@@ -89,31 +76,59 @@ export default function TimetablePage() {
   const [editColor, setEditColor] = useState(COLORS[0]);
   const [showLegend, setShowLegend] = useState(false);
   const [legendEditSubject, setLegendEditSubject] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Step 1: mark as mounted (client-side only) and load localStorage
-  useEffect(() => {
-    setMounted(true);
-    setTimetables(loadTimetables());
-    setSubjectColors(loadSubjectColors());
+  // Load all users (children only) + all timetables from API
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [usersRes, ttRes] = await Promise.all([
+        fetch(`${API_BASE}/api/users`),
+        fetch(`${API_BASE}/api/timetable`),
+      ]);
+      const usersData: User[] = await usersRes.json();
+      const ttData: AllTimetables = await ttRes.json();
+
+      if (Array.isArray(usersData)) {
+        const kids = usersData.filter(u => u.role === 'child');
+        setUsers(kids);
+        if (kids.length > 0) setActiveId(prev => prev ?? kids[0].id);
+      }
+
+      if (ttData && typeof ttData === 'object') {
+        setTimetables(ttData);
+        setSubjectColors(deriveSubjectColors(ttData));
+      }
+    } catch (err) {
+      console.error('[timetable] load error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Step 2: fetch users after mount
   useEffect(() => {
-    if (!mounted) return;
-    fetch(`${API_BASE}/api/users`)
-      .then(r => r.json())
-      .then((data: User[]) => {
-        if (Array.isArray(data)) {
-          const kids = data.filter(u => u.role === 'child');
-          setUsers(kids);
-          if (kids.length > 0) setActiveId(kids[0].id);
-        }
-      })
-      .catch(console.error);
-  }, [mounted]);
+    loadAll();
+  }, [loadAll]);
 
   const activeUser = users.find(u => u.id === activeId);
   const tt: Timetable = (activeId && timetables[activeId]) ? timetables[activeId] : {};
+
+  // Persist single user's timetable to API
+  async function saveTimetableForUser(userId: string, data: Timetable) {
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE}/api/timetable/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      console.error('[timetable] save error:', err);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // When typing a known subject name, auto-apply its color
   function handleEditNameChange(val: string) {
@@ -134,36 +149,37 @@ export default function TimetablePage() {
     setEditing({ day, slot });
   }
 
-  function saveLesson() {
+  async function saveLesson() {
     if (!activeId || !editing) return;
     const key = `${editing.day}_${editing.slot}`;
-    const updated = { ...timetables };
-    if (!updated[activeId]) updated[activeId] = {};
+    const updatedTt = { ...tt };
     const trimmed = editName.trim();
+
     if (trimmed) {
-      updated[activeId][key] = { name: trimmed, bg: editColor.bg, fg: editColor.fg };
-      // Persist subject→color mapping (only if not already set or user changed it)
-      const sc = { ...subjectColors };
-      sc[trimmed] = { bg: editColor.bg, fg: editColor.fg };
+      updatedTt[key] = { name: trimmed, bg: editColor.bg, fg: editColor.fg };
+      // Update subject color map
+      const sc = { ...subjectColors, [trimmed]: { bg: editColor.bg, fg: editColor.fg } };
       setSubjectColors(sc);
-      saveSubjectColors(sc);
     } else {
-      delete updated[activeId][key];
+      delete updatedTt[key];
     }
-    setTimetables(updated);
-    saveTimetables(updated);
+
+    const updatedAll = { ...timetables, [activeId]: updatedTt };
+    setTimetables(updatedAll);
     setEditing(null);
+    await saveTimetableForUser(activeId, updatedTt);
   }
 
   // All known subjects across all kids' timetables
   const allSubjects = collectSubjects(timetables);
 
-  function updateLegendColor(subject: string, color: { bg: string; fg: string }) {
+  async function updateLegendColor(subject: string, color: { bg: string; fg: string }) {
     // Update subjectColors
     const sc = { ...subjectColors, [subject]: color };
     setSubjectColors(sc);
-    saveSubjectColors(sc);
-    // Also update all existing lessons with this name across all timetables
+    setLegendEditSubject(null);
+
+    // Update all existing lessons with this name across all timetables
     const updated: AllTimetables = {};
     for (const [uid, tt2] of Object.entries(timetables)) {
       updated[uid] = {};
@@ -176,12 +192,14 @@ export default function TimetablePage() {
       }
     }
     setTimetables(updated);
-    saveTimetables(updated);
-    setLegendEditSubject(null);
-  }
 
-  // Don't render until client-side hydration is complete
-  if (!mounted) return null;
+    // Save updated timetables for all affected users
+    await Promise.all(
+      Object.entries(updated).map(([uid, data]) =>
+        saveTimetableForUser(uid, data),
+      ),
+    );
+  }
 
   return (
     <div>
@@ -211,48 +229,46 @@ export default function TimetablePage() {
       </div>
 
       {/* Legend panel */}
-      {showLegend && (
-        <div className="mb-6 rounded-2xl p-4" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-          <p className="text-[11px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
-            Fach → Farbe (gilt für alle Kinder)
-          </p>
-          {allSubjects.length === 0 && (
-            <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Noch keine Fächer eingetragen.</p>
-          )}
+      {showLegend && allSubjects.length > 0 && (
+        <div className="mb-4 rounded-2xl p-4" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+          <p className="text-[11px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>Fachfarben</p>
           <div className="flex flex-wrap gap-2">
             {allSubjects.map(subject => {
               const sc = subjectColors[subject] ?? COLORS[0];
               const isEditing = legendEditSubject === subject;
               return (
                 <div key={subject}>
-                  {!isEditing ? (
+                  {isEditing ? (
+                    <div className="rounded-xl p-2 shadow-md" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', zIndex: 10, position: 'relative' }}>
+                      <div className="text-xs font-sans font-medium mb-2" style={{ color: '#1a1814' }}>{subject}</div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {COLORS.map(c => (
+                          <button
+                            key={c.fg}
+                            onClick={() => updateLegendColor(subject, { bg: c.bg, fg: c.fg })}
+                            className="w-6 h-6 rounded-full border-2 transition-all"
+                            style={{ background: c.bg, borderColor: sc.fg === c.fg ? c.fg : 'transparent' }}
+                            title={c.label}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setLegendEditSubject(null)}
+                        className="mt-2 text-[10px] font-sans"
+                        style={{ color: '#a09d99' }}
+                      >
+                        Schließen
+                      </button>
+                    </div>
+                  ) : (
                     <button
                       onClick={() => setLegendEditSubject(subject)}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-sans font-medium transition-all hover:opacity-80"
-                      style={{ background: sc.bg, color: sc.fg, border: `1px solid ${sc.fg}22` }}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all hover:opacity-80"
+                      style={{ background: sc.bg, color: sc.fg }}
                     >
-                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: sc.fg }} />
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sc.fg }} />
                       {subject}
-                      <i className="ti ti-pencil" style={{ fontSize: 12, opacity: 0.6 }} />
                     </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl" style={{ background: '#f0ede8' }}>
-                      <span className="text-sm font-sans font-medium mr-1" style={{ color: '#1a1814' }}>{subject}</span>
-                      {COLORS.map(c => (
-                        <button
-                          key={c.fg}
-                          onClick={() => updateLegendColor(subject, { bg: c.bg, fg: c.fg })}
-                          className="w-6 h-6 rounded-full transition-all hover:scale-110"
-                          style={{
-                            background: c.bg,
-                            border: sc.fg === c.fg ? `2px solid ${c.fg}` : '2px solid transparent',
-                            outline: sc.fg === c.fg ? `1.5px solid ${c.fg}` : 'none',
-                          }}
-                          title={c.label}
-                        />
-                      ))}
-                      <button onClick={() => setLegendEditSubject(null)} className="ml-1 text-xs" style={{ color: '#a09d99' }}>✕</button>
-                    </div>
                   )}
                 </div>
               );
@@ -262,53 +278,63 @@ export default function TimetablePage() {
       )}
 
       {/* Child tabs */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {users.map(u => (
-          <button
-            key={u.id}
-            onClick={() => setActiveId(u.id)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-sans font-medium transition-all"
-            style={{
-              background: activeId === u.id ? u.color : '#fff',
-              color: activeId === u.id ? '#fff' : '#6b6760',
-              border: `0.5px solid ${activeId === u.id ? u.color : 'rgba(0,0,0,0.1)'}`,
-            }}
-          >
-            {u.photo ? (
-              <img src={u.photo} alt={u.name} className="w-6 h-6 rounded-full object-cover" style={{ border: `2px solid ${u.color}` }} />
-            ) : (
-              <span>{u.avatar}</span>
-            )}
-            {u.name}
-          </button>
-        ))}
-      </div>
-
-      {users.length === 0 && (
-        <div className="text-center py-16" style={{ color: '#a09d99' }}>
-          <p className="font-sans text-sm">Keine Kinder angelegt</p>
+      {users.length > 0 && (
+        <div className="flex gap-2 mb-4">
+          {users.map(u => (
+            <button
+              key={u.id}
+              onClick={() => setActiveId(u.id)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-sans font-medium transition-all"
+              style={{
+                background: activeId === u.id ? u.color : '#fff',
+                color: activeId === u.id ? '#fff' : '#6b6760',
+                border: '0.5px solid rgba(0,0,0,0.1)',
+              }}
+            >
+              <span style={{ fontSize: 16 }}>{u.photo ? undefined : u.avatar}</span>
+              {u.photo && (
+                <img src={u.photo} alt={u.name}
+                  className="w-5 h-5 rounded-full object-cover" />
+              )}
+              {u.name}
+            </button>
+          ))}
         </div>
       )}
 
-      {activeUser && (
-        <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+      {loading ? (
+        <div className="flex items-center justify-center h-48">
+          <span className="text-sm font-sans" style={{ color: '#a09d99' }}>Lade Stundenpläne…</span>
+        </div>
+      ) : users.length === 0 ? (
+        <div className="flex items-center justify-center h-48">
+          <span className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Kinder angelegt.</span>
+        </div>
+      ) : (
+        /* Grid */
+        <div className="rounded-2xl overflow-hidden" style={{ border: '0.5px solid rgba(0,0,0,0.07)', background: '#fff' }}>
           {/* Header row */}
-          <div className="grid" style={{ gridTemplateColumns: '110px repeat(5, 1fr)' }}>
-            <div className="px-3 py-3" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)', background: '#fafaf9' }} />
-            {DAYS.map(d => (
+          <div className="grid" style={{ gridTemplateColumns: '80px repeat(5, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
+            <div style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)', background: '#fafaf9' }} />
+            {DAYS.map((day, di) => (
               <div
-                key={d}
-                className="px-3 py-3 text-center text-xs font-sans font-semibold uppercase tracking-wider"
-                style={{ color: '#a09d99', borderRight: '0.5px solid rgba(0,0,0,0.07)', background: '#fafaf9', borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}
+                key={day}
+                className="py-3 flex items-center justify-center"
+                style={{ borderRight: di < 4 ? '0.5px solid rgba(0,0,0,0.07)' : 'none', background: '#fafaf9' }}
               >
-                {d}
+                <span className="text-[11px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
+                  {day}
+                </span>
               </div>
             ))}
           </div>
 
           {/* Slot rows */}
           {SLOTS.map((slotLabel, si) => (
-            <div key={si} className="grid" style={{ gridTemplateColumns: '110px repeat(5, 1fr)', borderBottom: si < SLOTS.length - 1 ? '0.5px solid rgba(0,0,0,0.07)' : 'none' }}>
+            <div
+              key={si}
+              className="grid"
+              style={{ gridTemplateColumns: '80px repeat(5, 1fr)', borderBottom: si < SLOTS.length - 1 ? '0.5px solid rgba(0,0,0,0.07)' : 'none' }}>
               {/* Time */}
               <div
                 className="px-3 py-3 flex items-center justify-end"
@@ -348,6 +374,7 @@ export default function TimetablePage() {
           ))}
         </div>
       )}
+      </div>
 
       {/* Edit modal */}
       {editing && (
@@ -367,29 +394,10 @@ export default function TimetablePage() {
               value={editName}
               onChange={e => handleEditNameChange(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && saveLesson()}
-              placeholder="z.B. Englisch"
-              className="w-full px-3 py-2 rounded-xl text-sm font-sans outline-none mb-3"
-              style={{ background: '#f0ede8', color: '#1a1814', border: '0.5px solid rgba(0,0,0,0.1)' }}
+              placeholder="z.B. Mathematik"
+              className="w-full rounded-xl px-3 py-2.5 text-sm font-sans outline-none mb-4"
+              style={{ background: '#f5f3f0', color: '#1a1814', border: '0.5px solid rgba(0,0,0,0.1)' }}
             />
-
-            {/* Known subject suggestions */}
-            {allSubjects.filter(s => s.toLowerCase().includes(editName.toLowerCase()) && editName.trim() && s.toLowerCase() !== editName.trim().toLowerCase()).slice(0, 4).length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-3">
-                {allSubjects
-                  .filter(s => s.toLowerCase().includes(editName.toLowerCase()) && s.toLowerCase() !== editName.trim().toLowerCase())
-                  .slice(0, 4)
-                  .map(s => (
-                    <button
-                      key={s}
-                      onClick={() => { handleEditNameChange(s); }}
-                      className="px-2 py-1 rounded-lg text-xs font-sans"
-                      style={{ background: (subjectColors[s] ?? COLORS[0]).bg, color: (subjectColors[s] ?? COLORS[0]).fg }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-              </div>
-            )}
 
             <label className="text-[11px] font-sans font-semibold uppercase tracking-wider block mb-2" style={{ color: '#a09d99' }}>Farbe</label>
             <div className="flex flex-wrap gap-2 mb-5">
@@ -397,46 +405,42 @@ export default function TimetablePage() {
                 <button
                   key={c.fg}
                   onClick={() => setEditColor(c)}
-                  className="w-8 h-8 rounded-full transition-all"
-                  style={{
-                    background: c.bg,
-                    border: editColor.fg === c.fg ? `2.5px solid ${c.fg}` : '2px solid transparent',
-                    transform: editColor.fg === c.fg ? 'scale(1.15)' : 'scale(1)',
-                  }}
+                  className="w-7 h-7 rounded-full border-2 transition-all"
+                  style={{ background: c.bg, borderColor: editColor.fg === c.fg ? c.fg : 'transparent' }}
                   title={c.label}
                 />
               ))}
             </div>
 
+            {/* Preview */}
+            {editName.trim() && (
+              <div className="rounded-lg px-3 py-2 mb-4 flex items-center" style={{ background: editColor.bg }}>
+                <span className="text-sm font-sans font-medium" style={{ color: editColor.fg }}>
+                  {editName.trim()}
+                </span>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
-                onClick={() => setEditing(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-sans transition-all hover:bg-black/5"
-                style={{ border: '0.5px solid rgba(0,0,0,0.1)', color: '#6b6760' }}
+                onClick={() => { setEditName(''); saveLesson(); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-sans transition-all"
+                style={{ background: '#f5f3f0', color: '#6b6760' }}
               >
-                Abbrechen
+                Löschen
               </button>
-              {tt[`${editing.day}_${editing.slot}`] && (
-                <button
-                  onClick={() => { setEditName(''); saveLesson(); }}
-                  className="py-2.5 px-3 rounded-xl text-sm font-sans transition-all"
-                  style={{ background: '#fff0ee', color: '#e85d3a' }}
-                >
-                  Löschen
-                </button>
-              )}
               <button
                 onClick={saveLesson}
-                className="flex-1 py-2.5 rounded-xl text-sm font-sans font-medium text-white transition-all"
-                style={{ background: activeUser?.color ?? '#e85d3a' }}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-sans font-medium transition-all"
+                style={{ background: saving ? '#ccc' : '#1a1814', color: '#fff' }}
               >
-                Speichern
+                {saving ? 'Speichern…' : 'Speichern'}
               </button>
             </div>
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
