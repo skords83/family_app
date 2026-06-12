@@ -10,14 +10,11 @@ import WasteWidget from '@/components/widgets/WasteWidget';
 import PageHeader from '@/components/ui/PageHeader';
 import Link from 'next/link';
 
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
-interface WeatherState { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; [key: string]: unknown; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
-[]; apparentTemperature?: number; precipitationProbability?: number; [key: string]: unknown; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
@@ -33,7 +30,8 @@ const PASTELS: Record<string, string> = {
 export default function HomePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
-  const [weather, setWeather] = useState<{ data?: WeatherState; fetched_at?: string }>({});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [weather, setWeather] = useState<{ data?: any; fetched_at?: string }>({});
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
@@ -89,16 +87,12 @@ export default function HomePage() {
   };
 
   return (
-    // Kiosk: fill exactly the viewport height passed from layout, no own scroll
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <PageHeader variant="home" />
 
-      {/* Scrollable content area — only this scrolls if content overflows */}
-      <div
-        className="px-5 pb-4"
-        style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
-      >
-        {/* Main 2-col grid — gap reduced from 20px to 14px for 864px height budget */}
+      {/* Scrollable content area */}
+      <div className="px-5 pb-4" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        {/* Main 2-col grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, height: '100%' }}>
 
           {/* LEFT col (2/3): Calendar + tasks */}
@@ -106,7 +100,6 @@ export default function HomePage() {
 
             <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
-            {/* Tasks per user */}
             {!loading && users.length > 0 && (
               <div>
                 <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#7a7874' }}>
@@ -131,7 +124,6 @@ export default function HomePage() {
                         className="rounded-2xl block active:opacity-75 transition-opacity"
                         style={{ background: bg, border: `0.5px solid ${user.color}25`, padding: '12px 14px' }}
                       >
-                        {/* User header */}
                         <div className="flex items-center gap-2 mb-2">
                           {user.photo ? (
                             <img src={user.photo} alt={user.name}
@@ -151,11 +143,9 @@ export default function HomePage() {
                             </p>
                           </div>
                         </div>
-                        {/* Progress bar */}
                         <div className="rounded-full overflow-hidden mb-2" style={{ height: 3, background: `${user.color}20` }}>
                           <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: user.color }} />
                         </div>
-                        {/* Pending tasks (max 3) */}
                         <div className="space-y-1">
                           {pending.slice(0, 3).map(task => (
                             <div key={task.id}
@@ -190,7 +180,7 @@ export default function HomePage() {
 
           {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <WeatherWidget data={weather.data as any} fetched_at={weather.fetched_at} loading={loading} />
+            <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
             <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
             <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
             <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
