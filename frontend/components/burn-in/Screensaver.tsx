@@ -65,11 +65,17 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
     return () => clearInterval(t);
   }, []);
 
+  function handleDismiss(e: React.MouseEvent | React.TouchEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    onDismiss();
+  }
+
   return (
     <div
       className="screensaver"
-      onClick={onDismiss}
-      onTouchStart={onDismiss}
+      onClick={handleDismiss}
+      onTouchStart={handleDismiss}
       aria-label="Tippen zum Fortfahren"
     >
       <div
