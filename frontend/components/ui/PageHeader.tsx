@@ -5,14 +5,12 @@ import { useClientDate } from '@/hooks/useClientDate';
 import AvatarButton from './AvatarButton';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 interface User {
-id: string; name: string; avatar: string; photo?: string;
-color: string; points: number; role: string;
-tasks_total?: number; tasks_done?: number;
+  id: string; name: string; avatar: string; photo?: string;
+  color: string; points: number; role: string;
+  tasks_total?: number; tasks_done?: number;
 }
 interface PageHeaderProps {
-  /** Custom title for non-homepage views, e.g. "Kalender" */
   title?: string;
-  /** Show greeting + clock (homepage style) or just title (subpage style) */
   variant?: 'home' | 'page';
 }
 function Clock() {
@@ -27,7 +25,6 @@ function Clock() {
     : '\u00a0\u00a0:\u00a0\u00a0';
   return (
     <div className="text-right flex-shrink-0">
-      {/* 34px statt 40px — spart ~12px Höhe */}
       <div className="tabular-nums font-light tracking-tight"
         style={{ fontSize: 34, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
         {hm}
@@ -62,13 +59,10 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
     ? now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : '\u00a0';
   return (
-    // pt-4 pb-3 statt pt-6 pb-4 — spart ~12px Höhe
     <div className="flex items-center justify-between px-6 pt-4 pb-3 flex-shrink-0">
-      {/* Left: greeting or page title */}
       <div>
         {variant === 'home' ? (
           <>
-            {/* 24px statt 28px */}
             <h1 className="font-normal" style={{ fontSize: 24, color: '#1a1814', fontFamily: 'Georgia, serif' }}>
               {greeting}
             </h1>
@@ -80,9 +74,7 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
           </h1>
         )}
       </div>
-      {/* Right: avatars + clock */}
       <div className="flex items-center gap-3">
-        {/* Avatar row */}
         <div className="flex items-center gap-1.5">
           {users.map(user => (
             <AvatarButton
@@ -93,7 +85,6 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
             />
           ))}
         </div>
-        {/* Clock — only on homepage */}
         {variant === 'home' && <Clock />}
       </div>
     </div>
