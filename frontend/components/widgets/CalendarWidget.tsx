@@ -36,11 +36,9 @@ function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: 
     if (startDate >= cutoff) continue;
     const dateKey = toLocalDateStr(startDate); // lokal, nicht UTC
     if (dateKey < todayStr) continue;           // vergangene Tage überspringen
-    // Heute: abgelaufene Termine ausblenden — Ganztags-Termine immer zeigen
-    if (dateKey === todayStr && !event.allDay) {
-      const endDate = new Date(event.end);
-      if (endDate < now) continue;
-    }
+    // Heute: abgelaufene Termine ausblenden — nach start-Zeit (konsistent mit Benutzerseite)
+    // Ganztags-Termine immer zeigen
+    if (dateKey === todayStr && !event.allDay && startDate < now) continue;
     if (!map.has(dateKey)) map.set(dateKey, []);
     map.get(dateKey)!.push(event);
   }
