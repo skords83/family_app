@@ -15,7 +15,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
-interface WeatherData { temperature: number; apparentTemperature: number; precipitationProbability: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number; apparentTemperature: number; precipitationProbability: number; weathercode: number }[]; }
+interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
@@ -87,27 +87,34 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex flex-col" style={{ minHeight: '100vh' }}>
+    // Kiosk: fill exactly the viewport height passed from layout, no own scroll
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <PageHeader variant="home" />
 
-      <div className="px-6 pb-6 flex flex-col gap-5 flex-1">
-        {/* Main 2-col grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Scrollable content area — only this scrolls if content overflows */}
+      <div
+        className="px-5 pb-4"
+        style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
+      >
+        {/* Main 2-col grid — gap reduced from 20px to 14px for 864px height budget */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, height: '100%' }}>
 
           {/* LEFT col (2/3): Calendar + tasks */}
-          <div className="lg:col-span-2 flex flex-col gap-5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
             {/* Tasks per user */}
             {!loading && users.length > 0 && (
               <div>
-                <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#7a7874' }}>
+                <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#7a7874' }}>
                   Aufgaben heute
                 </h2>
-                <div className={`grid gap-3 ${
-                  users.length <= 3 ? 'grid-cols-3' : 'grid-cols-3'
-                }`}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${Math.min(users.length, 3)}, 1fr)`,
+                  gap: 10,
+                }}>
                   {users.map(user => {
                     const userTasks = tasks.filter(t => t.assigned_to === user.id);
                     const done = userTasks.filter(t => t.completed_at);
@@ -119,30 +126,32 @@ export default function HomePage() {
                       <Link
                         key={user.id}
                         href={`/user/${user.id}`}
-                        className="rounded-2xl p-4 block active:opacity-75 transition-opacity"
-                        style={{ background: bg, border: `0.5px solid ${user.color}25` }}
+                        className="rounded-2xl block active:opacity-75 transition-opacity"
+                        style={{ background: bg, border: `0.5px solid ${user.color}25`, padding: '12px 14px' }}
                       >
                         {/* User header */}
                         <div className="flex items-center gap-2 mb-2">
                           {user.photo ? (
-                            <img src={user.photo} alt={user.name} className="rounded-full object-cover flex-shrink-0"
-                              style={{ width: 32, height: 32, border: `2px solid ${user.color}` }} />
+                            <img src={user.photo} alt={user.name}
+                              style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: `2px solid ${user.color}` }} />
                           ) : (
-                            <div className="rounded-full flex items-center justify-center text-lg flex-shrink-0"
-                              style={{ width: 32, height: 32, background: `${user.color}22`, border: `2px solid ${user.color}` }}>
+                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${user.color}22`, border: `2px solid ${user.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
                               {user.avatar}
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold font-sans" style={{ color: user.color }}>{user.name}</p>
-                            <p className="text-xs font-sans flex items-center gap-1" style={{ color: '#a09d99' }}>
-                              {done.length}/{userTasks.length} · <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" />{user.points}
+                            <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{user.name}</p>
+                            <p className="text-[10px] font-sans flex items-center gap-1" style={{ color: '#a09d99' }}>
+                              {done.length}/{userTasks.length}
+                              <span style={{ marginLeft: 2 }}>·</span>
+                              <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} aria-hidden="true" />
+                              {user.points}
                             </p>
                           </div>
                         </div>
                         {/* Progress bar */}
-                        <div className="h-0.5 rounded-full mb-2.5 overflow-hidden" style={{ background: `${user.color}20` }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: user.color }} />
+                        <div className="rounded-full overflow-hidden mb-2" style={{ height: 3, background: `${user.color}20` }}>
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: user.color }} />
                         </div>
                         {/* Pending tasks (max 3) */}
                         <div className="space-y-1">
@@ -178,7 +187,7 @@ export default function HomePage() {
           </div>
 
           {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
-          <div className="flex flex-col gap-5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
             <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
             <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />

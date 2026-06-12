@@ -32,8 +32,9 @@ function Clock() {
     : '\u00a0\u00a0:\u00a0\u00a0';
   return (
     <div className="text-right flex-shrink-0">
+      {/* 34px statt 40px — spart ~12px Höhe */}
       <div className="tabular-nums font-light tracking-tight"
-        style={{ fontSize: 40, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
+        style={{ fontSize: 34, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
         {hm}
       </div>
     </div>
@@ -72,27 +73,29 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
     : '\u00a0';
 
   return (
-    <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+    // pt-4 pb-3 statt pt-6 pb-4 — spart ~12px Höhe
+    <div className="flex items-center justify-between px-6 pt-4 pb-3 flex-shrink-0">
       {/* Left: greeting or page title */}
       <div>
         {variant === 'home' ? (
           <>
-            <h1 className="font-normal" style={{ fontSize: 28, color: '#1a1814', fontFamily: 'Georgia, serif' }}>
+            {/* 24px statt 28px */}
+            <h1 className="font-normal" style={{ fontSize: 24, color: '#1a1814', fontFamily: 'Georgia, serif' }}>
               {greeting}
             </h1>
-            <p className="text-sm font-sans mt-0.5" style={{ color: '#7a7874' }}>{dateStr}</p>
+            <p className="text-xs font-sans mt-0.5" style={{ color: '#7a7874' }}>{dateStr}</p>
           </>
         ) : (
-          <h1 className="font-normal" style={{ fontSize: 22, color: '#1a1814', fontFamily: 'Georgia, serif' }}>
+          <h1 className="font-normal" style={{ fontSize: 20, color: '#1a1814', fontFamily: 'Georgia, serif' }}>
             {title}
           </h1>
         )}
       </div>
 
       {/* Right: avatars + clock */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {/* Avatar row */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {users.map(user => (
             <AvatarButton
               key={user.id}
@@ -101,6 +104,15 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
               onClick={() => router.push(`/user/${user.id}`)}
             />
           ))}
+          <div style={{ width: 1, height: 24, background: 'rgba(0,0,0,0.1)', margin: '0 4px' }} />
+          <button
+            onClick={() => router.push('/members')}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-black/5"
+            style={{ color: '#6b6760' }}
+            title="Mitglieder"
+          >
+            <i className="ti ti-user-plus" style={{ fontSize: 18 }} aria-hidden="true" />
+          </button>
         </div>
 
         {/* Clock — only on homepage */}

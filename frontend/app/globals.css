@@ -13,19 +13,24 @@
   --family-accent: #e85d3a;
 }
 
+/* ── Kiosk-Viewport-Lock ──────────────────────────────────────────────────── */
+/* 1920×1080 @ 125% = 1536×864 CSS-px. Kein Browser-Scroll, kein Overflow. */
 html {
   background: var(--family-bg);
   color: var(--family-text);
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
 }
 
 body {
   background: var(--family-bg);
   color: var(--family-text);
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
 }
+/* ────────────────────────────────────────────────────────────────────────── */
 
-/* Smooth scrolling */
+/* Smooth scrolling in scrollable sub-areas */
 * {
   scroll-behavior: smooth;
 }
