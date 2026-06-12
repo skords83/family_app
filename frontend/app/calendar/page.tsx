@@ -30,9 +30,9 @@ interface CalendarOption {
 const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 // 36 px/h: 8–22 Uhr = 504 px — kein Scrollen auf 1080p bei 150% Zoom
-const SLOT_H = 36;
+const SLOT_H = 32;
 const START_H = 8;
-// 14 h: 8:00–22:00
+// 14 h: 8:00–22:00 — 32px×14 = 448px body, passt in 720px effektiv ohne Scroll
 const HOURS = 14;
 // Mindesthöhe: immer zwei Zeilen (Titel + Zeit) lesbar, auch bei 15/30-min-Terminen
 const MIN_EVENT_H = 44;

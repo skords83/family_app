@@ -98,12 +98,12 @@ export default function HomePage() {
     <div className="flex flex-col" style={{ minHeight: '100vh' }}>
       <PageHeader variant="home" />
 
-      <div className="px-4 pb-4 flex flex-col gap-4 flex-1">
+      <div className="px-3 pb-3 flex flex-col gap-3 flex-1">
         {/* Main 2-col grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
           {/* LEFT col (2/3): Calendar + tasks */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
+          <div className="lg:col-span-2 flex flex-col gap-3">
 
             <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
 
@@ -186,7 +186,7 @@ export default function HomePage() {
           </div>
 
           {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
             <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
             <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
