@@ -79,6 +79,7 @@ function collectSubjects(timetables: AllTimetables): string[] {
 }
 
 export default function TimetablePage() {
+  const [mounted, setMounted] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [timetables, setTimetables] = useState<AllTimetables>({});
@@ -89,7 +90,16 @@ export default function TimetablePage() {
   const [showLegend, setShowLegend] = useState(false);
   const [legendEditSubject, setLegendEditSubject] = useState<string | null>(null);
 
+  // Step 1: mark as mounted (client-side only) and load localStorage
   useEffect(() => {
+    setMounted(true);
+    setTimetables(loadTimetables());
+    setSubjectColors(loadSubjectColors());
+  }, []);
+
+  // Step 2: fetch users after mount
+  useEffect(() => {
+    if (!mounted) return;
     fetch(`${API_BASE}/api/users`)
       .then(r => r.json())
       .then((data: User[]) => {
@@ -100,9 +110,7 @@ export default function TimetablePage() {
         }
       })
       .catch(console.error);
-    setTimetables(loadTimetables());
-    setSubjectColors(loadSubjectColors());
-  }, []);
+  }, [mounted]);
 
   const activeUser = users.find(u => u.id === activeId);
   const tt: Timetable = (activeId && timetables[activeId]) ? timetables[activeId] : {};
@@ -171,6 +179,9 @@ export default function TimetablePage() {
     saveTimetables(updated);
     setLegendEditSubject(null);
   }
+
+  // Don't render until client-side hydration is complete
+  if (!mounted) return null;
 
   return (
     <div>
