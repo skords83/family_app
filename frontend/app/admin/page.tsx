@@ -578,7 +578,7 @@ export default function AdminPage() {
                       className="flex items-center gap-3 rounded-xl px-3 py-3 border"
                       style={{ background: '#fef3c7', borderColor: '#fcd34d' }}
                     >
-                      <UserAvatar user={approval} size={36} />
+                      <UserAvatar user={{ avatar: approval.user_avatar, name: approval.user_name, color: approval.user_color, photo: approval.user_photo }} size={36} />
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{approval.title}</p>
                         <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
