@@ -13,6 +13,7 @@ interface CalendarEvent {
   allDay: boolean;
   color?: string;
   calendarName?: string;
+  recurring?: boolean;
 }
 
 interface LayoutEvent extends CalendarEvent {
@@ -455,6 +456,9 @@ export default function CalendarPage() {
                     className="text-[10px] font-sans font-medium rounded px-1.5 py-0.5 mb-0.5 truncate"
                     style={{ background: `${ev.color ?? '#6366f1'}22`, color: ev.color ?? '#6366f1' }}
                   >
+                    {ev.recurring && (
+                      <i className="ti ti-repeat" style={{ fontSize: 9, marginRight: 3, opacity: 0.7 }} aria-hidden="true" />
+                    )}
                     {ev.title}
                   </div>
                 ))}
@@ -501,34 +505,35 @@ export default function CalendarPage() {
                         borderLeft: isNext ? `3px solid ${color}` : `2.5px solid ${color}`,
                       }}
                     >
-                      {/* Titel — bei Kurzterminen bis zu 2 Zeilen, nie abgeschnitten */}
-                      <div
-                        className="font-semibold font-sans leading-tight"
-                        style={{
-                          fontSize: 11,
-                          color,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {ev.title}
-                      </div>
-                      {/* Kalender/Person */}
-                      {ev.calendarName && (
+                      {/* Titelzeile mit optionalem Recurring-Icon rechts */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 3 }}>
                         <div
-                          className="font-sans truncate mt-0.5"
-                          style={{ fontSize: 9, color, opacity: 0.65 }}
+                          className="font-semibold font-sans leading-tight"
+                          style={{
+                            fontSize: 11,
+                            color,
+                            flex: 1,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            wordBreak: 'break-word',
+                          }}
                         >
-                          {ev.calendarName}
+                          {ev.title}
                         </div>
-                      )}
-                      {/* Uhrzeit — immer sichtbar */}
+                        {ev.recurring && (
+                          <i
+                            className="ti ti-repeat"
+                            aria-label="Wiederkehrender Termin"
+                            style={{ fontSize: 9, color, opacity: 0.6, flexShrink: 0, marginTop: 1 }}
+                          />
+                        )}
+                      </div>
+                      {/* Uhrzeit — immer sichtbar, keine calendarName-Zeile mehr */}
                       <div
                         className="font-sans mt-0.5"
-                        style={{ fontSize: 9, color, opacity: 0.65 }}
+                        style={{ fontSize: 9, color, opacity: 0.65, whiteSpace: 'nowrap' }}
                       >
                         {new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
                         {' – '}

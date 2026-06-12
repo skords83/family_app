@@ -80,7 +80,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       }
     }
 
-    // Wiederkehrende Termine per RRULE expandieren
+    // Wiederkehrende Termine per RRULE expandieren — recurring: true mitliefern
     if ((event as any).rrule) {
       try {
         const rruleObj: RRule = (event as any).rrule;
@@ -108,6 +108,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
             allDay,
             color,
             calendarName,
+            recurring: true,
           }));
         }
       } catch (err) {
@@ -122,6 +123,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
             allDay,
             color,
             calendarName,
+            recurring: true,
           }));
         }
       }
@@ -140,6 +142,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       allDay,
       color,
       calendarName,
+      recurring: false,
     }));
   }
 
@@ -372,8 +375,8 @@ caldavRouter.get('/calendars', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/widgets/calendar
-caldavRouter.post('/', async (req: Request, res: Response) => {
+// POST /api/widgets/calendar/events
+caldavRouter.post('/events', async (req: Request, res: Response) => {
   const parsed = CalendarCreateInputSchema.safeParse(req.body);
 
   if (!parsed.success) {

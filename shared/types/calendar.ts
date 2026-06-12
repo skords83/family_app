@@ -8,6 +8,7 @@ export const CalendarEventSchema = z.object({
   allDay: z.boolean(),
   color: z.string().optional(),
   calendarName: z.string().optional(),
+  recurring: z.boolean().optional(),
 });
 export type CalendarEvent = z.infer<typeof CalendarEventSchema>;
 
