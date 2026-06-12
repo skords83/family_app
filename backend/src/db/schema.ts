@@ -174,8 +174,21 @@ CREATE TABLE IF NOT EXISTS reward_claims (
   reward_id UUID NOT NULL REFERENCES rewards(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  approved_at TIMESTAMPTZ
+  approved_at TIMESTAMPTZ,
+  rejected_at TIMESTAMPTZ,
+  reject_reason TEXT
 );
+
+-- Add rejected_at / reject_reason columns if they don't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='reward_claims' AND column_name='rejected_at'
+  ) THEN
+    ALTER TABLE reward_claims ADD COLUMN rejected_at TIMESTAMPTZ;
+    ALTER TABLE reward_claims ADD COLUMN reject_reason TEXT;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS calendar_cache (
   id SERIAL PRIMARY KEY,

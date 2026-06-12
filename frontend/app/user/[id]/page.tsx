@@ -12,17 +12,32 @@ interface User {
   color: string; points: number; role: string;
   tasks_total?: number; tasks_done?: number;
 }
+
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
+  requires_approval: boolean; approved_at: string | null;
 }
+
 interface CalendarEvent {
   id: string; title: string; start: string; end: string;
   allDay: boolean; color?: string; calendarName?: string;
 }
+
 interface Reward {
   id: string; title: string; points_cost: number;
   available_to: string | null; active: boolean;
+}
+
+interface UserClaim {
+  id: string;
+  reward_id: string;
+  reward_title: string;
+  points_cost: number;
+  claimed_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
 }
 
 // Lokales Datum als YYYY-MM-DD ohne UTC-Verschiebung
@@ -46,6 +61,43 @@ function formatDateLabel(dateStr: string): string {
   return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
+/** WeekStreak — 7 Kreise Mo–So, gefüllt wenn Aufgaben erledigt */
+function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone: number; tasksTotal: number }) {
+  const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const today = new Date().getDay(); // 0=So, 1=Mo ...
+  const todayIdx = today === 0 ? 6 : today - 1;
+  const allDone = tasksTotal > 0 && tasksDone >= tasksTotal;
+
+  return (
+    <div className="flex gap-1.5 justify-between">
+      {days.map((d, i) => {
+        const isPast = i < todayIdx;
+        const isToday = i === todayIdx;
+        return (
+          <div key={d} className="flex flex-col items-center gap-1 flex-1">
+            <div
+              className="w-full rounded-lg flex items-center justify-center text-[10px] font-bold"
+              style={{
+                height: 28,
+                background: isToday && allDone ? color
+                  : isToday ? `${color}30`
+                  : isPast ? '#e8e4de'
+                  : '#f0ede8',
+                color: isToday && allDone ? '#fff'
+                  : isToday ? color
+                  : '#a09d99',
+                border: isToday ? `1.5px solid ${color}` : 'none',
+              }}
+            >
+              {isToday && allDone ? '✓' : d}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function UserPage() {
   const router = useRouter();
   const params = useParams();
@@ -55,7 +107,7 @@ export default function UserPage() {
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
-  const [activeDays, setActiveDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
+  const [claims, setClaims] = useState<UserClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ text: string; ok: boolean } | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
@@ -85,23 +137,15 @@ export default function UserPage() {
     setTimeout(() => setNotification(null), 2500);
   };
 
-  const fetchWeekActivity = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/tasks/week-activity/${userId}`).then(r => r.json());
-      if (Array.isArray(res.activeDays)) setActiveDays(res.activeDays);
-    } catch (e) { console.error(e); }
-  }, [userId]);
-
   const fetchData = useCallback(async () => {
     if (!userId) return;
     try {
-      const [ur, tr, cr, rr, wr] = await Promise.allSettled([
+      const [ur, tr, cr, rr, clr] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users/${userId}`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/rewards?user_id=${userId}`).then(r => r.json()),
-        fetch(`${API_BASE}/api/tasks/week-activity/${userId}`).then(r => r.json()),
+        fetch(`${API_BASE}/api/rewards/claims?user_id=${userId}`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && ur.value.id) setUser(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value))
@@ -110,8 +154,8 @@ export default function UserPage() {
         setEvents(cr.value.events);
       if (rr.status === 'fulfilled' && Array.isArray(rr.value))
         setRewards(rr.value);
-      if (wr.status === 'fulfilled' && Array.isArray(wr.value.activeDays))
-        setActiveDays(wr.value.activeDays);
+      if (clr.status === 'fulfilled' && Array.isArray(clr.value))
+        setClaims(clr.value);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [userId]);
@@ -128,9 +172,7 @@ export default function UserPage() {
     if (Array.isArray(res)) {
       setTasks(res.filter((t: TaskInstance) => t.assigned_to === userId));
     }
-    // Auch Wochenaktivität aktualisieren, da eine Task gerade erledigt wurde
-    fetchWeekActivity();
-  }, [userId, fetchWeekActivity]);
+  }, [userId]);
 
   const fetchUser = useCallback(async () => {
     if (!userId) return;
@@ -144,10 +186,16 @@ export default function UserPage() {
     if (Array.isArray(res)) setRewards(res);
   }, [userId]);
 
+  const fetchClaims = useCallback(async () => {
+    if (!userId) return;
+    const res = await fetch(`${API_BASE}/api/rewards/claims?user_id=${userId}`).then(r => r.json());
+    if (Array.isArray(res)) setClaims(res);
+  }, [userId]);
+
   useSSE({
     task_updated: fetchTasks,
     points_updated: fetchUser,
-    reward_claimed: fetchRewards,
+    reward_claimed: () => { fetchRewards(); fetchClaims(); fetchUser(); },
   });
 
   const handleComplete = async (taskId: string) => {
@@ -158,9 +206,18 @@ export default function UserPage() {
     });
     if (res.ok) {
       const data = await res.json();
-      // Optimistisches Update — SSE aktualisiert tasks + user im Hintergrund
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t));
-      showNotification(`+${data.points_earned} Punkte verdient!`);
+      if (data.pending_approval) {
+        // Optimistisch: mark as completed but not approved
+        setTasks(prev => prev.map(t =>
+          t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
+        ));
+        showNotification('Erledigt! Wartet auf Bestätigung.');
+      } else {
+        setTasks(prev => prev.map(t =>
+          t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
+        ));
+        showNotification(`+${data.points_earned} Punkte verdient!`);
+      }
     }
   };
 
@@ -171,9 +228,12 @@ export default function UserPage() {
       body: JSON.stringify({ user_id: userId }),
     });
     const data = await res.json();
-    if (res.ok) showNotification(`Beantragt! -${data.points_spent} Punkte`);
-    else showNotification(data.error ?? 'Fehler', false);
-    // SSE triggert reward_claimed + points_updated → fetchRewards + fetchUser
+    if (res.ok) {
+      showNotification(`Beantragt! −${data.points_spent} Punkte`);
+      // SSE triggert reward_claimed → fetchRewards + fetchClaims + fetchUser
+    } else {
+      showNotification(data.error ?? 'Fehler', false);
+    }
   };
 
   if (loading) return (
@@ -189,15 +249,30 @@ export default function UserPage() {
     </div>
   );
 
-  const pending = tasks.filter(t => !t.completed_at);
-  const done = tasks.filter(t => t.completed_at);
-  const pct = tasks.length ? Math.round(done.length / tasks.length * 100) : 0;
+  // ── Task buckets ──
+  // open:           no completed_at
+  // pendingApproval: completed_at set, requires_approval=true, no approved_at
+  // done:           completed_at set, and (no requires_approval OR approved_at set)
+  const openTasks       = tasks.filter(t => !t.completed_at);
+  const pendingApproval = tasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
+  const doneTasks       = tasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
 
-  // Filter calendar events: user's own calendar + shared "Familie" calendar
-  // Nur heute & morgen — mit lokalem Datum (kein UTC-Offset-Bug)
+  const pct = tasks.length ? Math.round((doneTasks.length + pendingApproval.length) / tasks.length * 100) : 0;
+
+  // ── Claim buckets ──
+  const todayStr = toLocalDateStr(new Date());
+  const pendingClaims  = claims.filter(c => !c.approved_at && !c.rejected_at);
+  const rejectedToday  = claims.filter(c => c.rejected_at && c.rejected_at.startsWith(todayStr));
+
+  // ── Rewards split ──
+  // Only show rewards that have no active pending claim (prevent double-claiming)
+  const pendingClaimRewardIds = new Set(pendingClaims.map(c => c.reward_id));
+  const affordable   = rewards.filter(r => r.points_cost <= user.points && !pendingClaimRewardIds.has(r.id));
+  const unaffordable = rewards.filter(r => r.points_cost > user.points && !pendingClaimRewardIds.has(r.id));
+
+  // ── Calendar events ──
   const SHARED_CALENDARS = ['familie', 'family'];
   const now = new Date();
-  const todayStr = toLocalDateStr(now);
   const tom = new Date(now); tom.setDate(now.getDate() + 1);
   const tomorrowStr = toLocalDateStr(tom);
 
@@ -212,22 +287,17 @@ export default function UserPage() {
     .filter(e => {
       const d = e.start.split('T')[0];
       if (d < todayStr || d > tomorrowStr) return false;
-      // Vergangene Termine heute ausblenden (Ganztags immer zeigen)
       if (d === todayStr && !e.allDay && new Date(e.start) < now) return false;
       return true;
     })
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-  // Group by date
   const eventsByDate = userEvents.reduce<Record<string, CalendarEvent[]>>((acc, ev) => {
     const d = ev.start.split('T')[0];
     if (!acc[d]) acc[d] = [];
     acc[d].push(ev);
     return acc;
   }, {});
-
-  const affordable = rewards.filter(r => r.points_cost <= user.points);
-  const unaffordable = rewards.filter(r => r.points_cost > user.points);
 
   return (
     <div className="p-4" style={{ minHeight: '100vh', background: '#f5f2ee' }}>
@@ -259,7 +329,7 @@ export default function UserPage() {
         <i className="ti ti-arrow-left" style={{ fontSize: 16 }} /> Zurück
       </button>
 
-      {/* Profile hero — full width */}
+      {/* Profile hero */}
       <div className="rounded-2xl p-5 mb-4 flex items-center gap-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
         <div className="relative flex-shrink-0">
           {user.photo ? (
@@ -287,7 +357,7 @@ export default function UserPage() {
               <i className="ti ti-star-filled" style={{ fontSize: 12, color: '#c9a020' }} aria-hidden="true" /> {user.points} Punkte
             </div>
             <div className="text-sm font-sans" style={{ color: '#a09d99' }}>
-              {done.length}/{tasks.length} erledigt · {pct}%
+              {doneTasks.length}/{tasks.length} erledigt · {pct}%
             </div>
           </div>
           {tasks.length > 0 && (
@@ -310,107 +380,115 @@ export default function UserPage() {
               <i className="ti ti-checks" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Aufgaben heute ({tasks.length})
             </p>
-            {pending.length === 0 && done.length === 0 && (
-              <div className="text-center py-10">
-                <div className="text-4xl mb-3">🎉</div>
-                <p className="font-sans text-sm" style={{ color: '#a09d99' }}>Keine Aufgaben für heute!</p>
+
+            {tasks.length === 0 && (
+              <div className="text-center py-8 rounded-xl" style={{ background: '#f7f4f0' }}>
+                <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Aufgaben heute 🎉</p>
               </div>
             )}
-            {pending.length === 0 && done.length > 0 && (
-              <div className="text-center py-6 rounded-xl mb-3" style={{ background: '#f2fbf2' }}>
-                <div className="text-3xl mb-1">🏆</div>
-                <p className="font-sans font-semibold text-sm" style={{ color: '#5cb85c' }}>Alle Aufgaben erledigt!</p>
-              </div>
-            )}
+
             <div className="space-y-2">
-              {pending.map(task => (
-                <button key={task.id} onClick={() => handleComplete(task.id)}
+              {/* Open tasks — interactable */}
+              {openTasks.map(t => (
+                <button key={t.id} onClick={() => handleComplete(t.id)}
                   className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
-                  style={{ background: `${user.color}10`, border: `0.5px solid ${user.color}30` }}>
+                  style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)' }}>
                   <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
-                  <span className="flex-1 text-sm font-sans font-medium" style={{ color: '#1a1814' }}>{task.title}</span>
-                  {task.due_time && <span className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time}</span>}
-                  <span className="text-xs font-sans rounded-full px-2.5 py-0.5 flex items-center gap-1 flex-shrink-0" style={{ background: `${user.color}18`, color: user.color }}>+{task.points}<i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /></span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                    {t.due_time && (
+                      <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>{t.due_time} Uhr</p>
+                    )}
+                  </div>
+                  <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: user.color }}>
+                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                  </span>
                 </button>
               ))}
-              {done.length > 0 && (
-                <>
-                  {pending.length > 0 && <div style={{ height: 4 }} />}
-                  <p className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>Erledigt</p>
-                  {done.map(task => (
-                    <div key={task.id} className="flex items-center gap-3 rounded-xl px-4 py-3 opacity-50" style={{ background: 'rgba(0,0,0,0.03)' }}>
-                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: user.color }}>
-                        <i className="ti ti-check" style={{ fontSize: 11, color: '#fff' }} />
-                      </div>
-                      <span className="flex-1 text-sm font-sans line-through" style={{ color: '#6b6760' }}>{task.title}</span>
-                      <span className="text-xs font-sans flex items-center gap-1" style={{ color: '#a09d99' }}>+{task.points}<i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /></span>
-                    </div>
-                  ))}
-                </>
-              )}
+
+              {/* Pending approval tasks — yellow state, not clickable */}
+              {pendingApproval.map(t => (
+                <div key={t.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3"
+                  style={{ background: '#fffbeb', border: '0.5px solid #fbbf2440' }}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#fef3c7', border: '2px solid #f59e0b' }}>
+                    <i className="ti ti-clock" style={{ fontSize: 12, color: '#f59e0b' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#f59e0b' }}>Wartet auf Bestätigung</p>
+                  </div>
+                  <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#f59e0b' }}>
+                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                  </span>
+                </div>
+              ))}
+
+              {/* Done tasks */}
+              {doneTasks.map(t => (
+                <div key={t.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 opacity-60"
+                  style={{ background: '#f0fdf4', border: '0.5px solid #86efac40' }}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#dcfce7' }}>
+                    <i className="ti ti-check" style={{ fontSize: 14, color: '#16a34a' }} />
+                  </div>
+                  <p className="flex-1 text-sm font-sans line-clamp-1 line-through" style={{ color: '#6b6760' }}>{t.title}</p>
+                  <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#16a34a' }}>
+                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Kalender */}
-          <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
-              <i className="ti ti-calendar" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
-              Heute &amp; morgen
-            </p>
-            {userEvents.length === 0 ? (
-              <div className="text-center py-8 rounded-xl" style={{ background: '#f7f4f0' }}>
-                <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Termine</p>
-              </div>
-            ) : (
+          {Object.keys(eventsByDate).length > 0 && (
+            <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+              <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
+                <i className="ti ti-calendar" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
+                Termine
+              </p>
               <div className="space-y-4">
-                {Object.entries(eventsByDate).map(([date, dayEvs]) => (
+                {Object.entries(eventsByDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, evs]) => (
                   <div key={date}>
-                    <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
+                    <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#c09d99' }}>
                       {formatDateLabel(date)}
                     </p>
                     <div className="space-y-1.5">
-                      {dayEvs.map(ev => (
-                        <div key={ev.id} className="flex items-start gap-3 px-4 py-3"
-                          style={{ background: '#f7f4f0', borderLeft: `3px solid ${ev.color ?? user.color}`, borderRadius: '0 10px 10px 0' }}>
-                          <span className="text-xs font-sans flex-shrink-0 mt-0.5" style={{ color: '#a09d99', minWidth: 52 }}>
+                      {evs.map(ev => (
+                        <div key={ev.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                          style={{ background: `${ev.color ?? '#6366f1'}12`, borderLeft: `3px solid ${ev.color ?? '#6366f1'}` }}>
+                          <span className="text-xs font-sans font-medium flex-shrink-0" style={{ color: ev.color ?? '#6366f1', minWidth: 48 }}>
                             {formatEventTime(ev)}
                           </span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-sans font-semibold leading-tight line-clamp-2" style={{ color: '#1a1814' }}>{ev.title}</p>
-                            {ev.calendarName && (
-                              <p className="text-xs font-sans mt-0.5" style={{ color: ev.color ?? user.color, opacity: 0.8 }}>{ev.calendarName}</p>
-                            )}
-                          </div>
+                          <p className="text-sm font-sans font-medium line-clamp-1" style={{ color: '#1a1814' }}>{ev.title}</p>
                         </div>
                       ))}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
-        </div>{/* end LEFT */}
-
-        {/* RIGHT — Punktestand + Streak + Belohnungen */}
+        {/* RIGHT — Punkte, Streak, Belohnungen */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* Punktestand */}
+          {/* Points summary */}
           <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3" style={{ color: '#a09d99' }}>
-              <i className="ti ti-star" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
-              Punktestand
+            <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
+              <i className="ti ti-star-filled" style={{ fontSize: 13, color: '#c9a020', verticalAlign: -1, marginRight: 4 }} />
+              Punkte
             </p>
-            <div className="flex items-baseline gap-2 mb-2">
-              <i className="ti ti-star-filled" style={{ fontSize: 22, color: '#c9a020' }} aria-hidden="true" />
-              <span style={{ fontSize: 44, fontWeight: 500, color: user.color, lineHeight: 1 }}>{user.points}</span>
-              <span className="text-sm font-sans" style={{ color: '#a09d99' }}>Punkte</span>
-            </div>
-            <p className="text-sm font-sans" style={{ color: '#a09d99', lineHeight: 1.6 }}>
-              {done.length} von {tasks.length} Aufgaben erledigt
-              {pending.length > 0 && (
-                <><br />Noch {pending.reduce((s, t) => s + t.points, 0)} Punkte heute möglich</>
-              )}
+            <p className="text-4xl font-[Georgia]" style={{ color: user.color }}>{user.points}</p>
+            <p className="text-xs font-sans mt-1" style={{ color: '#a09d99' }}>
+              {openTasks.length > 0 ? (
+                <>Noch {openTasks.reduce((s, t) => s + t.points, 0)} Punkte heute möglich</>
+              ) : tasks.length > 0 ? (
+                <>Alle Aufgaben erledigt!</>
+              ) : null}
             </p>
           </div>
 
@@ -420,7 +498,7 @@ export default function UserPage() {
               <i className="ti ti-flame" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Diese Woche
             </p>
-            <WeekStreak color={user.color} activeDays={activeDays} tasksDone={done.length} tasksTotal={tasks.length} />
+            <WeekStreak color={user.color} tasksDone={doneTasks.length} tasksTotal={tasks.length} />
           </div>
 
           {/* Belohnungen */}
@@ -429,12 +507,45 @@ export default function UserPage() {
               <i className="ti ti-gift" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Belohnungen
             </p>
-            {rewards.length === 0 && (
+
+            {rewards.length === 0 && pendingClaims.length === 0 && (
               <div className="text-center py-8 rounded-xl" style={{ background: '#f7f4f0' }}>
                 <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Belohnungen verfügbar</p>
               </div>
             )}
+
             <div className="space-y-2">
+              {/* Rejected today — show briefly so child knows */}
+              {rejectedToday.map(c => (
+                <div key={c.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
+                  style={{ background: '#fff1f1', border: '0.5px solid #fca5a540' }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#fee2e2' }}>
+                    <i className="ti ti-x" style={{ fontSize: 18, color: '#dc2626' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans font-medium line-clamp-1" style={{ color: '#7f1d1d' }}>{c.reward_title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#ef4444' }}>
+                      Abgelehnt · {c.points_cost} Pkt. zurückgebucht
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Pending claims — waiting for parent */}
+              {pendingClaims.map(c => (
+                <div key={c.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
+                  style={{ background: '#fffbeb', border: '0.5px solid #fbbf2440' }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#fef3c7' }}>
+                    <i className="ti ti-clock" style={{ fontSize: 18, color: '#f59e0b' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-sans font-medium line-clamp-1" style={{ color: '#1a1814' }}>{c.reward_title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#f59e0b' }}>Wartet auf Eltern · {c.points_cost} Pkt.</p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Affordable rewards */}
               {affordable.map(r => (
                 <button key={r.id} onClick={() => handleClaim(r.id)}
                   className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
@@ -444,11 +555,15 @@ export default function UserPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
-                    <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#5cb85c' }}><i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} Punkte · du hast genug!</p>
+                    <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#5cb85c' }}>
+                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} Punkte · du hast genug!
+                    </p>
                   </div>
                   <span className="text-xs font-sans rounded-full px-3 py-1 font-medium flex-shrink-0" style={{ background: '#bbf7d0', color: '#15803d' }}>Einlösen</span>
                 </button>
               ))}
+
+              {/* Unaffordable rewards */}
               {unaffordable.map(r => (
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-4 py-3"
                   style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)', opacity: 0.6 }}>
@@ -456,82 +571,20 @@ export default function UserPage() {
                     <i className="ti ti-lock" style={{ fontSize: 18, color: '#a09d99' }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-sans truncate" style={{ color: '#6b6760' }}>{r.title}</p>
-                    <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#a09d99' }}><i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} · noch {r.points_cost - user.points} fehlen</p>
+                    <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
+                    <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>
+                      Noch {r.points_cost - user.points} Punkte fehlen
+                    </p>
                   </div>
+                  <span className="text-xs font-sans font-semibold flex-shrink-0 flex items-center gap-1" style={{ color: '#a09d99' }}>
+                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> {r.points_cost}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-
-        </div>{/* end RIGHT */}
-
-      </div>{/* end grid */}
-    </div>
-  );
-}
-
-function WeekStreak({
-  color,
-  activeDays,
-  tasksDone,
-  tasksTotal,
-}: {
-  color: string;
-  activeDays: boolean[];   // [Mo, Di, Mi, Do, Fr, Sa, So] — echte DB-Daten
-  tasksDone: number;
-  tasksTotal: number;
-}) {
-  const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const todayIdx = (new Date().getDay() + 6) % 7;
-
-  // Anzahl aktiver Tage diese Woche (ohne heute, der noch offen ist)
-  const activePastCount = activeDays.slice(0, todayIdx).filter(Boolean).length;
-  // Heute gilt als aktiv wenn alle Tasks erledigt sind
-  const todayComplete = tasksTotal > 0 && tasksDone === tasksTotal;
-  const totalActiveCount = activePastCount + (todayComplete ? 1 : 0);
-
-  return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, marginBottom: 4 }}>
-        {days.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 10, color: '#a09d99' }}>{d}</div>
-        ))}
+        </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
-        {days.map((_, i) => {
-          const isToday = i === todayIdx;
-          const isPast = i < todayIdx;
-          const isFuture = i > todayIdx;
-          const wasActive = isPast && activeDays[i];
-          const isActiveToday = isToday && todayComplete;
-
-          return (
-            <div key={i} style={{
-              aspectRatio: '1',
-              borderRadius: 6,
-              background: (wasActive || isActiveToday)
-                ? `${color}30`
-                : isFuture ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.04)',
-              border: isToday ? `1.5px solid ${color}` : '1.5px solid transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: isFuture ? 0.4 : 1,
-            }}>
-              {wasActive && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
-              {isActiveToday && <i className="ti ti-check" style={{ fontSize: 11, color }} />}
-              {isPast && !wasActive && (
-                <i className="ti ti-x" style={{ fontSize: 10, color: '#c9c5c0' }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <p className="text-sm font-sans mt-2" style={{ color: '#a09d99' }}>
-        {totalActiveCount === 0
-          ? 'Diese Woche noch keine Aufgaben erledigt'
-          : `${totalActiveCount} ${totalActiveCount === 1 ? 'Tag' : 'Tage'} diese Woche aktiv`}
-        {totalActiveCount >= 2 && <span style={{ color, fontWeight: 500 }}> · Streak!</span>}
-      </p>
     </div>
   );
 }

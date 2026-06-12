@@ -1,17 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { v4 as uuidv4 } from 'uuid';
 import { emitSSE } from '../sse';
-import { toBerlinDateStr } from '../utils/date';
 
 export const tasksRouter = Router();
 
 /**
- * Normalise assigned_to coming from DB (JSONB) or request body.
- * Always returns string[] | null.
- *   null / undefined / []  → null  (means "all users")
- *   "uuid"                 → ["uuid"]   (legacy single value)
- *   ["uuid1","uuid2"]      → ["uuid1","uuid2"]
+ * Normalise task_templates.assigned_to from any stored format → string[] | null.
+ * DB stores JSONB (array of UUID strings). pg driver may deserialise as:
+ * - null
+ * - JS array of strings
+ * - A raw JSON string (edge case on some pg versions)
  */
 function normaliseAssignedTo(value: unknown): string[] | null {
   if (value === null || value === undefined) return null;
@@ -49,7 +47,7 @@ async function verifyParentPin(pin: string): Promise<boolean> {
 // GET /api/tasks/today - return task_instances for today, joined with template
 tasksRouter.get('/today', async (_req: Request, res: Response) => {
   try {
-    const today = toBerlinDateStr();
+    const today = new Date().toISOString().split('T')[0];
     const result = await pool.query(`
       SELECT
         ti.id,
@@ -113,64 +111,6 @@ tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Respon
   }
 });
 
-// GET /api/tasks/week-activity/:userId
-// Gibt zurück, an welchen Tagen der aktuellen Kalenderwoche (Mo–So, Europe/Berlin)
-// mindestens eine Task des Users erledigt wurde.
-// Response: { activeDays: boolean[7] }  — Index 0 = Montag, 6 = Sonntag
-tasksRouter.get('/week-activity/:userId', async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.params;
-
-    // Wochenanfang (Montag) in Europe/Berlin bestimmen
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
-    const dayOfWeek = now.getDay(); // 0=So, 1=Mo … 6=Sa
-    const diffToMonday = (dayOfWeek + 6) % 7;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - diffToMonday);
-    monday.setHours(0, 0, 0, 0);
-
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    // YYYY-MM-DD Strings
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const toStr = (d: Date) =>
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
-    const mondayStr = toStr(monday);
-    const sundayStr = toStr(sunday);
-
-    const result = await pool.query(`
-      SELECT DISTINCT ti.date
-      FROM task_instances ti
-      WHERE ti.assigned_to = $1
-        AND ti.completed_at IS NOT NULL
-        AND ti.date >= $2
-        AND ti.date <= $3
-    `, [userId, mondayStr, sundayStr]);
-
-    // Tage mit Completion als Set
-    // pg gibt DATE-Spalten je nach Konfiguration als Date-Objekt oder String zurück
-    const completedDates = new Set<string>(result.rows.map((r: { date: unknown }) => {
-      const raw = r.date;
-      const d = raw instanceof Date ? raw : new Date(String(raw) + 'T12:00:00');
-      return toStr(d);
-    }));
-
-    // activeDays[0]=Mo … activeDays[6]=So
-    const activeDays: boolean[] = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      return completedDates.has(toStr(d));
-    });
-
-    res.json({ activeDays });
-  } catch (err) {
-    console.error('Error fetching week activity:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // POST /api/tasks/:id/complete - mark task as completed (or pending if requires_approval)
 tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
   try {
@@ -194,7 +134,6 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const task = taskResult.rows[0];
-    // assigned_to is a scalar UUID on task_instances, but extract safely
     const assignedTo = extractUserId(task.assigned_to);
 
     if (task.completed_at) {
@@ -292,7 +231,57 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/:id/uncomplete - reverse completion (anyone, no PIN needed)
+// POST /api/tasks/:id/reject - parent rejects a pending task (resets to open)
+tasksRouter.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    const taskResult = await pool.query(`
+      SELECT ti.*, tt.points, tt.requires_approval
+      FROM task_instances ti
+      JOIN task_templates tt ON ti.template_id = tt.id
+      WHERE ti.id = $1
+    `, [id]);
+
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task instance not found' });
+    }
+
+    const task = taskResult.rows[0];
+
+    if (!task.completed_at) {
+      return res.status(400).json({ error: 'Task is not completed yet' });
+    }
+    if (task.approved_at) {
+      return res.status(400).json({ error: 'Task already approved — use uncomplete to reverse' });
+    }
+
+    // Reset to open — child can retry
+    await pool.query(`
+      UPDATE task_instances
+      SET completed_at = NULL, completed_by = NULL, approved_at = NULL, approved_by = NULL
+      WHERE id = $1
+    `, [id]);
+
+    emitSSE({ type: 'task_updated', data: { task_id: id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error rejecting task:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/tasks/:id/uncomplete - reverse completion (parent + PIN)
 tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -389,7 +378,15 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
       INSERT INTO task_templates (title, points, assigned_to, recurrence, due_time, active, requires_approval)
       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
       RETURNING *
-    `, [title, points ?? 1, assignedToParam, recurrence, due_time ?? null, active ?? true, requires_approval ?? false]);
+    `, [
+      title,
+      points ?? 1,
+      assignedToParam,
+      recurrence,
+      due_time || null,
+      active !== false,
+      requires_approval ?? false,
+    ]);
 
     res.status(201).json({
       ...result.rows[0],
@@ -411,23 +408,20 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
-
     const current = existing.rows[0];
 
-    const newAssigned = assigned_to !== undefined
-      ? normaliseAssignedTo(assigned_to)
-      : normaliseAssignedTo(current.assigned_to);
-    const assignedParam = newAssigned ? JSON.stringify(newAssigned) : null;
+    const assignedToJson = assigned_to !== undefined ? normaliseAssignedTo(assigned_to) : normaliseAssignedTo(current.assigned_to);
+    const assignedParam = assignedToJson ? JSON.stringify(assignedToJson) : null;
 
     const result = await pool.query(`
       UPDATE task_templates
       SET
-        title = $1,
-        points = $2,
-        assigned_to = $3::jsonb,
-        recurrence = $4,
-        due_time = $5,
-        active = $6,
+        title             = $1,
+        points            = $2,
+        assigned_to       = $3::jsonb,
+        recurrence        = $4,
+        due_time          = $5,
+        active            = $6,
         requires_approval = $7
       WHERE id = $8
       RETURNING *

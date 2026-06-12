@@ -51,26 +51,40 @@ rewardsRouter.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/rewards/claims - get all pending claims (admin)
-rewardsRouter.get('/claims', async (_req: Request, res: Response) => {
+// GET /api/rewards/claims - get claims (admin: all; user: filtered by user_id)
+rewardsRouter.get('/claims', async (req: Request, res: Response) => {
   try {
-    const result = await pool.query(`
+    const { user_id } = req.query;
+
+    let query = `
       SELECT
         rc.id,
         rc.reward_id,
         rc.user_id,
         rc.claimed_at,
         rc.approved_at,
+        rc.rejected_at,
+        rc.reject_reason,
         r.title AS reward_title,
         r.points_cost,
         u.name AS user_name,
         u.avatar AS user_avatar,
+        u.photo AS user_photo,
         u.color AS user_color
       FROM reward_claims rc
       JOIN rewards r ON rc.reward_id = r.id
       JOIN users u ON rc.user_id = u.id
-      ORDER BY rc.claimed_at DESC
-    `);
+    `;
+    const params: string[] = [];
+
+    if (user_id) {
+      query += ` WHERE rc.user_id = $1`;
+      params.push(user_id as string);
+    }
+
+    query += ` ORDER BY rc.claimed_at DESC`;
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching claims:', err);
@@ -94,14 +108,14 @@ rewardsRouter.post('/', async (req: Request, res: Response) => {
 
     // Normalize: null/undefined → null, [] → null, array → UUID[]
     const availableToValue = Array.isArray(available_to) && available_to.length > 0
-      ? available_to
+      ? `{${available_to.join(',')}}`
       : null;
 
     const result = await pool.query(`
       INSERT INTO rewards (title, points_cost, available_to, active)
-      VALUES ($1, $2, $3::uuid[], $4)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [title, points_cost, availableToValue, active ?? true]);
+    `, [title, points_cost, availableToValue, active !== false]);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -110,84 +124,8 @@ rewardsRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/rewards/:id - update reward (admin)
-rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { title, points_cost, available_to, active, pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
-
-    const existing = await pool.query(`SELECT * FROM rewards WHERE id = $1`, [id]);
-    if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'Reward not found' });
-    }
-
-    const current = existing.rows[0];
-
-    // Normalize available_to the same way as POST
-    let availableToValue = current.available_to;
-    if (available_to !== undefined) {
-      availableToValue = Array.isArray(available_to) && available_to.length > 0
-        ? available_to
-        : null;
-    }
-
-    const result = await pool.query(`
-      UPDATE rewards
-      SET
-        title = $1,
-        points_cost = $2,
-        available_to = $3::uuid[],
-        active = $4
-      WHERE id = $5
-      RETURNING *
-    `, [
-      title ?? current.title,
-      points_cost ?? current.points_cost,
-      availableToValue,
-      active !== undefined ? active : current.active,
-      id,
-    ]);
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Error updating reward:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// DELETE /api/rewards/:id - delete reward (admin)
-rewardsRouter.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
-
-    await pool.query(`DELETE FROM rewards WHERE id = $1`, [id]);
-    res.json({ deleted: true });
-  } catch (err) {
-    console.error('Error deleting reward:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/rewards/:id/claim - claim a reward
+// POST /api/rewards/:id/claim - claim a reward (user)
+// NOTE: :id here is the reward id
 rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -197,8 +135,11 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    // Get the reward
-    const rewardResult = await pool.query(`SELECT * FROM rewards WHERE id = $1 AND active = true`, [id]);
+    // Get reward
+    const rewardResult = await pool.query(`
+      SELECT * FROM rewards WHERE id = $1 AND active = true
+    `, [id]);
+
     if (rewardResult.rows.length === 0) {
       return res.status(404).json({ error: 'Reward not found or inactive' });
     }
@@ -235,7 +176,7 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
       RETURNING *
     `, [id, user_id]);
 
-    // Deduct points
+    // Deduct points immediately
     await pool.query(`
       INSERT INTO point_events (user_id, points, reason)
       VALUES ($1, $2, $3)
@@ -255,6 +196,7 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
 });
 
 // POST /api/rewards/:id/approve - approve a reward claim (parent only)
+// NOTE: :id here is the claim id
 rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -269,22 +211,154 @@ rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid parent PIN' });
     }
 
-    // id here is the claim id
     const result = await pool.query(`
       UPDATE reward_claims
       SET approved_at = NOW()
-      WHERE id = $1 AND approved_at IS NULL
+      WHERE id = $1 AND approved_at IS NULL AND rejected_at IS NULL
       RETURNING *
     `, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Claim not found or already approved' });
+      return res.status(404).json({ error: 'Claim not found or already processed' });
     }
 
-    emitSSE({ type: 'reward_claimed', data: { claim_id: id } });
-    res.json(result.rows[0]);
+    const claim = result.rows[0];
+    emitSSE({ type: 'reward_claimed', data: { claim_id: id, user_id: claim.user_id } });
+    res.json(claim);
   } catch (err) {
     console.error('Error approving reward claim:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/rewards/:id/reject - reject a reward claim + refund points (parent only)
+// NOTE: :id here is the claim id
+rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pin, reason } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    // Fetch the claim to get user_id and points_cost for refund
+    const claimResult = await pool.query(`
+      SELECT rc.*, r.points_cost, r.title AS reward_title
+      FROM reward_claims rc
+      JOIN rewards r ON rc.reward_id = r.id
+      WHERE rc.id = $1 AND rc.approved_at IS NULL AND rc.rejected_at IS NULL
+    `, [id]);
+
+    if (claimResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Claim not found or already processed' });
+    }
+
+    const claim = claimResult.rows[0];
+
+    // Mark as rejected
+    await pool.query(`
+      UPDATE reward_claims
+      SET rejected_at = NOW(), reject_reason = $1
+      WHERE id = $2
+    `, [reason ?? null, id]);
+
+    // Refund points
+    await pool.query(`
+      INSERT INTO point_events (user_id, points, reason)
+      VALUES ($1, $2, $3)
+    `, [claim.user_id, claim.points_cost, `reward_rejected:${id}`]);
+
+    emitSSE({ type: 'reward_claimed', data: { claim_id: id, user_id: claim.user_id } });
+    emitSSE({ type: 'points_updated', data: { user_id: claim.user_id } });
+
+    res.json({ success: true, refunded: claim.points_cost });
+  } catch (err) {
+    console.error('Error rejecting reward claim:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/rewards/:id - update reward (admin)
+rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { title, points_cost, available_to, active, pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    const existing = await pool.query(`SELECT * FROM rewards WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Reward not found' });
+    }
+    const current = existing.rows[0];
+
+    const availableToValue = available_to === null || available_to === undefined
+      ? null
+      : Array.isArray(available_to) && available_to.length > 0
+        ? `{${available_to.join(',')}}`
+        : null;
+
+    const result = await pool.query(`
+      UPDATE rewards
+      SET
+        title       = $1,
+        points_cost = $2,
+        available_to = $3,
+        active      = $4
+      WHERE id = $5
+      RETURNING *
+    `, [
+      title ?? current.title,
+      points_cost ?? current.points_cost,
+      availableToValue,
+      active !== undefined ? active : current.active,
+      id,
+    ]);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating reward:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/rewards/:id - delete reward (admin)
+rewardsRouter.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    const existing = await pool.query(`SELECT id FROM rewards WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Reward not found' });
+    }
+
+    await pool.query(`DELETE FROM rewards WHERE id = $1`, [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting reward:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
