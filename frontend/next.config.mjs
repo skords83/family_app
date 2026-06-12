@@ -64,11 +64,15 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+    // Nur für lokale Entwicklung relevant (BACKEND_URL zeigt auf localhost:3001).
+    // In Production läuft alles über Traefik: /api/* → Backend-Container direkt.
+    // NEXT_PUBLIC_API_URL wird im Frontend-Code NICHT mehr verwendet —
+    // alle API-Calls gehen relativ (/api/...) und werden von Traefik geroutet.
+    const backendUrl = process.env.BACKEND_URL ?? 'http://localhost:3001';
     return [
       {
         source: '/api/:path*',
-        destination: `${apiUrl}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },
