@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClientDate } from '@/hooks/useClientDate';
 import AvatarButton from './AvatarButton';
+import WeatherWidget from '@/components/widgets/WeatherWidget';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 interface User {
   id: string; name: string; avatar: string; photo?: string;
@@ -36,6 +37,10 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
   const router = useRouter();
   const now = useClientDate();
   const [users, setUsers] = useState<User[]>([]);
+  const [weather, setWeather] = useState<{ data?: any; fetched_at?: string }>({});
+  const [weatherLoading, setWeatherLoading] = useState(true);
+
+  // Avatare nur auf Unterseiten zur Navigation — auf der Startseite navigiert man über die Kacheln
   const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/users`);
@@ -44,10 +49,27 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
     } catch { /* silent */ }
   }, []);
   useEffect(() => {
+    if (variant !== 'page') return;
     fetchUsers();
     const iv = setInterval(fetchUsers, 60_000);
     return () => clearInterval(iv);
-  }, [fetchUsers]);
+  }, [variant, fetchUsers]);
+
+  // Wetter nur im Home-Header
+  const fetchWeather = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json());
+      if (res?.data) setWeather({ data: res.data, fetched_at: res.fetched_at });
+    } catch { /* silent */ }
+    finally { setWeatherLoading(false); }
+  }, []);
+  useEffect(() => {
+    if (variant !== 'home') return;
+    fetchWeather();
+    const iv = setInterval(fetchWeather, 5 * 60_000);
+    return () => clearInterval(iv);
+  }, [variant, fetchWeather]);
+
   const greeting = (() => {
     if (!now) return 'Hallo 👋';
     const h = now.getHours();
@@ -74,18 +96,29 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
           </h1>
         )}
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          {users.map(user => (
-            <AvatarButton
-              key={user.id}
-              user={user}
-              size="topbar"
-              onClick={() => router.push(`/user/${user.id}`)}
+      <div className="flex items-center gap-4">
+        {variant === 'home' ? (
+          <>
+            <WeatherWidget
+              variant="header"
+              data={weather.data}
+              fetched_at={weather.fetched_at}
+              loading={weatherLoading}
             />
-          ))}
-        </div>
-        {variant === 'home' && <Clock />}
+            <Clock />
+          </>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            {users.map(user => (
+              <AvatarButton
+                key={user.id}
+                user={user}
+                size="topbar"
+                onClick={() => router.push(`/user/${user.id}`)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
