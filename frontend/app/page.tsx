@@ -12,7 +12,6 @@ import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
-type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
 interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
@@ -35,49 +34,54 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
-  const [waste, setWaste] = useState<WasteTodayData | null>(null);
+  const [waste, setWaste] = useState<WasteTodayData | undefined>();
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [usersRes, tasksRes, widgetsRes] = await Promise.all([
+      const [ur, tr, wr, cr, mr, ir, wasteR] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),
       ]);
-      if (Array.isArray(usersRes)) setUsers(usersRes);
-      if (Array.isArray(tasksRes)) setTasks(tasksRes);
-      if (widgetsRes) {
-        if (widgetsRes.weather) setWeather(widgetsRes.weather);
-        if (widgetsRes.calendar) setCalendar(widgetsRes.calendar);
-        if (widgetsRes.meals) setMeals(widgetsRes.meals);
-        if (widgetsRes.immich) setImmich(widgetsRes.immich);
-        if (widgetsRes.waste) setWaste(widgetsRes.waste);
-      }
+      if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
+      if (tr.status === 'fulfilled' && Array.isArray(tr.value)) setTasks(tr.value);
+      if (wr.status === 'fulfilled' && wr.value?.data) setWeather({ data: wr.value.data, fetched_at: wr.value.fetched_at });
+      if (cr.status === 'fulfilled' && cr.value?.events) setCalendar({ events: cr.value.events, fetched_at: cr.value.fetched_at });
+      if (mr.status === 'fulfilled' && mr.value?.byDate) setMeals({ byDate: mr.value.byDate, fetched_at: mr.value.fetched_at });
+      if (ir.status === 'fulfilled' && ir.value?.data) setImmich({ data: ir.value.data, fetched_at: ir.value.fetched_at });
+      if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    fetchAll();
+    const iv = setInterval(fetchAll, 5 * 60_000);
+    return () => clearInterval(iv);
+  }, [fetchAll]);
 
-  useSSE(`${API_BASE}/api/sse`, (event) => {
-    if (event.type === 'task_updated' || event.type === 'points_updated') {
-      fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setTasks(data);
-      });
-      fetch(`${API_BASE}/api/users`).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setUsers(data);
-      });
-    }
-    if (event.type === 'widget_updated') {
-      fetch(`${API_BASE}/api/widgets`).then(r => r.json()).then(data => {
-        if (data?.weather) setWeather(data.weather);
-        if (data?.calendar) setCalendar(data.calendar);
-        if (data?.meals) setMeals(data.meals);
-        if (data?.immich) setImmich(data.immich);
-        if (data?.waste) setWaste(data.waste);
-      });
-    }
+  const fetchTasks = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
+    if (Array.isArray(res)) setTasks(res);
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
+    if (Array.isArray(res)) setUsers(res);
+  }, []);
+
+  const handleConfigUpdated = useCallback(() => window.location.reload(), []);
+
+  useSSE({
+    task_updated: fetchTasks,
+    points_updated: fetchUsers,
+    reward_claimed: fetchUsers,
+    config_updated: handleConfigUpdated,
   });
 
   const handleImmichRefresh = async () => {
@@ -88,11 +92,9 @@ export default function HomePage() {
   };
 
   return (
-    // Outer wrapper: exakt 100vh, kein Scroll
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <PageHeader variant="home" />
 
-      {/* 3-Spalten-Grid, füllt den restlichen Platz */}
       <div
         style={{
           flex: 1,
@@ -125,8 +127,6 @@ export default function HomePage() {
               >
                 Aufgaben heute
               </h2>
-
-              {/* Task-Grid: 2 Spalten, scrollt intern wenn nötig */}
               <div
                 style={{
                   flex: 1,
@@ -152,7 +152,7 @@ export default function HomePage() {
                       className="rounded-2xl p-3 block active:opacity-75 transition-opacity"
                       style={{ background: bg, border: `0.5px solid ${user.color}25` }}
                     >
-                      {/* User header: großer Avatar + Name/Punkte */}
+                      {/* Avatar + Name */}
                       <div className="flex items-center gap-3 mb-2">
                         {user.photo ? (
                           <img
