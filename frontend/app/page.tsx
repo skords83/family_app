@@ -15,7 +15,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 type MealSlot = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
 interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
-interface WeatherData { temperature: number; apparentTemperature: number; precipitationProbability: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number; apparentTemperature: number; precipitationProbability: number; weathercode: number }[]; }
+interface WeatherData { temperature: number; weathercode: number; windspeed: number; hourly?: { time: string; temperature: number }[]; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 interface ImmichData { id: string; url: string; thumbnailUrl: string; fileName: string; createdAt: string; description?: string; location?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
@@ -35,48 +35,49 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [immich, setImmich] = useState<{ data?: ImmichData; fetched_at?: string }>({});
-  const [waste, setWaste] = useState<WasteTodayData | undefined>(undefined);
+  const [waste, setWaste] = useState<WasteTodayData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [usersRes, tasksRes, weatherRes, calRes, mealsRes, immichRes, wasteRes] = await Promise.all([
+      const [usersRes, tasksRes, widgetsRes] = await Promise.all([
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/weather`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/meals`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/immich`).then(r => r.json()),
-        fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets`).then(r => r.json()),
       ]);
       if (Array.isArray(usersRes)) setUsers(usersRes);
       if (Array.isArray(tasksRes)) setTasks(tasksRes);
-      if (weatherRes.data) setWeather(weatherRes);
-      if (calRes.events) setCalendar(calRes);
-      if (mealsRes.byDate) setMeals(mealsRes);
-      if (immichRes.data) setImmich(immichRes);
-      if (wasteRes && !wasteRes.error) setWaste(wasteRes);
+      if (widgetsRes) {
+        if (widgetsRes.weather) setWeather(widgetsRes.weather);
+        if (widgetsRes.calendar) setCalendar(widgetsRes.calendar);
+        if (widgetsRes.meals) setMeals(widgetsRes.meals);
+        if (widgetsRes.immich) setImmich(widgetsRes.immich);
+        if (widgetsRes.waste) setWaste(widgetsRes.waste);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const fetchTasks = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
-    if (Array.isArray(res)) setTasks(res);
-  }, []);
-
-  const fetchUsers = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/api/users`).then(r => r.json());
-    if (Array.isArray(res)) setUsers(res);
-  }, []);
-
-  useSSE({
-    task_updated: fetchTasks,
-    points_updated: fetchUsers,
-    reward_claimed: fetchUsers,
-    config_updated: useCallback(() => window.location.reload(), []),
+  useSSE(`${API_BASE}/api/sse`, (event) => {
+    if (event.type === 'task_updated' || event.type === 'points_updated') {
+      fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()).then(data => {
+        if (Array.isArray(data)) setTasks(data);
+      });
+      fetch(`${API_BASE}/api/users`).then(r => r.json()).then(data => {
+        if (Array.isArray(data)) setUsers(data);
+      });
+    }
+    if (event.type === 'widget_updated') {
+      fetch(`${API_BASE}/api/widgets`).then(r => r.json()).then(data => {
+        if (data?.weather) setWeather(data.weather);
+        if (data?.calendar) setCalendar(data.calendar);
+        if (data?.meals) setMeals(data.meals);
+        if (data?.immich) setImmich(data.immich);
+        if (data?.waste) setWaste(data.waste);
+      });
+    }
   });
 
   const handleImmichRefresh = async () => {
@@ -86,114 +87,229 @@ export default function HomePage() {
     } catch (e) { console.error(e); }
   };
 
-  // Tasks-Grid: ≤4 User → 2 Spalten, ≤6 User → 3 Spalten (aber bei 5–6 besser 2 Reihen à 3)
-  // Bei 150% Zoom (1280px effektiv): 5–6 User in grid-cols-3 ist zu eng → grid-cols-2
-  const taskGridCols = users.length <= 4
-    ? 'grid-cols-2'
-    : users.length <= 6
-      ? 'grid-cols-3'
-      : 'grid-cols-3';
-
   return (
-    <div className="flex flex-col" style={{ minHeight: '100vh' }}>
+    // Outer wrapper: exakt 100vh, kein Scroll
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <PageHeader variant="home" />
 
-      <div className="px-3 pb-3 flex flex-col gap-3 flex-1">
-        {/* Main 2-col grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      {/* 3-Spalten-Grid, füllt den restlichen Platz */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 300px',
+          gap: 16,
+          padding: '0 24px 24px',
+          overflow: 'hidden',
+        }}
+      >
 
-          {/* LEFT col (2/3): Calendar + tasks */}
-          <div className="lg:col-span-2 flex flex-col gap-3">
+        {/* ── SPALTE 1: Kalender ── */}
+        <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <CalendarWidget
+            events={calendar.events}
+            fetched_at={calendar.fetched_at}
+            loading={loading}
+            daysAhead={1}
+          />
+        </div>
 
-            <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} lookaheadDays={2} />
+        {/* ── SPALTE 2: Aufgaben ── */}
+        <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {!loading && users.length > 0 && (
+            <>
+              <h2
+                className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3 flex-shrink-0"
+                style={{ color: '#7a7874' }}
+              >
+                Aufgaben heute
+              </h2>
 
-            {/* Tasks per user */}
-            {!loading && users.length > 0 && (
-              <div>
-                <h2 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#7a7874' }}>
-                  Aufgaben heute
-                </h2>
-                <div className={`grid gap-2.5 ${taskGridCols}`}>
-                  {users.map(user => {
-                    const userTasks = tasks.filter(t => t.assigned_to === user.id);
-                    const done = userTasks.filter(t => t.completed_at);
-                    const pending = userTasks.filter(t => !t.completed_at);
-                    const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
-                    const bg = PASTELS[user.color] ?? `${user.color}18`;
+              {/* Task-Grid: 2 Spalten, scrollt intern wenn nötig */}
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 10,
+                  alignContent: 'start',
+                  overflowY: 'auto',
+                }}
+              >
+                {users.map(user => {
+                  const userTasks = tasks.filter(t => t.assigned_to === user.id);
+                  const done = userTasks.filter(t => t.completed_at);
+                  const pending = userTasks.filter(t => !t.completed_at);
+                  const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
+                  const bg = PASTELS[user.color] ?? `${user.color}18`;
 
-                    return (
-                      <Link
-                        key={user.id}
-                        href={`/user/${user.id}`}
-                        className="rounded-2xl p-3 block active:opacity-75 transition-opacity"
-                        style={{ background: bg, border: `0.5px solid ${user.color}25` }}
-                      >
-                        {/* User header */}
-                        <div className="flex items-center gap-2 mb-2">
-                          {user.photo ? (
-                            <img src={user.photo} alt={user.name}
-                              className="rounded-full object-cover flex-shrink-0"
-                              style={{ width: 28, height: 28 }} />
-                          ) : (
-                            <div className="rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-semibold"
-                              style={{ width: 28, height: 28, background: user.color }}>
-                              {user.name[0]}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-sans font-semibold truncate" style={{ color: '#1a1814' }}>{user.name}</p>
-                            <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
-                              {done.length}/{userTasks.length} · <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} />{user.points}
-                            </p>
+                  return (
+                    <Link
+                      key={user.id}
+                      href={`/user/${user.id}`}
+                      className="rounded-2xl p-3 block active:opacity-75 transition-opacity"
+                      style={{ background: bg, border: `0.5px solid ${user.color}25` }}
+                    >
+                      {/* User header: großer Avatar + Name/Punkte */}
+                      <div className="flex items-center gap-3 mb-2">
+                        {user.photo ? (
+                          <img
+                            src={user.photo}
+                            alt={user.name}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: '50%',
+                              objectFit: 'cover',
+                              border: `2.5px solid ${user.color}`,
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: '50%',
+                              background: `${user.color}22`,
+                              border: `2.5px solid ${user.color}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 18,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {user.avatar}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className="font-sans font-medium truncate"
+                            style={{ fontSize: 13, color: '#1a1814', lineHeight: 1.2 }}
+                          >
+                            {user.name}
+                          </div>
+                          <div className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>
+                            {done.length}/{userTasks.length}
+                            {userTasks.length > 0 && ` · ${userTasks.reduce((s, t) => s + (t.completed_at ? t.points : 0), 0)} Pkt.`}
                           </div>
                         </div>
-                        {/* Progress bar */}
-                        <div className="h-0.5 rounded-full mb-2 overflow-hidden" style={{ background: `${user.color}25` }}>
-                          <div className="h-full rounded-full transition-all duration-700"
-                            style={{ width: `${pct}%`, background: user.color }} />
-                        </div>
-                        {/* Pending tasks (max 3) */}
-                        <div className="space-y-1">
-                          {pending.slice(0, 3).map(task => (
-                            <div key={task.id}
-                              className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5"
-                              style={{ background: `${user.color}10` }}>
-                              <div className="w-3.5 h-3.5 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
-                              <span className="text-xs font-sans flex-1 leading-tight line-clamp-2" style={{ color: '#1a1814' }}>{task.title}</span>
-                              <span className="text-[10px] font-sans flex-shrink-0 flex items-center gap-0.5" style={{ color: '#a09d99' }}>
-                                <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} aria-hidden="true" />{task.points}
-                              </span>
+                      </div>
+
+                      {/* Fortschrittsbalken */}
+                      <div
+                        style={{
+                          width: '100%',
+                          height: 3,
+                          borderRadius: 2,
+                          background: 'rgba(0,0,0,0.08)',
+                          marginBottom: 8,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div style={{ height: '100%', width: `${pct}%`, background: user.color, borderRadius: 2 }} />
+                      </div>
+
+                      {/* Pending tasks (max 3) */}
+                      <div className="space-y-1">
+                        {pending.slice(0, 3).map(task => (
+                          <div
+                            key={task.id}
+                            className="w-full flex items-center gap-2 text-left rounded-lg px-2 py-1.5"
+                            style={{ background: `${user.color}10` }}
+                          >
+                            <div
+                              className="w-3.5 h-3.5 rounded-full border-2 flex-shrink-0"
+                              style={{ borderColor: user.color }}
+                            />
+                            <span
+                              className="text-xs font-sans flex-1 leading-tight line-clamp-1"
+                              style={{ color: '#1a1814' }}
+                            >
+                              {task.title}
+                            </span>
+                            <span
+                              className="text-[10px] font-sans flex-shrink-0 flex items-center gap-0.5"
+                              style={{ color: '#a09d99' }}
+                            >
+                              <i className="ti ti-star-filled" style={{ fontSize: 8, color: '#c9a020' }} aria-hidden="true" />
+                              {task.points}
+                            </span>
+                          </div>
+                        ))}
+                        {pending.length > 3 && (
+                          <div className="px-2 py-0.5">
+                            <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+                              +{pending.length - 3} weitere
+                            </span>
+                          </div>
+                        )}
+                        {done.slice(0, 1).map(task => (
+                          <div key={task.id} className="flex items-center gap-2 px-2 py-1 opacity-40">
+                            <div
+                              className="w-3.5 h-3.5 rounded-full flex-shrink-0 flex items-center justify-center"
+                              style={{ background: user.color }}
+                            >
+                              <i className="ti ti-check" style={{ fontSize: 8, color: '#fff' }} />
                             </div>
-                          ))}
-                          {done.slice(0, 2).map(task => (
-                            <div key={task.id} className="flex items-center gap-2 px-2 py-1 opacity-40">
-                              <div className="w-3.5 h-3.5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: user.color }}>
-                                <i className="ti ti-check" style={{ fontSize: 8, color: '#fff' }} />
-                              </div>
-                              <span className="text-xs font-sans line-through flex-1 leading-tight line-clamp-2" style={{ color: '#6b6760' }}>{task.title}</span>
-                            </div>
-                          ))}
-                          {userTasks.length === 0 && (
-                            <p className="text-xs font-sans text-center py-1" style={{ color: '#a09d99' }}>Keine Aufgaben</p>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+                            <span
+                              className="text-xs font-sans line-through flex-1 leading-tight line-clamp-1"
+                              style={{ color: '#6b6760' }}
+                            >
+                              {task.title}
+                            </span>
+                          </div>
+                        ))}
+                        {userTasks.length === 0 && (
+                          <p className="text-xs font-sans text-center py-2" style={{ color: '#a09d99' }}>
+                            Keine Aufgaben
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </>
+          )}
 
-          {/* RIGHT col (1/3): Weather + Meals + Waste + Photo */}
-          <div className="flex flex-col gap-3">
-            <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
-            <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
-            <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
-            <ImmichWidget data={immich.data} fetched_at={immich.fetched_at} loading={loading} onRefresh={handleImmichRefresh} apiBase={API_BASE} />
-          </div>
-
+          {loading && (
+            <div className="flex flex-col gap-3 flex-1">
+              <div className="h-3 w-24 rounded animate-pulse" style={{ background: '#e8e4de' }} />
+              <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                {[0,1,2,3].map(i => (
+                  <div key={i} className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 120 }} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* ── SPALTE 3: Info-Widgets ── */}
+        <div
+          style={{
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+          }}
+        >
+          <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
+          <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
+          <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
+          <ImmichWidget
+            data={immich.data}
+            fetched_at={immich.fetched_at}
+            loading={loading}
+            onRefresh={handleImmichRefresh}
+            apiBase={API_BASE}
+          />
+        </div>
+
       </div>
     </div>
   );
