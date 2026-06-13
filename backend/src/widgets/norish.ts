@@ -20,6 +20,7 @@ type FetchResponse = Awaited<ReturnType<typeof fetch>>;
 
 /**
  * Löst einen recipeImage-Pfad zur vollständigen URL auf.
+ * Die URL bleibt intern (Norish-Server) – der Browser bekommt nur den Proxy-Pfad.
  */
 function resolveImageUrl(recipeImage: string | null): string | null {
   if (!recipeImage) return null;
@@ -29,6 +30,16 @@ function resolveImageUrl(recipeImage: string | null): string | null {
   }
   const path = recipeImage.startsWith('/') ? recipeImage : `/${recipeImage}`;
   return `${base}${path}`;
+}
+
+/**
+ * Gibt den /api/widgets/meals/image?url=... Proxy-Pfad zurück,
+ * den der Browser direkt aufrufen kann.
+ */
+function proxyImageUrl(recipeImage: string | null): string | null {
+  const internal = resolveImageUrl(recipeImage);
+  if (!internal) return null;
+  return `/api/widgets/meals/image?url=${encodeURIComponent(internal)}`;
 }
 
 function norishFetch(path: string, init?: RequestInit): Promise<FetchResponse> {
@@ -56,7 +67,7 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
     const res: FetchResponse = await norishFetch(`/planned-recipes/${range}`);
     if (!res.ok) throw new Error(`Norish /planned-recipes/${range} → ${res.status}`);
     const raw = await res.json() as Omit<PlannedRecipe, 'imageUrl'>[];
-    return raw.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
+    return raw.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: proxyImageUrl(item.recipeImage) }));
   }
 
   const [monthRes, weekRes] = await Promise.all([
@@ -83,7 +94,7 @@ async function fetchPlannedRecipes(range: 'today' | 'week' | 'month'): Promise<P
   });
   merged.sort((a, b) => a.date.localeCompare(b.date));
 
-  return merged.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: resolveImageUrl(item.recipeImage) }));
+  return merged.map(item => PlannedRecipeSchema.parse({ ...item, imageUrl: proxyImageUrl(item.recipeImage) }));
 }
 
 async function fetchGroceries(): Promise<GroceryItem[]> {
@@ -158,6 +169,52 @@ async function setCache<T>(widgetType: string, data: T): Promise<string> {
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const norishRouter = Router();
+
+/**
+ * GET /api/widgets/meals/image?url=<encoded-internal-url>
+ * Proxy: lädt das Bild serverseitig von Norish und reicht es an den Browser durch.
+ * So muss der Client die interne Norish-URL nicht erreichen können.
+ */
+norishRouter.get('/image', async (req: Request, res: Response) => {
+  const rawUrl = req.query.url as string | undefined;
+  if (!rawUrl) {
+    return res.status(400).send('Missing url parameter');
+  }
+
+  let targetUrl: string;
+  try {
+    targetUrl = decodeURIComponent(rawUrl);
+    // Sicherheitscheck: nur Norish-URLs erlaubt
+    const norish = (process.env.NORISH_URL ?? '').replace(/\/$/, '');
+    if (!targetUrl.startsWith(norish)) {
+      return res.status(403).send('Forbidden');
+    }
+  } catch {
+    return res.status(400).send('Invalid url parameter');
+  }
+
+  try {
+    const apiKey = process.env.NORISH_API_KEY ?? '';
+    const imgRes = await fetch(targetUrl, {
+      signal: AbortSignal.timeout(8_000),
+      headers: apiKey ? { 'x-api-key': apiKey } : {},
+    });
+
+    if (!imgRes.ok) {
+      return res.status(imgRes.status).send('Image fetch failed');
+    }
+
+    const contentType = imgRes.headers.get('content-type') ?? 'image/jpeg';
+    const buffer = await imgRes.arrayBuffer();
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Image proxy error:', err);
+    res.status(502).send('Image proxy failed');
+  }
+});
 
 /**
  * GET /api/widgets/meals?range=today|week|month
