@@ -355,7 +355,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#f5f3f0' }}>
+    <div className="flex flex-col h-full">
       {/* Puls-Animation CSS */}
       <style>{`
         @keyframes pulse-ring {
@@ -368,8 +368,9 @@ export default function CalendarPage() {
         }
       `}</style>
 
-      <div className="flex flex-col flex-1 min-w-0 p-4 gap-3">
-        <PageHeader title="Kalender" />
+      <PageHeader title="Kalender" variant="page" />
+
+      <div className="flex flex-col flex-1 overflow-hidden px-6 pb-6 gap-3">
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 flex-shrink-0">
