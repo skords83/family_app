@@ -47,11 +47,8 @@ function shortDay(dateStr: string): string {
 function shortDate(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
 }
-function longDay(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
-}
 
-// Passende Emoji-Hintergrundfarbe je nach Gericht (einfaches Hashing)
+// Passende Hintergrundfarbe je nach Gericht (einfaches Hashing)
 const SWATCH_COLORS = ['#f0ede0','#f5ede0','#edeee0','#f5f0e0','#f0e8e8','#e8f0e8','#e8eef0'];
 function swatchColor(name: string | null, idx: number): string {
   if (!name) return SWATCH_COLORS[idx % SWATCH_COLORS.length];
@@ -62,7 +59,6 @@ function swatchColor(name: string | null, idx: number): string {
 
 export default function MealsPage() {
   const [byDate, setByDate] = useState<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>({});
-  const [fetchedAt, setFetchedAt] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -72,7 +68,7 @@ export default function MealsPage() {
     fetch(`${API_BASE}/api/widgets/meals?range=month`)
       .then(r => r.json())
       .then(data => {
-        if (data?.byDate) { setByDate(data.byDate); setFetchedAt(data.fetched_at); }
+        if (data?.byDate) { setByDate(data.byDate); }
         else setError(true);
       })
       .catch(() => setError(true))
@@ -90,7 +86,7 @@ export default function MealsPage() {
     <div>
       <PageHeader title="Essensplan" variant="page" />
 
-      <div className="px-6 pb-6" style={{ maxWidth: 680 }}>
+      <div className="px-6 pb-6" style={{ maxWidth: 900 }}>
 
         {/* Refresh */}
         <div className="flex justify-end mb-4">
@@ -104,14 +100,14 @@ export default function MealsPage() {
         {/* Loading */}
         {loading && (
           <div className="flex flex-col gap-3">
-            <div className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 200 }} />
+            <div className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 220 }} />
             <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
               {[0,1,2,3].map(i => <div key={i} className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 110 }} />)}
             </div>
           </div>
         )}
 
-        {/* Error */}
+        {/* Error / leer */}
         {!loading && (error || sortedDates.length === 0) && (
           <div className="rounded-2xl p-8 text-center" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
             <i className="ti ti-bowl" style={{ fontSize: 32, color: '#d8d4cf', display: 'block', marginBottom: 12 }} />
@@ -136,49 +132,18 @@ export default function MealsPage() {
               const recipe = dinner ?? Object.values(daySlots).flat()[0];
               if (!recipe) return null;
               const tags: string[] = (recipe as any).tags ?? [];
+              const slotLabel = dinner ? 'HEUTE ABEND' : 'HEUTE';
+              const dateLabel = new Date(todayDate + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+
               return (
-                <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #e85d3a' }}>
-                  {/* Bild oder farbige Fläche */}
-                  <div className="relative" style={{ height: 160 }}>
-                    {recipe.imageUrl ? (
-                      <img src={recipe.imageUrl} alt={recipe.recipeName ?? ''} className="w-full h-full object-cover" style={{ display: 'block' }} onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-6xl" style={{ background: swatchColor(recipe.recipeName, 0), opacity: 0.6 }}>
-                        {SLOT_ICONS['Dinner']}
-                      </div>
-                    )}
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.05) 55%, transparent 100%)' }} />
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '14px 16px' }}>
-                      <div className="font-sans" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)', marginBottom: 4 }}>
-                        Heute Abend · {longDay(todayDate)}
-                      </div>
-                      <div style={{ fontSize: 17, fontWeight: 400, color: '#fff', lineHeight: 1.25, fontFamily: 'Georgia, serif' }}>
-                        {recipe.recipeName ?? 'Kein Rezeptname'}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Meta-Zeile */}
-                  <div className="flex items-center flex-wrap gap-2 px-4 py-2.5">
-                    {tags.slice(0, 3).map((t, i) => (
-                      <span key={i} className="font-sans font-semibold" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, background: '#f0ede8', color: '#5f5e5a', border: '0.5px solid #d3d1c7' }}>
-                        {t.toUpperCase()}
-                      </span>
-                    ))}
-                    {(tags.length > 0 || recipe.calories || recipe.servings) && tags.length > 0 && (
-                      <div style={{ width: 1, height: 14, background: 'rgba(0,0,0,0.1)', margin: '0 2px' }} />
-                    )}
-                    {recipe.calories && (
-                      <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
-                        <i className="ti ti-flame" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.calories} kcal
-                      </span>
-                    )}
-                    {recipe.servings && (
-                      <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
-                        <i className="ti ti-users" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.servings} Port.
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <TodayBanner
+                  key={todayDate}
+                  recipe={recipe}
+                  tags={tags}
+                  slotLabel={slotLabel}
+                  dateLabel={dateLabel}
+                  swatchFallback={swatchColor(recipe.recipeName, 0)}
+                />
               );
             })()}
 
@@ -194,12 +159,10 @@ export default function MealsPage() {
                     const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
                     return (
                       <div key={date} className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-                        {/* Kopf */}
                         <div className="px-3 py-2.5" style={{ background: '#fafaf9', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
                           <div className="font-sans font-semibold" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#7a7874' }}>{shortDay(date)}</div>
                           <div style={{ fontSize: 15, fontWeight: 400, fontFamily: 'Georgia, serif', color: '#1a1814' }}>{shortDate(date)}</div>
                         </div>
-                        {/* Slots */}
                         <div className="px-3 py-2.5 flex flex-col gap-2">
                           {presentSlots.map(slot => {
                             const r = daySlots[slot]![0];
@@ -241,20 +204,29 @@ export default function MealsPage() {
                     <div key={date} className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
                       {/* Farbfläche */}
                       <div className="flex items-center justify-center" style={{ height: 52, background: recipe ? swatchColor(recipe.recipeName, idx) : '#f0ede8', fontSize: 24 }}>
-                        {recipe ? SLOT_ICONS[slot] : <i className="ti ti-moon" style={{ fontSize: 20, color: '#c8c4c0' }} aria-hidden="true" />}
+                        {recipe ? SLOT_ICONS[slot] : ''}
                       </div>
-                      {/* Info */}
-                      <div className="px-3 py-2.5">
-                        <div className="font-sans font-semibold" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a09d99', marginBottom: 3 }}>
-                          {shortDay(date)} · {shortDate(date)}
+                      {/* Inhalt */}
+                      <div className="px-3 pb-3 pt-2.5">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="font-sans font-semibold" style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#7a7874' }}>{shortDay(date)}</span>
+                          <span style={{ fontSize: 9, color: '#c8c4c0' }}>·</span>
+                          <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>{shortDate(date)}</span>
                         </div>
-                        <div className="font-sans" style={{ fontSize: 12, color: '#1a1814', lineHeight: 1.35 }}>
-                          {recipe?.recipeName ?? <span style={{ color: '#c8c4c0' }}>Kein Abendessen geplant</span>}
-                        </div>
-                        {recipe && (recipe.calories || recipe.servings) && (
-                          <div className="font-sans mt-1" style={{ fontSize: 10, color: '#a09d99' }}>
-                            {[recipe.calories ? `${recipe.calories} kcal` : null, recipe.servings ? `${recipe.servings} Port.` : null].filter(Boolean).join(' · ')}
-                          </div>
+                        {recipe ? (
+                          <>
+                            <div className="font-sans line-clamp-2" style={{ fontSize: 13, fontWeight: 500, color: '#1a1814', lineHeight: 1.35 }}>
+                              {recipe.recipeName ?? 'Kein Rezeptname'}
+                            </div>
+                            {(recipe.calories || recipe.servings) && (
+                              <div className="font-sans mt-1 flex items-center gap-2" style={{ fontSize: 10, color: '#a09d99' }}>
+                                {recipe.calories && <span><i className="ti ti-flame" style={{ fontSize: 10 }} /> {recipe.calories} kcal</span>}
+                                {recipe.servings && <span><i className="ti ti-users" style={{ fontSize: 10 }} /> {recipe.servings} Port.</span>}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="font-sans" style={{ fontSize: 11, color: '#c8c4c0' }}>Kein Eintrag</p>
                         )}
                       </div>
                     </div>
@@ -263,6 +235,78 @@ export default function MealsPage() {
               </div>
             )}
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Heute-Banner als eigene Komponente mit Bild-Fallback ──────────────────────
+function TodayBanner({
+  recipe,
+  tags,
+  slotLabel,
+  dateLabel,
+  swatchFallback,
+}: {
+  recipe: PlannedRecipe;
+  tags: string[];
+  slotLabel: string;
+  dateLabel: string;
+  swatchFallback: string;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const showImage = !!recipe.imageUrl && !imgError;
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #e85d3a' }}>
+      {/* Bild oder farbige Fläche */}
+      <div className="relative" style={{ height: 200 }}>
+        {showImage ? (
+          <img
+            src={recipe.imageUrl!}
+            alt={recipe.recipeName ?? ''}
+            onError={() => setImgError(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{ width: '100%', height: '100%', background: swatchFallback, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 }}>
+            🌙
+          </div>
+        )}
+        {/* Overlay-Text unten */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: showImage ? 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)' : 'none',
+          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '16px 20px',
+        }}>
+          <div className="font-sans font-semibold" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: showImage ? 'rgba(255,255,255,0.75)' : '#a09d99', marginBottom: 4 }}>
+            {slotLabel} · {dateLabel}
+          </div>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 400, color: showImage ? '#fff' : '#1a1814', lineHeight: 1.2 }}>
+            {recipe.recipeName ?? 'Kein Rezeptname'}
+          </div>
+        </div>
+      </div>
+      {/* Meta-Zeile */}
+      <div className="flex items-center flex-wrap gap-2 px-4 py-3">
+        {tags.slice(0, 3).map((t, i) => (
+          <span key={i} className="font-sans font-semibold" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, background: '#f0ede8', color: '#5f5e5a', border: '0.5px solid #d3d1c7' }}>
+            {t.toUpperCase()}
+          </span>
+        ))}
+        {tags.length > 0 && (recipe.calories || recipe.servings) && (
+          <div style={{ width: 1, height: 14, background: 'rgba(0,0,0,0.1)', margin: '0 2px' }} />
+        )}
+        {recipe.calories && (
+          <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
+            <i className="ti ti-flame" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.calories} kcal
+          </span>
+        )}
+        {recipe.servings && (
+          <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
+            <i className="ti ti-users" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.servings} Port.
+          </span>
         )}
       </div>
     </div>
