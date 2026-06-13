@@ -25,31 +25,47 @@ const SLOT_LABELS: Record<Slot, string> = {
   Dinner: 'Abend',
   Snack: 'Snack',
 };
-const SLOT_ICONS: Record<Slot, string> = {
-  Breakfast: '🌅', Lunch: '🍽️', Dinner: '🌙', Snack: '🍎',
+
+const SLOT_PILL_STYLE: Record<Slot, { background: string; color: string }> = {
+  Breakfast: { background: '#fef9e3', color: '#8a6500' },
+  Lunch:     { background: '#fef4e0', color: '#9a6200' },
+  Dinner:    { background: '#eef2fb', color: '#2d5a9e' },
+  Snack:     { background: '#eef7ee', color: '#2e7a2e' },
 };
-const SLOT_BG: Record<Slot, string> = {
-  Breakfast: '#fef9e3', Lunch: '#fff5f3', Dinner: '#f0f7ff', Snack: '#f2fbf2',
+
+const SLOT_DOT_COLOR: Record<Slot, string> = {
+  Breakfast: '#e8c020',
+  Lunch:     '#e8a020',
+  Dinner:    '#5b8dd9',
+  Snack:     '#4db84d',
 };
+
+const SLOT_SWATCH: Record<Slot, string> = {
+  Breakfast: '#fef9e3',
+  Lunch:     '#fef4e0',
+  Dinner:    '#eef2fb',
+  Snack:     '#eef7ee',
+};
+
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+const SWATCH_COLORS = ['#f0ede0', '#f5ede0', '#edeee0', '#f5f0e0', '#f0e8e8', '#e8f0e8', '#e8eef0'];
 
 function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function getTodayStr() { return toLocalDateStr(new Date()); }
-function isWeekend(dateStr: string): boolean {
-  const day = new Date(dateStr + 'T12:00:00').getDay();
-  return day === 0 || day === 6;
-}
+
 function shortDay(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short' }).toUpperCase();
 }
 function shortDate(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
 }
+function longDayDate(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
+}
 
-// Passende Hintergrundfarbe je nach Gericht (einfaches Hashing)
-const SWATCH_COLORS = ['#f0ede0','#f5ede0','#edeee0','#f5f0e0','#f0e8e8','#e8f0e8','#e8eef0'];
 function swatchColor(name: string | null, idx: number): string {
   if (!name) return SWATCH_COLORS[idx % SWATCH_COLORS.length];
   let h = 0;
@@ -57,6 +73,161 @@ function swatchColor(name: string | null, idx: number): string {
   return SWATCH_COLORS[Math.abs(h) % SWATCH_COLORS.length];
 }
 
+// ── Heute-Block ───────────────────────────────────────────────────────────────
+function TodayCard({ daySlots, dateStr }: {
+  daySlots: Partial<Record<Slot, PlannedRecipe[]>>;
+  dateStr: string;
+}) {
+  const [imgError, setImgError] = useState(false);
+
+  const dinner  = daySlots['Dinner']?.[0] ?? null;
+  const hero    = dinner ?? Object.values(daySlots).flat()[0] ?? null;
+  const showImg = !!hero?.imageUrl && !imgError;
+
+  const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
+
+  return (
+    <div style={{
+      gridColumn: '1',
+      gridRow: '1 / 3',
+      borderRadius: 16,
+      border: '1.5px solid #e85d3a',
+      background: 'var(--color-background-primary)',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      {/* Bild / Fallback */}
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#2e2520', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {showImg ? (
+          <img
+            src={hero!.imageUrl!}
+            alt={hero!.recipeName ?? ''}
+            onError={() => setImgError(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
+          />
+        ) : (
+          <span style={{ fontSize: 52, zIndex: 0 }}>🍽️</span>
+        )}
+        {/* Overlay */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: showImg
+            ? 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 52%)'
+            : 'linear-gradient(to top, rgba(0,0,0,0.35) 0%, transparent 60%)',
+          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+          padding: '14px 18px',
+          zIndex: 1,
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.09em', color: 'rgba(255,255,255,0.65)', marginBottom: 5 }}>
+            Heute · {longDayDate(dateStr)}
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 400, color: '#fff', lineHeight: 1.2, fontFamily: 'Georgia, serif' }}>
+            {hero?.recipeName ?? 'Kein Gericht geplant'}
+          </div>
+        </div>
+      </div>
+
+      {/* Alle Slots des Tages */}
+      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 9, borderTop: '0.5px solid var(--color-border-tertiary)', flexShrink: 0 }}>
+        {presentSlots.map(slot => {
+          const recipe = daySlots[slot]![0];
+          const pill = SLOT_PILL_STYLE[slot];
+          return (
+            <div key={slot} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{
+                fontSize: 8, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em',
+                padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 2,
+                background: pill.background, color: pill.color,
+              }}>
+                {SLOT_LABELS[slot]}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.35 }}>
+                  {recipe.recipeName ?? '–'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 1 }}>
+                  {[
+                    recipe.servings ? `${recipe.servings} Port.` : null,
+                    recipe.calories ? `${recipe.calories} kcal` : null,
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {presentSlots.length === 0 && (
+          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>Keine Einträge für heute</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Tages-Karte (kleine Karten) ───────────────────────────────────────────────
+function DayCard({ dateStr, daySlots, idx }: {
+  dateStr: string;
+  daySlots: Partial<Record<Slot, PlannedRecipe[]>>;
+  idx: number;
+}) {
+  const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
+  const primarySlot  = daySlots['Dinner']?.[0]
+    ?? Object.values(daySlots).flat()[0]
+    ?? null;
+  const primarySlotKey: Slot = daySlots['Dinner']?.length
+    ? 'Dinner'
+    : (SLOT_ORDER.find(s => daySlots[s]?.length) ?? 'Dinner');
+
+  const swatch = primarySlot
+    ? swatchColor(primarySlot.recipeName, idx)
+    : SWATCH_COLORS[idx % SWATCH_COLORS.length];
+
+  const swatchIcon = primarySlot
+    ? (primarySlotKey === 'Breakfast' ? '🌅' : primarySlotKey === 'Lunch' ? '🍽️' : primarySlotKey === 'Dinner' ? '🌙' : '🍎')
+    : '—';
+
+  return (
+    <div style={{
+      borderRadius: 16,
+      border: '0.5px solid var(--color-border-tertiary)',
+      background: 'var(--color-background-primary)',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+    }}>
+      {/* Swatch */}
+      <div style={{ height: 40, background: swatch, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+        {swatchIcon}
+      </div>
+      {/* Kopf */}
+      <div style={{ padding: '6px 10px 5px', borderBottom: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)', flexShrink: 0 }}>
+        <div style={{ fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-secondary)' }}>
+          {shortDay(dateStr)}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--color-text-primary)', fontFamily: 'Georgia, serif' }}>
+          {shortDate(dateStr)}
+        </div>
+      </div>
+      {/* Gerichte */}
+      <div style={{ padding: '7px 10px 9px', display: 'flex', flexDirection: 'column', gap: 5, flex: 1, overflow: 'hidden' }}>
+        {presentSlots.map(slot => (
+          <div key={slot} style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}>
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: SLOT_DOT_COLOR[slot], flexShrink: 0, marginTop: 4 }} />
+            <div style={{ fontSize: 10.5, color: 'var(--color-text-primary)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {daySlots[slot]![0].recipeName ?? '–'}
+            </div>
+          </div>
+        ))}
+        {presentSlots.length === 0 && (
+          <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic' }}>Nicht geplant</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Hauptseite ────────────────────────────────────────────────────────────────
 export default function MealsPage() {
   const [byDate, setByDate] = useState<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>({});
   const [loading, setLoading] = useState(true);
@@ -68,7 +239,7 @@ export default function MealsPage() {
     fetch(`${API_BASE}/api/widgets/meals?range=month`)
       .then(r => r.json())
       .then(data => {
-        if (data?.byDate) { setByDate(data.byDate); }
+        if (data?.byDate) setByDate(data.byDate);
         else setError(true);
       })
       .catch(() => setError(true))
@@ -77,236 +248,93 @@ export default function MealsPage() {
 
   useEffect(() => { load(); }, []);
 
-  const today = getTodayStr();
+  const today       = getTodayStr();
   const sortedDates = Object.keys(byDate).filter(d => d >= today).sort().slice(0, 7);
-  const todayDate = sortedDates[0] === today ? today : null;
-  const restDates = sortedDates.filter(d => d !== today);
+  const todayDate   = sortedDates[0] === today ? today : null;
+  const restDates   = sortedDates.filter(d => d !== today).slice(0, 6); // max 6 Rest-Karten
+
+  // Grid-Positionen der 6 Rest-Karten: 3 oben (row 1), 3 unten (row 2)
+  // col 2–4 in row 1, col 2–4 in row 2
+  const gridPositions = [
+    { col: 2, row: 1 }, { col: 3, row: 1 }, { col: 4, row: 1 },
+    { col: 2, row: 2 }, { col: 3, row: 2 }, { col: 4, row: 2 },
+  ];
 
   return (
     <div>
       <PageHeader title="Essensplan" variant="page" />
 
-      <div className="px-6 pb-6" style={{ maxWidth: 900 }}>
+      <div style={{ padding: '0 24px 24px', width: '100%' }}>
 
         {/* Refresh */}
-        <div className="flex justify-end mb-4">
-          <button onClick={load}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-black/5"
-            style={{ border: '0.5px solid rgba(0,0,0,0.1)', color: '#6b6760' }} title="Aktualisieren">
-            <i className="ti ti-refresh" style={{ fontSize: 17 }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button
+            onClick={load}
+            style={{ width: 34, height: 34, borderRadius: 10, border: '0.5px solid var(--color-border-tertiary)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+            title="Aktualisieren"
+          >
+            <i className="ti ti-refresh" style={{ fontSize: 16 }} />
           </button>
         </div>
 
         {/* Loading */}
         {loading && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 220 }} />
-            <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              {[0,1,2,3].map(i => <div key={i} className="rounded-2xl animate-pulse" style={{ background: '#e8e4de', height: 110 }} />)}
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr 1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 8, height: 420 }}>
+            <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: '#e8e4de', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            {[0,1,2,3,4,5].map(i => <div key={i} style={{ borderRadius: 16, background: '#e8e4de', animation: 'pulse 1.5s ease-in-out infinite' }} />)}
           </div>
         )}
 
         {/* Error / leer */}
         {!loading && (error || sortedDates.length === 0) && (
-          <div className="rounded-2xl p-8 text-center" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+          <div style={{ borderRadius: 16, padding: 40, textAlign: 'center', background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)' }}>
             <i className="ti ti-bowl" style={{ fontSize: 32, color: '#d8d4cf', display: 'block', marginBottom: 12 }} />
-            <p className="text-sm font-sans font-medium mb-1" style={{ color: '#1a1814' }}>Kein Essensplan verfügbar</p>
-            <p className="text-xs font-sans mb-4" style={{ color: '#a09d99' }}>Norish liefert noch keine Daten für diese Woche.</p>
-            <div className="rounded-xl px-4 py-3 flex items-start gap-2 text-left" style={{ background: '#fff5f3', border: '0.5px solid #e85d3a30' }}>
-              <i className="ti ti-plug" style={{ fontSize: 15, color: '#e85d3a', flexShrink: 0, marginTop: 1 }} />
-              <span className="text-xs font-sans" style={{ color: '#e85d3a' }}>
-                Stelle sicher dass <strong>NORISH_URL</strong> in den Umgebungsvariablen gesetzt ist.
-              </span>
-            </div>
+            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>Kein Essensplan verfügbar</p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Norish liefert noch keine Daten für diese Woche.</p>
           </div>
         )}
 
+        {/* Grid */}
         {!loading && !error && sortedDates.length > 0 && (
-          <div className="flex flex-col gap-3">
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1.7fr 1fr 1fr 1fr',
+            gridTemplateRows: '1fr 1fr',
+            gap: 8,
+            width: '100%',
+            height: 'calc(100vh - 180px)',
+            minHeight: 380,
+            maxHeight: 520,
+          }}>
+            {/* Heute */}
+            {todayDate && (
+              <TodayCard
+                daySlots={byDate[todayDate] ?? {}}
+                dateStr={todayDate}
+              />
+            )}
 
-            {/* ── Heute Banner ── */}
-            {todayDate && (() => {
-              const daySlots = byDate[todayDate] ?? {};
-              const dinner = daySlots['Dinner']?.[0];
-              const recipe = dinner ?? Object.values(daySlots).flat()[0];
-              if (!recipe) return null;
-              const tags: string[] = (recipe as any).tags ?? [];
-              const slotLabel = dinner ? 'HEUTE ABEND' : 'HEUTE';
-              const dateLabel = new Date(todayDate + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
-
-              return (
-                <TodayBanner
-                  key={todayDate}
-                  recipe={recipe}
-                  tags={tags}
-                  slotLabel={slotLabel}
-                  dateLabel={dateLabel}
-                  swatchFallback={swatchColor(recipe.recipeName, 0)}
-                />
-              );
-            })()}
-
-            {/* ── Rest: 2-Spalten-Grid ── */}
-            {restDates.length > 0 && (
-              <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                {restDates.map((date, idx) => {
-                  const daySlots = byDate[date] ?? {};
-                  const weekend = isWeekend(date);
-
-                  if (weekend) {
-                    // Wochenende: alle Slots als Zeilen
-                    const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
-                    return (
-                      <div key={date} className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-                        <div className="px-3 py-2.5" style={{ background: '#fafaf9', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
-                          <div className="font-sans font-semibold" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#7a7874' }}>{shortDay(date)}</div>
-                          <div style={{ fontSize: 15, fontWeight: 400, fontFamily: 'Georgia, serif', color: '#1a1814' }}>{shortDate(date)}</div>
-                        </div>
-                        <div className="px-3 py-2.5 flex flex-col gap-2">
-                          {presentSlots.map(slot => {
-                            const r = daySlots[slot]![0];
-                            return (
-                              <div key={slot} className="flex items-center gap-2">
-                                <div className="flex items-center justify-center rounded-md flex-shrink-0" style={{ width: 22, height: 22, background: SLOT_BG[slot], fontSize: 12 }}>
-                                  {SLOT_ICONS[slot]}
-                                </div>
-                                <div className="font-sans flex-shrink-0" style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#a09d99', width: 36 }}>
-                                  {SLOT_LABELS[slot]}
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div className="font-sans" style={{ fontSize: 11, color: '#1a1814', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {r.recipeName ?? '–'}
-                                  </div>
-                                  {(r.calories || r.servings) && (
-                                    <div className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>
-                                      {[r.calories ? `${r.calories} kcal` : null, r.servings ? `${r.servings} Port.` : null].filter(Boolean).join(' · ')}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {presentSlots.length === 0 && (
-                            <p className="font-sans text-center py-1" style={{ fontSize: 11, color: '#c8c4c0' }}>Keine Einträge</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Wochentag: nur Abendessen, mit Swatch oben
-                  const dinner = daySlots['Dinner']?.[0];
-                  const recipe = dinner ?? Object.values(daySlots).flat()[0];
-                  const slot: Slot = dinner ? 'Dinner' : (Object.keys(daySlots).find(s => daySlots[s as Slot]?.length) as Slot | undefined) ?? 'Dinner';
-
-                  return (
-                    <div key={date} className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-                      {/* Farbfläche */}
-                      <div className="flex items-center justify-center" style={{ height: 52, background: recipe ? swatchColor(recipe.recipeName, idx) : '#f0ede8', fontSize: 24 }}>
-                        {recipe ? SLOT_ICONS[slot] : ''}
-                      </div>
-                      {/* Inhalt */}
-                      <div className="px-3 pb-3 pt-2.5">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="font-sans font-semibold" style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#7a7874' }}>{shortDay(date)}</span>
-                          <span style={{ fontSize: 9, color: '#c8c4c0' }}>·</span>
-                          <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>{shortDate(date)}</span>
-                        </div>
-                        {recipe ? (
-                          <>
-                            <div className="font-sans line-clamp-2" style={{ fontSize: 13, fontWeight: 500, color: '#1a1814', lineHeight: 1.35 }}>
-                              {recipe.recipeName ?? 'Kein Rezeptname'}
-                            </div>
-                            {(recipe.calories || recipe.servings) && (
-                              <div className="font-sans mt-1 flex items-center gap-2" style={{ fontSize: 10, color: '#a09d99' }}>
-                                {recipe.calories && <span><i className="ti ti-flame" style={{ fontSize: 10 }} /> {recipe.calories} kcal</span>}
-                                {recipe.servings && <span><i className="ti ti-users" style={{ fontSize: 10 }} /> {recipe.servings} Port.</span>}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <p className="font-sans" style={{ fontSize: 11, color: '#c8c4c0' }}>Kein Eintrag</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Wenn kein Heute: Platzhalter damit Grid stimmt */}
+            {!todayDate && (
+              <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>Kein Eintrag für heute</p>
               </div>
             )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
-// ── Heute-Banner als eigene Komponente mit Bild-Fallback ──────────────────────
-function TodayBanner({
-  recipe,
-  tags,
-  slotLabel,
-  dateLabel,
-  swatchFallback,
-}: {
-  recipe: PlannedRecipe;
-  tags: string[];
-  slotLabel: string;
-  dateLabel: string;
-  swatchFallback: string;
-}) {
-  const [imgError, setImgError] = useState(false);
-  const showImage = !!recipe.imageUrl && !imgError;
-
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: '#fff', border: '1.5px solid #e85d3a' }}>
-      {/* Bild oder farbige Fläche */}
-      <div className="relative" style={{ height: 200 }}>
-        {showImage ? (
-          <img
-            src={recipe.imageUrl!}
-            alt={recipe.recipeName ?? ''}
-            onError={() => setImgError(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
-        ) : (
-          <div style={{ width: '100%', height: '100%', background: swatchFallback, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 }}>
-            🌙
+            {/* Rest-Tage */}
+            {restDates.map((date, idx) => {
+              const pos = gridPositions[idx];
+              return (
+                <div key={date} style={{ gridColumn: pos.col, gridRow: pos.row }}>
+                  <DayCard
+                    dateStr={date}
+                    daySlots={byDate[date] ?? {}}
+                    idx={idx}
+                  />
+                </div>
+              );
+            })}
           </div>
-        )}
-        {/* Overlay-Text unten */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: showImage ? 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)' : 'none',
-          display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '16px 20px',
-        }}>
-          <div className="font-sans font-semibold" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: showImage ? 'rgba(255,255,255,0.75)' : '#a09d99', marginBottom: 4 }}>
-            {slotLabel} · {dateLabel}
-          </div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 400, color: showImage ? '#fff' : '#1a1814', lineHeight: 1.2 }}>
-            {recipe.recipeName ?? 'Kein Rezeptname'}
-          </div>
-        </div>
-      </div>
-      {/* Meta-Zeile */}
-      <div className="flex items-center flex-wrap gap-2 px-4 py-3">
-        {tags.slice(0, 3).map((t, i) => (
-          <span key={i} className="font-sans font-semibold" style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, background: '#f0ede8', color: '#5f5e5a', border: '0.5px solid #d3d1c7' }}>
-            {t.toUpperCase()}
-          </span>
-        ))}
-        {tags.length > 0 && (recipe.calories || recipe.servings) && (
-          <div style={{ width: 1, height: 14, background: 'rgba(0,0,0,0.1)', margin: '0 2px' }} />
-        )}
-        {recipe.calories && (
-          <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
-            <i className="ti ti-flame" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.calories} kcal
-          </span>
-        )}
-        {recipe.servings && (
-          <span className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#a09d99' }}>
-            <i className="ti ti-users" style={{ fontSize: 12 }} aria-hidden="true" /> {recipe.servings} Port.
-          </span>
         )}
       </div>
     </div>
