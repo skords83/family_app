@@ -21,12 +21,8 @@ const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August',
 const START_H = 7;
 const HOURS = 15;
 const MIN_SLOT_H = 28;     // unter dem Wert wird's unleserlich → dann lieber doch scrollen
-const MIN_EVENT_H = 20;    // Mindesthöhe eines Event-Blocks (eine Textzeile)
-
-// Schwellenwerte (px) für die adaptive Darstellung
-const TIER_MINI_MAX    = 30; // < 30 → einzeilig mit Inline-Zeit
-const TIER_COMPACT_MAX = 56; // 30..55 → 1-zeiliger Titel + Zeit
-                             // ≥ 56 → 2-zeiliger Titel + Zeit
+const MIN_EVENT_H = 28;    // Mindesthöhe eines Event-Blocks (Platz für Titel + Zeit)
+const TIER_FULL_MIN = 56;  // ab dieser Höhe darf der Titel 2 Zeilen brechen
 
 function getWeekStart(offset: number): Date {
   const now = new Date();
@@ -61,7 +57,7 @@ function toLocalISO(dateStr: string, timeStr: string): string {
   return `${dateStr}T${pad(h)}:${pad(m)}:00`;
 }
 
-type EventTier = 'mini' | 'compact' | 'full';
+type EventTier = 'compact' | 'full';
 
 // ---- Neuer-Termin-Modal ----
 function NewEventModal({
@@ -351,14 +347,11 @@ export default function CalendarPage() {
   function eventMetrics(ev: CalendarEvent): { heightPx: number; tier: EventTier } {
     const durMin = toMinutes(ev.end) - toMinutes(ev.start);
     const heightPx = Math.max(MIN_EVENT_H, (durMin / 60) * slotH);
-    const tier: EventTier =
-      heightPx < TIER_MINI_MAX ? 'mini'
-      : heightPx < TIER_COMPACT_MAX ? 'compact'
-      : 'full';
+    const tier: EventTier = heightPx < TIER_FULL_MIN ? 'compact' : 'full';
     return { heightPx, tier };
   }
 
-  function eventStyle(ev: CalendarEvent, col: number, cols: number, tier: EventTier): React.CSSProperties {
+  function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
     const startMin = toMinutes(ev.start);
     const endMin = toMinutes(ev.end);
     const top = ((startMin / 60) - START_H) * slotH;
@@ -377,14 +370,10 @@ export default function CalendarPage() {
       background: `${ev.color ?? '#6366f1'}40`, // ~25 % statt 16 % — deutlich präsenter
       borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
       borderRadius: 6,
-      // mini braucht weniger Padding um die Zeile zu zentrieren
-      padding: tier === 'mini' ? '1px 5px' : '3px 6px',
+      padding: '2px 6px',
       overflow: 'hidden',
       zIndex: 2,
       cursor: 'default',
-      // Bei sehr flachen Events Inhalte vertikal mittig
-      display: tier === 'mini' ? 'flex' : 'block',
-      alignItems: tier === 'mini' ? 'center' : undefined,
     };
   }
 
@@ -394,8 +383,8 @@ export default function CalendarPage() {
   const todayIndex = nowTick ? days.findIndex(d => d.getTime() === new Date(nowTick).setHours(0, 0, 0, 0)) : -1;
   const showNowLine = nowTopPx !== null && nowTopPx >= 0 && nowTopPx <= HOURS * slotH && todayIndex >= 0;
 
-  // Wochenend-Spalten dezent abheben (Sa = 6, So = 0)
-  const weekendBg = '#faf6ef';
+  // Wochenend-Spalten deutlich aber harmonisch abheben (Sa = 6, So = 0)
+  const weekendBg = '#f0ead7';
 
   return (
     <div className="flex flex-col h-full">
@@ -558,52 +547,52 @@ export default function CalendarPage() {
                   />
                 ))}
 
-                {/* Events mit Kollisions-Layout + adaptive Darstellung */}
+                {/* Events — einheitliches Layout: Titel oben, Zeit-Spanne darunter */}
                 {layoutEvents(eventsForDay(d, false)).map(ev => {
                   const { tier } = eventMetrics(ev);
-                  const narrow = ev.cols > 1;
                   const startStr = new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                   const endStr   = new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                  const timeStr  = narrow ? startStr : `${startStr} – ${endStr}`;
+                  const timeStr  = `${startStr} – ${endStr}`;
                   const evColor  = ev.color ?? '#6366f1';
 
                   return (
-                    <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols, tier)}>
-                      {tier === 'mini' ? (
-                        // Einzeilig: Startzeit fett grau + Titel farbig, gemeinsam truncate
-                        <div
-                          className="font-sans truncate"
-                          style={{ fontSize: 11, lineHeight: 1.2, width: '100%' }}
-                        >
-                          <span style={{ fontWeight: 700, color: '#5f5e5a', marginRight: 4 }}>
-                            {startStr}
-                          </span>
-                          <span style={{ fontWeight: 600, color: evColor }}>
-                            {ev.title}
-                          </span>
-                        </div>
-                      ) : (
-                        <>
-                          <div
-                            className="font-semibold font-sans"
-                            style={{
-                              fontSize: 11,
-                              color: evColor,
-                              lineHeight: 1.2,
-                              display: '-webkit-box',
-                              WebkitLineClamp: tier === 'full' ? 2 : 1,
-                              WebkitBoxOrient: 'vertical' as const,
-                              overflow: 'hidden',
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {ev.title}
-                          </div>
-                          <div className="font-sans" style={{ fontSize: 10, color: '#5f5e5a', marginTop: 2 }}>
-                            {timeStr}
-                          </div>
-                        </>
-                      )}
+                    <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols)}>
+                      {/* Titel — 1 oder 2 Zeilen je nach verfügbarer Höhe */}
+                      <div
+                        className="font-semibold font-sans"
+                        style={{
+                          fontSize: 11,
+                          color: evColor,
+                          lineHeight: 1.15,
+                          ...(tier === 'full' ? {
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical' as const,
+                            overflow: 'hidden',
+                            wordBreak: 'break-word',
+                          } : {
+                            whiteSpace: 'nowrap' as const,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }),
+                        }}
+                      >
+                        {ev.title}
+                      </div>
+                      {/* Zeit-Spanne — immer dasselbe Format, ggf. mit Ellipsis bei sehr engen Spalten */}
+                      <div
+                        className="font-sans"
+                        style={{
+                          fontSize: 10,
+                          color: '#5f5e5a',
+                          marginTop: 1,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {timeStr}
+                      </div>
                     </div>
                   );
                 })}
