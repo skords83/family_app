@@ -195,12 +195,13 @@ function DayCard({ dateStr, daySlots, style }: {
   return (
     <div style={{
       borderRadius: 16,
-      border: '0.5px solid var(--color-border-tertiary)',
+      border: '1px solid var(--color-border-secondary)',
       background: 'var(--color-background-primary)',
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
-      height: '100%',
+      alignSelf: 'stretch',
+      minHeight: 0,
       ...style,
     }}>
       {/* Kopfzeile */}
@@ -219,7 +220,7 @@ function DayCard({ dateStr, daySlots, style }: {
       </div>
 
       {/* Gerichte mit Thumbnail */}
-      <div style={{ padding: '10px 14px 12px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1, overflow: 'hidden', justifyContent: 'flex-start' }}>
         {presentSlots.map(slot => {
           const recipe = daySlots[slot]![0];
           return (
@@ -307,6 +308,7 @@ export default function MealsPage() {
             display: 'grid',
             gridTemplateColumns: '1.7fr 1fr 1fr 1fr',
             gridTemplateRows: '1fr 1fr',
+            alignItems: 'stretch',
             gap: 8, height: 460,
           }}>
             <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: 'var(--color-background-secondary)' }} />
