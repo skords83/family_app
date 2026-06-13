@@ -103,10 +103,16 @@ function TodayCard({ daySlots, dateStr }: {
 
   return (
     <div style={{
-      gridColumn: '1', gridRow: '1 / 3',
-      borderRadius: 16, border: '1.5px solid #e85d3a',
+      // Direkt im Grid: Spalte 1, beide Zeilen
+      gridColumn: '1',
+      gridRow: '1 / 3',
+      borderRadius: 16,
+      border: '1.5px solid #e85d3a',
       background: 'var(--color-background-primary)',
-      overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
     }}>
       {/* Hero-Bild */}
       <div style={{
@@ -179,17 +185,23 @@ function TodayCard({ daySlots, dateStr }: {
 }
 
 // ── Tages-Kachel ─────────────────────────────────────────────────────────────
-function DayCard({ dateStr, daySlots }: {
+function DayCard({ dateStr, daySlots, style }: {
   dateStr: string;
   daySlots: Partial<Record<Slot, PlannedRecipe[]>>;
+  style?: React.CSSProperties;
 }) {
   const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
 
   return (
     <div style={{
-      borderRadius: 16, border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 16,
+      border: '0.5px solid var(--color-border-tertiary)',
       background: 'var(--color-background-primary)',
-      overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0,
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      ...style,
     }}>
       {/* Kopfzeile */}
       <div style={{
@@ -266,11 +278,6 @@ export default function MealsPage() {
   const todayDate   = sortedDates[0] === today ? today : null;
   const restDates   = sortedDates.filter(d => d !== today).slice(0, 6);
 
-  const gridPositions = [
-    { col: 2, row: 1 }, { col: 3, row: 1 }, { col: 4, row: 1 },
-    { col: 2, row: 2 }, { col: 3, row: 2 }, { col: 4, row: 2 },
-  ];
-
   return (
     <div>
       <PageHeader title="Essensplan" variant="page" />
@@ -326,7 +333,7 @@ export default function MealsPage() {
           </div>
         )}
 
-        {/* Grid */}
+        {/* 4×2 Grid — alle Kinder direkt im Grid, kein Wrapper-Div */}
         {!loading && !error && sortedDates.length > 0 && (
           <div style={{
             display: 'grid',
@@ -338,11 +345,13 @@ export default function MealsPage() {
             minHeight: 380,
             maxHeight: 520,
           }}>
+            {/* Heute: gridColumn/gridRow direkt auf der Komponente */}
             {todayDate ? (
               <TodayCard daySlots={byDate[todayDate] ?? {}} dateStr={todayDate} />
             ) : (
               <div style={{
-                gridColumn: 1, gridRow: '1 / 3', borderRadius: 16,
+                gridColumn: 1, gridRow: '1 / 3',
+                borderRadius: 16,
                 border: '0.5px solid var(--color-border-tertiary)',
                 background: 'var(--color-background-secondary)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -353,12 +362,17 @@ export default function MealsPage() {
               </div>
             )}
 
+            {/* Rest-Kacheln: ebenfalls direkt im Grid, gridColumn/Row per style */}
             {restDates.map((date, idx) => {
-              const pos = gridPositions[idx];
+              const col = (idx % 3) + 2;       // Spalten 2, 3, 4
+              const row = idx < 3 ? 1 : 2;     // erste 3 → Zeile 1, nächste 3 → Zeile 2
               return (
-                <div key={date} style={{ gridColumn: pos.col, gridRow: pos.row, minHeight: 0 }}>
-                  <DayCard dateStr={date} daySlots={byDate[date] ?? {}} />
-                </div>
+                <DayCard
+                  key={date}
+                  dateStr={date}
+                  daySlots={byDate[date] ?? {}}
+                  style={{ gridColumn: col, gridRow: row }}
+                />
               );
             })}
           </div>
