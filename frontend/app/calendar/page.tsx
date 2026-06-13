@@ -20,7 +20,13 @@ const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const START_H = 7;
 const HOURS = 15;
-const MIN_SLOT_H = 28; // unter dem Wert wird's unleserlich → dann lieber doch scrollen
+const MIN_SLOT_H = 28;     // unter dem Wert wird's unleserlich → dann lieber doch scrollen
+const MIN_EVENT_H = 20;    // Mindesthöhe eines Event-Blocks (eine Textzeile)
+
+// Schwellenwerte (px) für die adaptive Darstellung
+const TIER_MINI_MAX    = 30; // < 30 → einzeilig mit Inline-Zeit
+const TIER_COMPACT_MAX = 56; // 30..55 → 1-zeiliger Titel + Zeit
+                             // ≥ 56 → 2-zeiliger Titel + Zeit
 
 function getWeekStart(offset: number): Date {
   const now = new Date();
@@ -54,6 +60,8 @@ function toLocalISO(dateStr: string, timeStr: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${dateStr}T${pad(h)}:${pad(m)}:00`;
 }
+
+type EventTier = 'mini' | 'compact' | 'full';
 
 // ---- Neuer-Termin-Modal ----
 function NewEventModal({
@@ -339,11 +347,22 @@ export default function CalendarPage() {
     });
   }
 
-  function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
+  // Berechnet Höhe + Tier eines Events
+  function eventMetrics(ev: CalendarEvent): { heightPx: number; tier: EventTier } {
+    const durMin = toMinutes(ev.end) - toMinutes(ev.start);
+    const heightPx = Math.max(MIN_EVENT_H, (durMin / 60) * slotH);
+    const tier: EventTier =
+      heightPx < TIER_MINI_MAX ? 'mini'
+      : heightPx < TIER_COMPACT_MAX ? 'compact'
+      : 'full';
+    return { heightPx, tier };
+  }
+
+  function eventStyle(ev: CalendarEvent, col: number, cols: number, tier: EventTier): React.CSSProperties {
     const startMin = toMinutes(ev.start);
     const endMin = toMinutes(ev.end);
     const top = ((startMin / 60) - START_H) * slotH;
-    const height = Math.max(slotH * 0.5, ((endMin - startMin) / 60) * slotH);
+    const height = Math.max(MIN_EVENT_H, ((endMin - startMin) / 60) * slotH);
     const gap = 3; // px zwischen kollidierenden Events
     const width = cols > 1 ? `calc(${100 / cols}% - ${gap + 1}px)` : undefined;
     const left = cols > 1 ? `calc(${(col / cols) * 100}% + ${gap / 2 + 1}px)` : 3;
@@ -358,10 +377,14 @@ export default function CalendarPage() {
       background: `${ev.color ?? '#6366f1'}40`, // ~25 % statt 16 % — deutlich präsenter
       borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
       borderRadius: 6,
-      padding: '3px 6px',
+      // mini braucht weniger Padding um die Zeile zu zentrieren
+      padding: tier === 'mini' ? '1px 5px' : '3px 6px',
       overflow: 'hidden',
       zIndex: 2,
       cursor: 'default',
+      // Bei sehr flachen Events Inhalte vertikal mittig
+      display: tier === 'mini' ? 'flex' : 'block',
+      alignItems: tier === 'mini' ? 'center' : undefined,
     };
   }
 
@@ -535,30 +558,55 @@ export default function CalendarPage() {
                   />
                 ))}
 
-                {/* Events mit Kollisions-Layout */}
-                {layoutEvents(eventsForDay(d, false)).map(ev => (
-                  <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols)}>
-                    <div
-                      className="text-[11px] font-semibold font-sans"
-                      style={{
-                        color: ev.color ?? '#6366f1',
-                        lineHeight: 1.2,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical' as const,
-                        overflow: 'hidden',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {ev.title}
+                {/* Events mit Kollisions-Layout + adaptive Darstellung */}
+                {layoutEvents(eventsForDay(d, false)).map(ev => {
+                  const { tier } = eventMetrics(ev);
+                  const narrow = ev.cols > 1;
+                  const startStr = new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                  const endStr   = new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                  const timeStr  = narrow ? startStr : `${startStr} – ${endStr}`;
+                  const evColor  = ev.color ?? '#6366f1';
+
+                  return (
+                    <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols, tier)}>
+                      {tier === 'mini' ? (
+                        // Einzeilig: Startzeit fett grau + Titel farbig, gemeinsam truncate
+                        <div
+                          className="font-sans truncate"
+                          style={{ fontSize: 11, lineHeight: 1.2, width: '100%' }}
+                        >
+                          <span style={{ fontWeight: 700, color: '#5f5e5a', marginRight: 4 }}>
+                            {startStr}
+                          </span>
+                          <span style={{ fontWeight: 600, color: evColor }}>
+                            {ev.title}
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className="font-semibold font-sans"
+                            style={{
+                              fontSize: 11,
+                              color: evColor,
+                              lineHeight: 1.2,
+                              display: '-webkit-box',
+                              WebkitLineClamp: tier === 'full' ? 2 : 1,
+                              WebkitBoxOrient: 'vertical' as const,
+                              overflow: 'hidden',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {ev.title}
+                          </div>
+                          <div className="font-sans" style={{ fontSize: 10, color: '#5f5e5a', marginTop: 2 }}>
+                            {timeStr}
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="text-[10px] font-sans mt-0.5" style={{ color: '#5f5e5a' }}>
-                      {new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                      {' – '}
-                      {new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* „Jetzt"-Linie nur in der heutigen Spalte */}
                 {isTodayCol && showNowLine && nowTopPx !== null && (
