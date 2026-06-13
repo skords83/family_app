@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -18,9 +18,9 @@ interface CalendarOption {
 
 const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const SLOT_H = 42;     // kompakter (vorher 52)
 const START_H = 7;
 const HOURS = 15;
+const MIN_SLOT_H = 28; // unter dem Wert wird's unleserlich → dann lieber doch scrollen
 
 function getWeekStart(offset: number): Date {
   const now = new Date();
@@ -242,6 +242,7 @@ export default function CalendarPage() {
   const [showModal, setShowModal] = useState(false);
   const [modalDate, setModalDate] = useState('');
   const [nowTick, setNowTick] = useState<Date | null>(null);
+  const [slotH, setSlotH] = useState<number>(40); // dynamisch, berechnet aus Container-Höhe
   const bodyRef = useRef<HTMLDivElement>(null);
 
   function loadEvents() {
@@ -255,12 +256,22 @@ export default function CalendarPage() {
 
   useEffect(() => { loadEvents(); }, []);
 
-  // Scroll to 8:00 on mount
-  useEffect(() => {
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = (8 - START_H) * SLOT_H;
-    }
-  }, [loading]);
+  // SLOT_H so wählen, dass alle 15 Stunden ohne Scrollen in den Body passen
+  useLayoutEffect(() => {
+    if (!bodyRef.current) return;
+    const update = () => {
+      const h = bodyRef.current?.clientHeight ?? 0;
+      if (h > 0) {
+        const ideal = h / HOURS;
+        setSlotH(Math.max(MIN_SLOT_H, ideal));
+      }
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bodyRef.current);
+    window.addEventListener('resize', update);
+    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
+  }, []);
 
   // „Jetzt"-Linie: minütlich tickern, erst clientseitig
   useEffect(() => {
@@ -331,8 +342,8 @@ export default function CalendarPage() {
   function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
     const startMin = toMinutes(ev.start);
     const endMin = toMinutes(ev.end);
-    const top = ((startMin / 60) - START_H) * SLOT_H;
-    const height = Math.max(SLOT_H * 0.5, ((endMin - startMin) / 60) * SLOT_H);
+    const top = ((startMin / 60) - START_H) * slotH;
+    const height = Math.max(slotH * 0.5, ((endMin - startMin) / 60) * slotH);
     const gap = 3; // px zwischen kollidierenden Events
     const width = cols > 1 ? `calc(${100 / cols}% - ${gap + 1}px)` : undefined;
     const left = cols > 1 ? `calc(${(col / cols) * 100}% + ${gap / 2 + 1}px)` : 3;
@@ -356,9 +367,12 @@ export default function CalendarPage() {
 
   // Aktuelle Uhrzeit als Minuten seit Mitternacht (oder null vor Hydration)
   const nowMinutes = nowTick ? nowTick.getHours() * 60 + nowTick.getMinutes() : null;
-  const nowTopPx = nowMinutes !== null ? ((nowMinutes / 60) - START_H) * SLOT_H : null;
+  const nowTopPx = nowMinutes !== null ? ((nowMinutes / 60) - START_H) * slotH : null;
   const todayIndex = nowTick ? days.findIndex(d => d.getTime() === new Date(nowTick).setHours(0, 0, 0, 0)) : -1;
-  const showNowLine = nowTopPx !== null && nowTopPx >= 0 && nowTopPx <= HOURS * SLOT_H && todayIndex >= 0;
+  const showNowLine = nowTopPx !== null && nowTopPx >= 0 && nowTopPx <= HOURS * slotH && todayIndex >= 0;
+
+  // Wochenend-Spalten dezent abheben (Sa = 6, So = 0)
+  const weekendBg = '#faf6ef';
 
   return (
     <div className="flex flex-col h-full">
@@ -409,7 +423,7 @@ export default function CalendarPage() {
 
       {/* Calendar grid */}
       <div
-        className="flex-1 overflow-hidden rounded-2xl flex flex-col"
+        className="flex-1 overflow-hidden rounded-2xl flex flex-col min-h-0"
         style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
       >
         {/* Day headers */}
@@ -417,11 +431,15 @@ export default function CalendarPage() {
           <div />
           {days.map(d => {
             const isToday = d.getTime() === today.getTime();
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
             return (
               <div
                 key={d.toISOString()}
                 className="py-2 text-center cursor-pointer hover:bg-black/[0.02] transition-colors"
-                style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}
+                style={{
+                  borderRight: '0.5px solid rgba(0,0,0,0.07)',
+                  background: isWeekend ? weekendBg : undefined,
+                }}
                 onClick={() => openModal(d)}
               >
                 <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#7a7874' }}>
@@ -449,33 +467,43 @@ export default function CalendarPage() {
           <div className="flex items-center justify-end pr-2">
             <span className="text-[9px] font-sans" style={{ color: '#7a7874' }}>ganztags</span>
           </div>
-          {days.map(d => (
-            <div key={d.toISOString()} className="p-0.5" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
-              {eventsForDay(d, true).map(ev => (
-                <div
-                  key={ev.id}
-                  className="text-[10px] font-sans font-medium rounded px-1.5 py-0.5 mb-0.5 truncate"
-                  style={{
-                    background: `${ev.color ?? '#6366f1'}38`,
-                    color: ev.color ?? '#6366f1',
-                  }}
-                >
-                  {ev.title}
-                </div>
-              ))}
-            </div>
-          ))}
+          {days.map(d => {
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            return (
+              <div
+                key={d.toISOString()}
+                className="p-0.5"
+                style={{
+                  borderRight: '0.5px solid rgba(0,0,0,0.07)',
+                  background: isWeekend ? weekendBg : undefined,
+                }}
+              >
+                {eventsForDay(d, true).map(ev => (
+                  <div
+                    key={ev.id}
+                    className="text-[11px] font-sans font-medium rounded px-1.5 py-0.5 mb-0.5 truncate"
+                    style={{
+                      background: `${ev.color ?? '#6366f1'}38`,
+                      color: ev.color ?? '#6366f1',
+                    }}
+                  >
+                    {ev.title}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Scrollable time body */}
-        <div ref={bodyRef} className="flex-1 overflow-y-auto grid" style={{ gridTemplateColumns: '56px repeat(7, 1fr)' }}>
+        {/* Time body — füllt restliche Höhe, kein Scroll */}
+        <div ref={bodyRef} className="flex-1 grid min-h-0 overflow-hidden" style={{ gridTemplateColumns: '56px repeat(7, 1fr)' }}>
           {/* Time labels */}
           <div className="flex flex-col">
             {Array.from({ length: HOURS }, (_, i) => (
               <div
                 key={i}
                 className="flex-shrink-0 flex items-start justify-end pr-2 pt-0.5"
-                style={{ height: SLOT_H, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}
+                style={{ height: slotH, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}
               >
                 <span className="text-[10px] font-sans" style={{ color: '#7a7874' }}>{START_H + i}:00</span>
               </div>
@@ -485,14 +513,22 @@ export default function CalendarPage() {
           {/* Day columns */}
           {days.map((d, dayIdx) => {
             const isTodayCol = dayIdx === todayIndex;
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
             return (
-              <div key={d.toISOString()} className="relative" style={{ borderRight: '0.5px solid rgba(0,0,0,0.07)' }}>
+              <div
+                key={d.toISOString()}
+                className="relative"
+                style={{
+                  borderRight: '0.5px solid rgba(0,0,0,0.07)',
+                  background: isWeekend ? weekendBg : undefined,
+                }}
+              >
                 {/* Hour slots — mit dezenter Halbstunden-Linie */}
                 {Array.from({ length: HOURS }, (_, i) => (
                   <div
                     key={i}
                     style={{
-                      height: SLOT_H,
+                      height: slotH,
                       borderBottom: '0.5px solid rgba(0,0,0,0.07)',
                       backgroundImage: 'linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(0,0,0,0.035) calc(50% - 0.5px), rgba(0,0,0,0.035) 50%, transparent 50%)',
                     }}
@@ -503,10 +539,10 @@ export default function CalendarPage() {
                 {layoutEvents(eventsForDay(d, false)).map(ev => (
                   <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols)}>
                     <div
-                      className="text-[10px] font-semibold font-sans"
+                      className="text-[11px] font-semibold font-sans"
                       style={{
                         color: ev.color ?? '#6366f1',
-                        lineHeight: 1.15,
+                        lineHeight: 1.2,
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical' as const,
@@ -516,12 +552,7 @@ export default function CalendarPage() {
                     >
                       {ev.title}
                     </div>
-                    {ev.calendarName && (
-                      <div className="text-[9px] font-sans truncate mt-0.5" style={{ color: ev.color ?? '#6366f1', opacity: 0.75 }}>
-                        {ev.calendarName}
-                      </div>
-                    )}
-                    <div className="text-[9px] font-sans mt-0.5" style={{ color: '#5f5e5a' }}>
+                    <div className="text-[10px] font-sans mt-0.5" style={{ color: '#5f5e5a' }}>
                       {new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
                       {' – '}
                       {new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
