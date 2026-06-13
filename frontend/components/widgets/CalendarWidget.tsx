@@ -192,7 +192,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                     {dayEvents.map(event => (
                       <div
                         key={event.id}
-                        className="flex items-start gap-3 px-4 py-3"
+                        className="flex items-center gap-3 px-4 py-2.5"
                         style={{
                           background: '#f7f4f0',
                           borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
@@ -200,30 +200,20 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                         }}
                       >
                         <span
-                          className="text-xs font-sans flex-shrink-0 mt-0.5"
+                          className="text-xs font-sans flex-shrink-0"
                           style={{ color: '#a09d99', minWidth: 48 }}
                         >
                           {formatEventTime(event)}
                         </span>
-                        <div className="flex-1 min-w-0">
-                          <p
-                            className="text-sm font-sans font-medium truncate"
-                            style={{ color: '#1a1814' }}
-                          >
-                            {event.title}
-                          </p>
-                          {event.calendarName && (
-                            <p
-                              className="text-xs font-sans mt-0.5 truncate"
-                              style={{ color: event.color ?? '#6366f1' }}
-                            >
-                              {event.calendarName}
-                            </p>
-                          )}
-                        </div>
+                        <p
+                          className="text-sm font-sans font-medium truncate flex-1 min-w-0"
+                          style={{ color: '#1a1814' }}
+                        >
+                          {event.title}
+                        </p>
                         {event.recurring && (
                           <i
-                            className="ti ti-repeat flex-shrink-0 mt-0.5"
+                            className="ti ti-repeat flex-shrink-0"
                             style={{ fontSize: 12, color: '#a09d99' }}
                             aria-hidden="true"
                           />
