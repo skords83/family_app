@@ -195,7 +195,7 @@ function DayCard({ dateStr, daySlots, style }: {
   return (
     <div style={{
       borderRadius: 16,
-      border: '1px solid var(--color-border-secondary)',
+      border: '1px solid #d4cfc9',
       background: 'var(--color-background-primary)',
       overflow: 'hidden',
       display: 'flex',
