@@ -206,7 +206,7 @@ export default function HomePage() {
                     </div>
 
                     {/* Offene Aufgaben — reine Liste, kein Abhaken hier */}
-                    <div className="flex-1 min-h-0 flex flex-col" style={{ gap: 2 }}>
+                    <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ gap: 2 }}>
                       {userTasks.length === 0 && (
                         <p className="font-sans" style={{ fontSize: 12, color: '#a09d99' }}>
                           Keine Aufgaben heute
@@ -246,24 +246,20 @@ export default function HomePage() {
                           </span>
                         </div>
                       ))}
-
-                      {pending.length > MAX_VISIBLE_TASKS && (
-                        <span
-                          className="font-sans"
-                          style={{ fontSize: 11, color: '#a09d99', paddingLeft: 12 }}
-                        >
-                          + {pending.length - MAX_VISIBLE_TASKS} weitere
-                        </span>
-                      )}
                     </div>
 
-                    {/* Fuß: Hinweis, dass im Kind-Modus abgehakt wird */}
+                    {/* Fuß: links Überhang, rechts Hinweis auf Kind-Modus — eine Zeile, kein Überlapp */}
                     <div
-                      className="flex items-center justify-end gap-1 mt-1.5 flex-shrink-0"
+                      className="flex items-center justify-between gap-2 mt-1.5 flex-shrink-0"
                       style={{ fontSize: 11, color: '#a09d99' }}
                     >
-                      <span className="font-sans">{hint}</span>
-                      <i className="ti ti-chevron-right" style={{ fontSize: 12 }} aria-hidden="true" />
+                      <span className="font-sans truncate">
+                        {pending.length > MAX_VISIBLE_TASKS ? `+ ${pending.length - MAX_VISIBLE_TASKS} weitere` : ''}
+                      </span>
+                      <span className="font-sans flex items-center gap-1 flex-shrink-0">
+                        {hint}
+                        <i className="ti ti-chevron-right" style={{ fontSize: 12 }} aria-hidden="true" />
+                      </span>
                     </div>
                   </Link>
                 );
