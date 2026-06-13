@@ -8,7 +8,8 @@ interface CalendarEvent {
 }
 interface CalendarWidgetProps {
   events?: CalendarEvent[]; fetched_at?: string; loading?: boolean;
-  daysAhead?: number;
+  /** Wie viele Tage vorausgeschaut wird, falls heute nichts mehr ansteht. Default 2. */
+  lookaheadDays?: number;
 }
 
 function isStale(fetchedAt?: string, maxAgeMs = 60 * 60 * 1000): boolean {
@@ -24,34 +25,59 @@ function toLocalDateStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-function groupEventsByDay(events: CalendarEvent[], todayStr: string, daysAhead: number): Map<string, CalendarEvent[]> {
-  const map = new Map<string, CalendarEvent[]>();
-  const todayDate = new Date(todayStr + 'T00:00:00');
-  const cutoff = new Date(todayDate.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+/**
+ * Liefert die anzuzeigenden Events:
+ *  1. Alle noch nicht abgelaufenen Termine von HEUTE (Ganztags zählt immer als "heute aktuell").
+ *  2. Stehen heute keine an, werden die kommenden Termine der nächsten
+ *     `lookaheadDays` Tage gezeigt — gruppiert nach Tag, bis zum ersten Tag
+ *     mit Terminen (so dass nicht alle leeren Tage durchlaufen werden).
+ * Vergangene Termine werden NIE angezeigt.
+ */
+function buildVisibleDays(
+  events: CalendarEvent[],
+  todayStr: string,
+  lookaheadDays: number,
+): { day: string; events: CalendarEvent[] }[] {
+  const now = new Date();
 
-  for (const event of events) {
-    const startDate = new Date(event.start);
-    // Lokales Datum des Termins (kein UTC-Bug)
-    const dateKey = toLocalDateStr(startDate);
+  // Hilfsfunktion: ist dieser Termin schon vorbei?
+  const isPast = (e: CalendarEvent): boolean => {
+    if (e.allDay) return false; // Ganztags-Termine gelten den ganzen Tag als aktuell
+    return new Date(e.end) < now;
+  };
 
-    // Vergangene Tage überspringen
-    if (dateKey < todayStr) continue;
-    // Termine jenseits des Fensters überspringen
-    if (startDate >= cutoff) continue;
-
-    // KEIN endDate-Filter — abgelaufene heutige Termine werden weiterhin angezeigt.
-    // (Kiosk läuft 24h, man will sehen was heute alles war/ist.)
-
-    if (!map.has(dateKey)) map.set(dateKey, []);
-    map.get(dateKey)!.push(event);
+  // Termine nach lokalem Datum gruppieren
+  const byDay = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    const dateKey = toLocalDateStr(new Date(e.start));
+    if (dateKey < todayStr) continue;        // vergangene Tage komplett raus
+    if (dateKey === todayStr && isPast(e)) continue; // abgelaufene heutige Termine raus
+    if (!byDay.has(dateKey)) byDay.set(dateKey, []);
+    byDay.get(dateKey)!.push(e);
+  }
+  for (const [, evs] of byDay) {
+    evs.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
   }
 
-  // Jeden Tag nach Startzeit sortieren
-  for (const [, dayEvents] of map) {
-    dayEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  // Hat HEUTE noch Termine? Dann nur heute zeigen.
+  const todayEvents = byDay.get(todayStr);
+  if (todayEvents?.length) {
+    return [{ day: todayStr, events: todayEvents }];
   }
 
-  return map;
+  // Sonst: kommende Tage durchsuchen (bis lookaheadDays), ersten Tag mit Terminen zeigen
+  const result: { day: string; events: CalendarEvent[] }[] = [];
+  const base = new Date(todayStr + 'T00:00:00');
+  for (let i = 1; i <= lookaheadDays; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    const key = toLocalDateStr(d);
+    const evs = byDay.get(key);
+    if (evs?.length) {
+      result.push({ day: key, events: evs });
+    }
+  }
+  return result;
 }
 
 function formatDateLabel(dateStr: string, todayStr: string, tomorrowStr: string): string {
@@ -66,7 +92,7 @@ function formatEventTime(event: CalendarEvent): string {
   return new Date(event.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function CalendarWidget({ events = [], fetched_at, loading, daysAhead = 7 }: CalendarWidgetProps) {
+export default function CalendarWidget({ events = [], fetched_at, loading, lookaheadDays = 2 }: CalendarWidgetProps) {
   // null on server render — no hydration mismatch
   const todayStr = useClientDateStr();
 
@@ -104,16 +130,11 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowStr = toLocalDateStr(tomorrowDate);
 
-  const grouped = groupEventsByDay(events, todayStr, daysAhead);
+  const visibleDays = buildVisibleDays(events, todayStr, lookaheadDays);
+  const hasEvents = visibleDays.length > 0;
 
-  // Build the list of day keys to display
-  const days: string[] = [];
-  for (let i = 0; i < daysAhead; i++) {
-    const d = new Date(todayStr + 'T00:00:00');
-    d.setDate(d.getDate() + i);
-    days.push(toLocalDateStr(d));
-  }
-  const hasEvents = days.some(d => grouped.has(d));
+  // Steht heute nichts mehr an, aber es kommen Termine → kleiner Hinweis
+  const showsUpcomingOnly = hasEvents && visibleDays[0].day !== todayStr;
 
   return (
     <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
@@ -135,45 +156,43 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
       </div>
 
       {!hasEvents ? (
-        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine heute</p>
+        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>
+          Keine anstehenden Termine
+        </p>
       ) : (
         <div className="space-y-4">
-          {days.map(day => {
-            const dayEvents = grouped.get(day);
-            if (!dayEvents?.length) return null;
-            return (
-              <div key={day}>
-                <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
-                  {formatDateLabel(day, todayStr, tomorrowStr)}
-                </p>
-                <div className="space-y-1">
-                  {dayEvents.map(event => {
-                    // Abgelaufene Termine leicht ausgegraut darstellen
-                    const isPast = !event.allDay && new Date(event.end) < new Date();
-                    return (
-                      <div
-                        key={event.id}
-                        className="flex items-center gap-3 px-3 py-2"
-                        style={{
-                          background: isPast ? '#f0ede8' : '#f7f4f0',
-                          borderLeft: `3px solid ${isPast ? '#c8c4be' : (event.color ?? '#6366f1')}`,
-                          borderRadius: '0 8px 8px 0',
-                          opacity: isPast ? 0.6 : 1,
-                        }}
-                      >
-                        <span className="text-xs font-sans flex-shrink-0 tabular-nums" style={{ color: '#a09d99', minWidth: 44 }}>
-                          {formatEventTime(event)}
-                        </span>
-                        <p className="text-sm font-sans font-medium truncate flex-1" style={{ color: '#1a1814' }}>
-                          {event.title}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+          {showsUpcomingOnly && (
+            <p className="text-xs font-sans" style={{ color: '#a09d99' }}>
+              Heute nichts mehr — als Nächstes:
+            </p>
+          )}
+          {visibleDays.map(({ day, events: dayEvents }) => (
+            <div key={day}>
+              <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
+                {formatDateLabel(day, todayStr, tomorrowStr)}
+              </p>
+              <div className="space-y-1">
+                {dayEvents.map(event => (
+                  <div
+                    key={event.id}
+                    className="flex items-center gap-3 px-3 py-2"
+                    style={{
+                      background: '#f7f4f0',
+                      borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
+                      borderRadius: '0 8px 8px 0',
+                    }}
+                  >
+                    <span className="text-xs font-sans flex-shrink-0 tabular-nums" style={{ color: '#a09d99', minWidth: 44 }}>
+                      {formatEventTime(event)}
+                    </span>
+                    <p className="text-sm font-sans font-medium truncate flex-1" style={{ color: '#1a1814' }}>
+                      {event.title}
+                    </p>
+                  </div>
+                ))}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
