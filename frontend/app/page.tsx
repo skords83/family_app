@@ -105,7 +105,7 @@ export default function HomePage() {
           {/* LEFT col (2/3): Calendar + tasks */}
           <div className="lg:col-span-2 flex flex-col gap-3">
 
-            <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} daysAhead={1} />
+            <CalendarWidget events={calendar.events} fetched_at={calendar.fetched_at} loading={loading} lookaheadDays={2} />
 
             {/* Tasks per user */}
             {!loading && users.length > 0 && (
