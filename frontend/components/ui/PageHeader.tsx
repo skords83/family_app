@@ -27,7 +27,7 @@ function Clock() {
   return (
     <div className="text-right flex-shrink-0">
       <div className="tabular-nums font-light tracking-tight"
-        style={{ fontSize: 34, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
+        style={{ fontSize: 48, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
         {hm}
       </div>
     </div>
@@ -96,7 +96,7 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
           </h1>
         )}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center" style={{ gap: 48 }}>
         {variant === 'home' ? (
           <>
             <WeatherWidget
