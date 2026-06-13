@@ -227,10 +227,10 @@ function DayCard({ dateStr, daySlots, style }: {
             <div key={slot} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <MealThumb imageUrl={recipe.imageUrl} slot={slot} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 8.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-secondary)', marginBottom: 2 }}>
+                <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)', marginBottom: 3 }}>
                   {SLOT_LABELS[slot]}
                 </div>
-                <div style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--color-text-primary)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', lineHeight: 1.35, fontFamily: 'Georgia, serif', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {recipe.recipeName ?? '–'}
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 2 }}>
@@ -244,9 +244,20 @@ function DayCard({ dateStr, daySlots, style }: {
           );
         })}
         {presentSlots.length === 0 && (
-          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic', paddingTop: 4 }}>
-            Nicht geplant
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 8, background: '#f0ede8', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, opacity: 0.4 }}>—</div>
+            <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic' }}>Nicht geplant</p>
+          </div>
+        )}
+        {/* Leere Slots auffüllen damit Kacheln nicht halb leer wirken */}
+        {presentSlots.length === 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: 0.3 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 8, background: '#f0ede8', flexShrink: 0, border: '1.5px dashed #c8c4be' }} />
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)', marginBottom: 4 }}>Weiterer Slot</div>
+              <div style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--color-text-secondary)' }}>Nicht geplant</div>
+            </div>
+          </div>
         )}
       </div>
     </div>
