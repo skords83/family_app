@@ -107,26 +107,23 @@ export default function HomePage() {
         }}
       >
 
-        {/* ── SPALTE 1: Kalender ── */}
-        <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* ── SPALTE 1: Kalender + Müllabfuhr ── */}
+        <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <CalendarWidget
             events={calendar.events}
             fetched_at={calendar.fetched_at}
             loading={loading}
             daysAhead={1}
           />
+          <div style={{ flexShrink: 0 }}>
+            <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
+          </div>
         </div>
 
         {/* ── SPALTE 2: Aufgaben ── */}
         <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {!loading && users.length > 0 && (
             <>
-              <h2
-                className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3 flex-shrink-0"
-                style={{ color: '#7a7874' }}
-              >
-                Aufgaben heute
-              </h2>
               <div
                 style={{
                   flex: 1,
@@ -300,7 +297,6 @@ export default function HomePage() {
         >
           <WeatherWidget data={weather.data} fetched_at={weather.fetched_at} loading={loading} />
           <MealsWidget byDate={meals.byDate} fetched_at={meals.fetched_at} loading={loading} />
-          <WasteWidget data={waste} fetched_at={waste?.fetched_at} loading={loading} />
           <ImmichWidget
             data={immich.data}
             fetched_at={immich.fetched_at}
