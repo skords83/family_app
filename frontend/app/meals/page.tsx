@@ -21,9 +21,9 @@ interface PlannedRecipe {
 
 const SLOT_LABELS: Record<Slot, string> = {
   Breakfast: 'Früh',
-  Lunch: 'Mittag',
-  Dinner: 'Abend',
-  Snack: 'Snack',
+  Lunch:     'Mittag',
+  Dinner:    'Abend',
+  Snack:     'Snack',
 };
 
 const SLOT_PILL_STYLE: Record<Slot, { background: string; color: string }> = {
@@ -33,23 +33,7 @@ const SLOT_PILL_STYLE: Record<Slot, { background: string; color: string }> = {
   Snack:     { background: '#eef7ee', color: '#2e7a2e' },
 };
 
-const SLOT_DOT_COLOR: Record<Slot, string> = {
-  Breakfast: '#e8c020',
-  Lunch:     '#e8a020',
-  Dinner:    '#5b8dd9',
-  Snack:     '#4db84d',
-};
-
-const SLOT_SWATCH: Record<Slot, string> = {
-  Breakfast: '#fef9e3',
-  Lunch:     '#fef4e0',
-  Dinner:    '#eef2fb',
-  Snack:     '#eef7ee',
-};
-
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
-
-const SWATCH_COLORS = ['#f0ede0', '#f5ede0', '#edeee0', '#f5f0e0', '#f0e8e8', '#e8f0e8', '#e8eef0'];
 
 function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -63,18 +47,16 @@ function shortDate(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
 }
 function longDayDate(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
-}
-
-function swatchColor(name: string | null, idx: number): string {
-  if (!name) return SWATCH_COLORS[idx % SWATCH_COLORS.length];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffff;
-  return SWATCH_COLORS[Math.abs(h) % SWATCH_COLORS.length];
+  return new Date(dateStr + 'T12:00:00')
+    .toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
+    .toUpperCase();
 }
 
 // ── Heute-Block ───────────────────────────────────────────────────────────────
-function TodayCard({ daySlots, dateStr }: {
+function TodayCard({
+  daySlots,
+  dateStr,
+}: {
   daySlots: Partial<Record<Slot, PlannedRecipe[]>>;
   dateStr: string;
 }) {
@@ -98,18 +80,25 @@ function TodayCard({ daySlots, dateStr }: {
       flexDirection: 'column',
     }}>
       {/* Bild / Fallback */}
-      <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#2e2520', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        position: 'relative',
+        background: '#2e2520',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
         {showImg ? (
           <img
             src={hero!.imageUrl!}
             alt={hero!.recipeName ?? ''}
             onError={() => setImgError(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : (
-          <span style={{ fontSize: 52, zIndex: 0 }}>🍽️</span>
+          <span style={{ fontSize: 52 }}>🍽️</span>
         )}
-        {/* Overlay */}
         <div style={{
           position: 'absolute', inset: 0,
           background: showImg
@@ -128,11 +117,18 @@ function TodayCard({ daySlots, dateStr }: {
         </div>
       </div>
 
-      {/* Alle Slots des Tages */}
-      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 9, borderTop: '0.5px solid var(--color-border-tertiary)', flexShrink: 0 }}>
+      {/* Alle Slots */}
+      <div style={{
+        padding: '10px 16px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 9,
+        borderTop: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+      }}>
         {presentSlots.map(slot => {
           const recipe = daySlots[slot]![0];
-          const pill = SLOT_PILL_STYLE[slot];
+          const pill   = SLOT_PILL_STYLE[slot];
           return (
             <div key={slot} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <div style={{
@@ -157,34 +153,24 @@ function TodayCard({ daySlots, dateStr }: {
           );
         })}
         {presentSlots.length === 0 && (
-          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>Keine Einträge für heute</p>
+          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>
+            Keine Einträge für heute
+          </p>
         )}
       </div>
     </div>
   );
 }
 
-// ── Tages-Karte (kleine Karten) ───────────────────────────────────────────────
-function DayCard({ dateStr, daySlots, idx }: {
+// ── Tages-Kachel ─────────────────────────────────────────────────────────────
+function DayCard({
+  dateStr,
+  daySlots,
+}: {
   dateStr: string;
   daySlots: Partial<Record<Slot, PlannedRecipe[]>>;
-  idx: number;
 }) {
   const presentSlots = SLOT_ORDER.filter(s => daySlots[s]?.length);
-  const primarySlot  = daySlots['Dinner']?.[0]
-    ?? Object.values(daySlots).flat()[0]
-    ?? null;
-  const primarySlotKey: Slot = daySlots['Dinner']?.length
-    ? 'Dinner'
-    : (SLOT_ORDER.find(s => daySlots[s]?.length) ?? 'Dinner');
-
-  const swatch = primarySlot
-    ? swatchColor(primarySlot.recipeName, idx)
-    : SWATCH_COLORS[idx % SWATCH_COLORS.length];
-
-  const swatchIcon = primarySlot
-    ? (primarySlotKey === 'Breakfast' ? '🌅' : primarySlotKey === 'Lunch' ? '🍽️' : primarySlotKey === 'Dinner' ? '🌙' : '🍎')
-    : '—';
 
   return (
     <div style={{
@@ -195,32 +181,53 @@ function DayCard({ dateStr, daySlots, idx }: {
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
+      padding: '14px 16px',
     }}>
-      {/* Swatch */}
-      <div style={{ height: 40, background: swatch, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-        {swatchIcon}
-      </div>
-      {/* Kopf */}
-      <div style={{ padding: '6px 10px 5px', borderBottom: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)', flexShrink: 0 }}>
-        <div style={{ fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-secondary)' }}>
+      {/* Kopfzeile: Tag + Datum */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 7,
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)' }}>
           {shortDay(dateStr)}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--color-text-primary)', fontFamily: 'Georgia, serif' }}>
+        </span>
+        <span style={{ fontSize: 16, fontWeight: 400, color: 'var(--color-text-primary)', fontFamily: 'Georgia, serif' }}>
           {shortDate(dateStr)}
-        </div>
+        </span>
       </div>
+
       {/* Gerichte */}
-      <div style={{ padding: '7px 10px 9px', display: 'flex', flexDirection: 'column', gap: 5, flex: 1, overflow: 'hidden' }}>
-        {presentSlots.map(slot => (
-          <div key={slot} style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}>
-            <div style={{ width: 5, height: 5, borderRadius: '50%', background: SLOT_DOT_COLOR[slot], flexShrink: 0, marginTop: 4 }} />
-            <div style={{ fontSize: 10.5, color: 'var(--color-text-primary)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {daySlots[slot]![0].recipeName ?? '–'}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, overflow: 'hidden' }}>
+        {presentSlots.map(slot => {
+          const recipe = daySlots[slot]![0];
+          return (
+            <div key={slot} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div style={{ fontSize: 8.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-secondary)' }}>
+                {SLOT_LABELS[slot]}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {recipe.recipeName ?? '–'}
+              </div>
+              {(recipe.servings || recipe.calories) && (
+                <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 1 }}>
+                  {[
+                    recipe.servings ? `${recipe.servings} Port.` : null,
+                    recipe.calories ? `${recipe.calories} kcal` : null,
+                  ].filter(Boolean).join(' · ')}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {presentSlots.length === 0 && (
-          <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic' }}>Nicht geplant</p>
+          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic' }}>
+            Nicht geplant
+          </p>
         )}
       </div>
     </div>
@@ -231,7 +238,7 @@ function DayCard({ dateStr, daySlots, idx }: {
 export default function MealsPage() {
   const [byDate, setByDate] = useState<Record<string, Partial<Record<Slot, PlannedRecipe[]>>>>({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError]     = useState(false);
 
   function load() {
     setLoading(true);
@@ -251,10 +258,9 @@ export default function MealsPage() {
   const today       = getTodayStr();
   const sortedDates = Object.keys(byDate).filter(d => d >= today).sort().slice(0, 7);
   const todayDate   = sortedDates[0] === today ? today : null;
-  const restDates   = sortedDates.filter(d => d !== today).slice(0, 6); // max 6 Rest-Karten
+  const restDates   = sortedDates.filter(d => d !== today).slice(0, 6);
 
-  // Grid-Positionen der 6 Rest-Karten: 3 oben (row 1), 3 unten (row 2)
-  // col 2–4 in row 1, col 2–4 in row 2
+  // Feste Grid-Positionen für die 6 Rest-Kacheln (3 oben, 3 unten, Spalten 2–4)
   const gridPositions = [
     { col: 2, row: 1 }, { col: 3, row: 1 }, { col: 4, row: 1 },
     { col: 2, row: 2 }, { col: 3, row: 2 }, { col: 4, row: 2 },
@@ -270,27 +276,49 @@ export default function MealsPage() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
           <button
             onClick={load}
-            style={{ width: 34, height: 34, borderRadius: 10, border: '0.5px solid var(--color-border-tertiary)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+            style={{
+              width: 34, height: 34, borderRadius: 10,
+              border: '0.5px solid var(--color-border-tertiary)',
+              background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--color-text-secondary)',
+            }}
             title="Aktualisieren"
           >
             <i className="ti ti-refresh" style={{ fontSize: 16 }} />
           </button>
         </div>
 
-        {/* Loading */}
+        {/* Loading-Skeleton */}
         {loading && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr 1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 8, height: 420 }}>
-            <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: '#e8e4de', animation: 'pulse 1.5s ease-in-out infinite' }} />
-            {[0,1,2,3,4,5].map(i => <div key={i} style={{ borderRadius: 16, background: '#e8e4de', animation: 'pulse 1.5s ease-in-out infinite' }} />)}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1.7fr 1fr 1fr 1fr',
+            gridTemplateRows: '1fr 1fr',
+            gap: 8,
+            height: 460,
+          }}>
+            <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: 'var(--color-background-secondary)' }} />
+            {[0,1,2,3,4,5].map(i => (
+              <div key={i} style={{ borderRadius: 16, background: 'var(--color-background-secondary)' }} />
+            ))}
           </div>
         )}
 
-        {/* Error / leer */}
+        {/* Fehler / leer */}
         {!loading && (error || sortedDates.length === 0) && (
-          <div style={{ borderRadius: 16, padding: 40, textAlign: 'center', background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)' }}>
+          <div style={{
+            borderRadius: 16, padding: 40, textAlign: 'center',
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+          }}>
             <i className="ti ti-bowl" style={{ fontSize: 32, color: '#d8d4cf', display: 'block', marginBottom: 12 }} />
-            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>Kein Essensplan verfügbar</p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Norish liefert noch keine Daten für diese Woche.</p>
+            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+              Kein Essensplan verfügbar
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              Norish liefert noch keine Daten für diese Woche.
+            </p>
           </div>
         )}
 
@@ -306,22 +334,24 @@ export default function MealsPage() {
             minHeight: 380,
             maxHeight: 520,
           }}>
-            {/* Heute */}
-            {todayDate && (
-              <TodayCard
-                daySlots={byDate[todayDate] ?? {}}
-                dateStr={todayDate}
-              />
-            )}
-
-            {/* Wenn kein Heute: Platzhalter damit Grid stimmt */}
-            {!todayDate && (
-              <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>Kein Eintrag für heute</p>
+            {/* Heute-Block */}
+            {todayDate ? (
+              <TodayCard daySlots={byDate[todayDate] ?? {}} dateStr={todayDate} />
+            ) : (
+              <div style={{
+                gridColumn: 1, gridRow: '1 / 3',
+                borderRadius: 16,
+                border: '0.5px solid var(--color-border-tertiary)',
+                background: 'var(--color-background-secondary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>
+                  Kein Eintrag für heute
+                </p>
               </div>
             )}
 
-            {/* Rest-Tage */}
+            {/* Rest-Kacheln */}
             {restDates.map((date, idx) => {
               const pos = gridPositions[idx];
               return (
@@ -329,7 +359,6 @@ export default function MealsPage() {
                   <DayCard
                     dateStr={date}
                     daySlots={byDate[date] ?? {}}
-                    idx={idx}
                   />
                 </div>
               );
