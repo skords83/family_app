@@ -1,15 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { v4 as uuidv4 } from 'uuid';
 import { emitSSE } from '../sse';
+import { generateDailyTasks } from '../jobs/generateDailyTasks';
 
 export const tasksRouter = Router();
 
 /**
- * Normalise task_templates.assigned_to from any stored format → string[] | null.
- * DB stores JSONB (array of UUID strings). pg driver may deserialise as:
- * - null
- * - JS array of strings
- * - A raw JSON string (edge case on some pg versions)
+ * Normalise assigned_to coming from DB (JSONB) or request body.
+ * Always returns string[] | null.
+ *   null / undefined / []  → null  (means "all users")
+ *   "uuid"                 → ["uuid"]   (legacy single value)
+ *   ["uuid1","uuid2"]      → ["uuid1","uuid2"]
  */
 function normaliseAssignedTo(value: unknown): string[] | null {
   if (value === null || value === undefined) return null;
@@ -36,12 +38,31 @@ function extractUserId(value: unknown): string {
   return String(value);
 }
 
-async function verifyParentPin(pin: string): Promise<boolean> {
-  const adminPin = process.env.ADMIN_PIN;
-  if (adminPin) {
-    return pin === adminPin;
+/**
+ * Convert a DATE column value to YYYY-MM-DD string in local time.
+ * pg returns DATE as JS Date in local TZ — use getters, not toISOString().
+ */
+function dateToLocalStr(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
-  // Fallback: check against any parent user's pin in DB
+  // Already a string like "2026-06-20" or "2026-06-20T00:00:00.000Z"
+  return String(value).split('T')[0];
+}
+
+function todayLocalStr(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+async function verifyParentPin(pin: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
     [pin]
@@ -52,7 +73,7 @@ async function verifyParentPin(pin: string): Promise<boolean> {
 // GET /api/tasks/today - return task_instances for today, joined with template
 tasksRouter.get('/today', async (_req: Request, res: Response) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocalStr();
     const result = await pool.query(`
       SELECT
         ti.id,
@@ -67,6 +88,8 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
         tt.points,
         tt.due_time,
         tt.requires_approval,
+        tt.icon,
+        tt.category,
         u.name AS assigned_to_name,
         u.avatar AS assigned_to_avatar,
         u.color AS assigned_to_color
@@ -97,6 +120,7 @@ tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Respon
         ti.completed_at,
         tt.title,
         tt.points,
+        tt.icon,
         u.name        AS user_name,
         u.avatar      AS user_avatar,
         u.photo       AS user_photo,
@@ -139,6 +163,7 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const task = taskResult.rows[0];
+    // assigned_to is a scalar UUID on task_instances, but extract safely
     const assignedTo = extractUserId(task.assigned_to);
 
     if (task.completed_at) {
@@ -236,57 +261,7 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/:id/reject - parent rejects a pending task (resets to open)
-tasksRouter.post('/:id/reject', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
-
-    const taskResult = await pool.query(`
-      SELECT ti.*, tt.points, tt.requires_approval
-      FROM task_instances ti
-      JOIN task_templates tt ON ti.template_id = tt.id
-      WHERE ti.id = $1
-    `, [id]);
-
-    if (taskResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Task instance not found' });
-    }
-
-    const task = taskResult.rows[0];
-
-    if (!task.completed_at) {
-      return res.status(400).json({ error: 'Task is not completed yet' });
-    }
-    if (task.approved_at) {
-      return res.status(400).json({ error: 'Task already approved — use uncomplete to reverse' });
-    }
-
-    // Reset to open — child can retry
-    await pool.query(`
-      UPDATE task_instances
-      SET completed_at = NULL, completed_by = NULL, approved_at = NULL, approved_by = NULL
-      WHERE id = $1
-    `, [id]);
-
-    emitSSE({ type: 'task_updated', data: { task_id: id } });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error rejecting task:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/tasks/:id/uncomplete - reverse completion (parent + PIN)
+// POST /api/tasks/:id/uncomplete - reverse completion (anyone, no PIN needed)
 tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -347,10 +322,13 @@ tasksRouter.get('/templates', async (_req: Request, res: Response) => {
       ORDER BY tt.title ASC
     `);
 
-    // Normalise assigned_to: always return a string[] or null
+    // Normalise assigned_to + date columns to YYYY-MM-DD strings
     const rows = result.rows.map((t) => ({
       ...t,
       assigned_to: normaliseAssignedTo(t.assigned_to),
+      due_date: dateToLocalStr(t.due_date),
+      valid_from: dateToLocalStr(t.valid_from),
+      valid_until: dateToLocalStr(t.valid_until),
     }));
 
     res.json(rows);
@@ -363,7 +341,21 @@ tasksRouter.get('/templates', async (_req: Request, res: Response) => {
 // POST /api/tasks/templates - create template
 tasksRouter.post('/templates', async (req: Request, res: Response) => {
   try {
-    const { title, points, assigned_to, recurrence, due_time, active, requires_approval } = req.body;
+    const {
+      title,
+      points,
+      assigned_to,
+      recurrence,
+      due_time,
+      active,
+      requires_approval,
+      icon,
+      category,
+      due_date,
+      valid_from,
+      valid_until,
+      rotation,
+    } = req.body;
 
     if (!title || !recurrence) {
       return res.status(400).json({ error: 'title and recurrence are required' });
@@ -380,23 +372,61 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     const assignedToParam = assignedToJson ? JSON.stringify(assignedToJson) : null;
 
     const result = await pool.query(`
-      INSERT INTO task_templates (title, points, assigned_to, recurrence, due_time, active, requires_approval)
-      VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
+      INSERT INTO task_templates (
+        title, points, assigned_to, recurrence, due_time, active, requires_approval,
+        icon, category, due_date, valid_from, valid_until, rotation
+      )
+      VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       title,
       points ?? 1,
       assignedToParam,
       recurrence,
-      due_time || null,
-      active !== false,
+      due_time ?? null,
+      active ?? true,
       requires_approval ?? false,
+      icon ?? null,
+      category ?? null,
+      due_date ?? null,
+      valid_from ?? null,
+      valid_until ?? null,
+      rotation ?? false,
     ]);
 
-    res.status(201).json({
-      ...result.rows[0],
-      assigned_to: normaliseAssignedTo(result.rows[0].assigned_to),
-    });
+    const createdRow = result.rows[0];
+    const created = {
+      ...createdRow,
+      assigned_to: normaliseAssignedTo(createdRow.assigned_to),
+      due_date: dateToLocalStr(createdRow.due_date),
+      valid_from: dateToLocalStr(createdRow.valid_from),
+      valid_until: dateToLocalStr(createdRow.valid_until),
+    };
+
+    res.status(201).json(created);
+
+    // For once-templates with no due_date OR due_date <= today, trigger immediate
+    // instance generation so the task appears right away (no waiting for cron).
+    // Fire-and-forget: the response is already sent.
+    if (recurrence === 'once') {
+      const today = todayLocalStr();
+      const dueStr = dateToLocalStr(createdRow.due_date);
+      if (!dueStr || dueStr <= today) {
+        generateDailyTasks().catch((err) =>
+          console.error('[tasks] Immediate generation after create failed:', err),
+        );
+      }
+    } else if (active !== false) {
+      // For recurring templates starting today (valid_from in the past or null),
+      // also trigger an immediate run so the row appears on today's list.
+      const today = todayLocalStr();
+      const fromStr = dateToLocalStr(createdRow.valid_from);
+      if (!fromStr || fromStr <= today) {
+        generateDailyTasks().catch((err) =>
+          console.error('[tasks] Immediate generation after create failed:', err),
+        );
+      }
+    }
   } catch (err) {
     console.error('Error creating template:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -407,28 +437,51 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
 tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, points, assigned_to, recurrence, due_time, active, requires_approval } = req.body;
+    const {
+      title,
+      points,
+      assigned_to,
+      recurrence,
+      due_time,
+      active,
+      requires_approval,
+      icon,
+      category,
+      due_date,
+      valid_from,
+      valid_until,
+      rotation,
+    } = req.body;
 
     const existing = await pool.query(`SELECT * FROM task_templates WHERE id = $1`, [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
+
     const current = existing.rows[0];
 
-    const assignedToJson = assigned_to !== undefined ? normaliseAssignedTo(assigned_to) : normaliseAssignedTo(current.assigned_to);
-    const assignedParam = assignedToJson ? JSON.stringify(assignedToJson) : null;
+    const newAssigned = assigned_to !== undefined
+      ? normaliseAssignedTo(assigned_to)
+      : normaliseAssignedTo(current.assigned_to);
+    const assignedParam = newAssigned ? JSON.stringify(newAssigned) : null;
 
     const result = await pool.query(`
       UPDATE task_templates
       SET
-        title             = $1,
-        points            = $2,
-        assigned_to       = $3::jsonb,
-        recurrence        = $4,
-        due_time          = $5,
-        active            = $6,
-        requires_approval = $7
-      WHERE id = $8
+        title = $1,
+        points = $2,
+        assigned_to = $3::jsonb,
+        recurrence = $4,
+        due_time = $5,
+        active = $6,
+        requires_approval = $7,
+        icon = $8,
+        category = $9,
+        due_date = $10,
+        valid_from = $11,
+        valid_until = $12,
+        rotation = $13
+      WHERE id = $14
       RETURNING *
     `, [
       title ?? current.title,
@@ -438,13 +491,42 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       due_time !== undefined ? due_time : current.due_time,
       active !== undefined ? active : current.active,
       requires_approval !== undefined ? requires_approval : current.requires_approval,
+      icon !== undefined ? icon : current.icon,
+      category !== undefined ? category : current.category,
+      due_date !== undefined ? due_date : current.due_date,
+      valid_from !== undefined ? valid_from : current.valid_from,
+      valid_until !== undefined ? valid_until : current.valid_until,
+      rotation !== undefined ? rotation : current.rotation,
       id,
     ]);
 
+    const updatedRow = result.rows[0];
     res.json({
-      ...result.rows[0],
-      assigned_to: normaliseAssignedTo(result.rows[0].assigned_to),
+      ...updatedRow,
+      assigned_to: normaliseAssignedTo(updatedRow.assigned_to),
+      due_date: dateToLocalStr(updatedRow.due_date),
+      valid_from: dateToLocalStr(updatedRow.valid_from),
+      valid_until: dateToLocalStr(updatedRow.valid_until),
     });
+
+    // If the patch changes the template into "should be visible today" state,
+    // trigger an immediate generation. Cheap due to idempotency (UNIQUE constraint).
+    if (updatedRow.active) {
+      const today = todayLocalStr();
+      const recur = updatedRow.recurrence;
+      const dueStr = dateToLocalStr(updatedRow.due_date);
+      const fromStr = dateToLocalStr(updatedRow.valid_from);
+      const untilStr = dateToLocalStr(updatedRow.valid_until);
+
+      const inRange = (!fromStr || fromStr <= today) && (!untilStr || untilStr >= today);
+      const onceMatch = recur === 'once' && (!dueStr || dueStr <= today);
+
+      if (onceMatch || (recur !== 'once' && inRange)) {
+        generateDailyTasks().catch((err) =>
+          console.error('[tasks] Immediate generation after patch failed:', err),
+        );
+      }
+    }
   } catch (err) {
     console.error('Error updating template:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -464,6 +546,7 @@ tasksRouter.delete('/templates/:id', async (req: Request, res: Response) => {
     // Instances are deleted via ON DELETE CASCADE
     await pool.query(`DELETE FROM task_templates WHERE id = $1`, [id]);
 
+    emitSSE({ type: 'task_updated', data: { template_id: id, deleted: true } });
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting template:', err);
@@ -471,7 +554,7 @@ tasksRouter.delete('/templates/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/instances - create one-off instance
+// POST /api/tasks/instances - create one-off instance (ad-hoc, not via template generation)
 tasksRouter.post('/instances', async (req: Request, res: Response) => {
   try {
     const { template_id, assigned_to, date } = req.body;
@@ -496,6 +579,7 @@ tasksRouter.post('/instances', async (req: Request, res: Response) => {
       RETURNING *
     `, [template_id, assigned_to, date]);
 
+    emitSSE({ type: 'task_updated', data: { task_id: result.rows[0].id } });
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error creating task instance:', err);

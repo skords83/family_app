@@ -88,7 +88,13 @@ CREATE TABLE IF NOT EXISTS task_templates (
   recurrence TEXT NOT NULL,
   due_time TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
-  requires_approval BOOLEAN NOT NULL DEFAULT false
+  requires_approval BOOLEAN NOT NULL DEFAULT false,
+  icon TEXT,
+  category TEXT,
+  due_date DATE,
+  valid_from DATE,
+  valid_until DATE,
+  rotation BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Add requires_approval column if it doesn't exist yet (safe migration)
@@ -98,6 +104,62 @@ DO $$ BEGIN
     WHERE table_name='task_templates' AND column_name='requires_approval'
   ) THEN
     ALTER TABLE task_templates ADD COLUMN requires_approval BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+-- Add icon column (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='icon'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN icon TEXT;
+  END IF;
+END $$;
+
+-- Add category column (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='category'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN category TEXT;
+  END IF;
+END $$;
+
+-- Add due_date column (safe migration) — concrete date for one-off tasks
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='due_date'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN due_date DATE;
+  END IF;
+END $$;
+
+-- Add valid_from / valid_until columns (safe migration) — date range for recurring tasks
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='valid_from'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN valid_from DATE;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='valid_until'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN valid_until DATE;
+  END IF;
+END $$;
+
+-- Add rotation column (safe migration) — fair round-robin assignment
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_templates' AND column_name='rotation'
+  ) THEN
+    ALTER TABLE task_templates ADD COLUMN rotation BOOLEAN NOT NULL DEFAULT false;
   END IF;
 END $$;
 
@@ -122,6 +184,10 @@ DO $$ BEGIN
     ALTER TABLE task_instances ADD COLUMN approved_by UUID REFERENCES users(id);
   END IF;
 END $$;
+
+-- Index for rotation queries: COUNT(*) per (template_id, assigned_to)
+CREATE INDEX IF NOT EXISTS idx_task_instances_template_assigned
+  ON task_instances (template_id, assigned_to);
 
 CREATE TABLE IF NOT EXISTS point_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -174,21 +240,8 @@ CREATE TABLE IF NOT EXISTS reward_claims (
   reward_id UUID NOT NULL REFERENCES rewards(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  approved_at TIMESTAMPTZ,
-  rejected_at TIMESTAMPTZ,
-  reject_reason TEXT
+  approved_at TIMESTAMPTZ
 );
-
--- Add rejected_at / reject_reason columns if they don't exist yet (safe migration)
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='reward_claims' AND column_name='rejected_at'
-  ) THEN
-    ALTER TABLE reward_claims ADD COLUMN rejected_at TIMESTAMPTZ;
-    ALTER TABLE reward_claims ADD COLUMN reject_reason TEXT;
-  END IF;
-END $$;
 
 CREATE TABLE IF NOT EXISTS calendar_cache (
   id SERIAL PRIMARY KEY,

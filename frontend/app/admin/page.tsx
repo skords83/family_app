@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import PinModal from '@/components/ui/PinModal';
 import { useSSE } from '@/hooks/useSSE';
@@ -17,6 +17,10 @@ const WEEKDAYS = [
   { key: 'sat', label: 'Sa' },
   { key: 'sun', label: 'So' },
 ];
+
+// Vorgeschlagene Emojis für schnelle Auswahl. Kein Anspruch auf Vollständigkeit —
+// Eltern können beliebige Emojis ins Textfeld tippen oder pasten.
+const ICON_PRESETS = ['🦷', '🛏️', '📚', '🍽️', '🚿', '🗑️', '👕', '🧹', '🎵', '🌱', '🐕', '✨'];
 
 interface User {
   id: string;
@@ -38,6 +42,12 @@ interface TaskTemplate {
   due_time: string | null;
   active: boolean;
   requires_approval: boolean;
+  icon: string | null;
+  category: string | null;
+  due_date: string | null;       // YYYY-MM-DD
+  valid_from: string | null;     // YYYY-MM-DD
+  valid_until: string | null;    // YYYY-MM-DD
+  rotation: boolean;
 }
 
 interface Reward {
@@ -55,8 +65,6 @@ interface RewardClaim {
   user_id: string;
   claimed_at: string;
   approved_at: string | null;
-  rejected_at: string | null;
-  reject_reason: string | null;
   reward_title: string;
   user_name: string;
   user_avatar: string;
@@ -117,6 +125,13 @@ function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <i className={`ti ti-${name} ${className}`} aria-hidden="true" />;
 }
 
+/** Format YYYY-MM-DD → DD.MM.YYYY for display */
+function formatDateDe(iso: string | null): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [authenticated, setAuthenticated] = useState(false);
@@ -138,6 +153,12 @@ export default function AdminPage() {
     due_time: '',
     weekdays: [] as string[],
     requires_approval: false,
+    icon: '',
+    category: '',
+    due_date: '',
+    valid_from: '',
+    valid_until: '',
+    rotation: false,
   });
   const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
@@ -198,8 +219,7 @@ export default function AdminPage() {
   const handleRewardClaimed = useCallback(() => {
     fetchClaims();
     fetchRewards();
-    fetchUsers();
-  }, [fetchClaims, fetchRewards, fetchUsers]);
+  }, [fetchClaims, fetchRewards]);
 
   const handleTaskUpdated = useCallback(() => {
     fetchTemplates();
@@ -218,6 +238,13 @@ export default function AdminPage() {
     setAuthenticated(true);
   };
 
+  // Bestehende Kategorien für Auto-Vorschläge
+  const existingCategories = useMemo(() => {
+    const set = new Set<string>();
+    templates.forEach(t => { if (t.category) set.add(t.category); });
+    return Array.from(set).sort();
+  }, [templates]);
+
   // ── Edit drawer state ──
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [editForm, setEditForm] = useState({
@@ -228,6 +255,12 @@ export default function AdminPage() {
     due_time: '',
     weekdays: [] as string[],
     requires_approval: false,
+    icon: '',
+    category: '',
+    due_date: '',
+    valid_from: '',
+    valid_until: '',
+    rotation: false,
   });
 
   const openEdit = (template: TaskTemplate) => {
@@ -248,6 +281,12 @@ export default function AdminPage() {
       due_time: template.due_time ?? '',
       weekdays,
       requires_approval: template.requires_approval ?? false,
+      icon: template.icon ?? '',
+      category: template.category ?? '',
+      due_date: template.due_date ?? '',
+      valid_from: template.valid_from ?? '',
+      valid_until: template.valid_until ?? '',
+      rotation: template.rotation ?? false,
     });
     setEditingTemplate(template);
   };
@@ -257,13 +296,9 @@ export default function AdminPage() {
     if (!editingTemplate) return;
     let recurrenceValue = editForm.recurrence;
     if (editForm.recurrence === 'weekdays') {
-      if (editForm.weekdays.length === 0) {
-        showNotification('Bitte mindestens einen Wochentag auswählen.');
-        return;
-      }
+      if (editForm.weekdays.length === 0) { showNotification('Bitte mindestens einen Wochentag auswählen.'); return; }
       recurrenceValue = `weekdays:${editForm.weekdays.join(',')}`;
     }
-
     const res = await fetch(`${API_BASE}/api/tasks/templates/${editingTemplate.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -274,12 +309,41 @@ export default function AdminPage() {
         recurrence: recurrenceValue,
         due_time: editForm.due_time || null,
         requires_approval: editForm.requires_approval,
+        icon: editForm.icon || null,
+        category: editForm.category || null,
+        due_date: editForm.recurrence === 'once' ? (editForm.due_date || null) : null,
+        valid_from: editForm.recurrence !== 'once' ? (editForm.valid_from || null) : null,
+        valid_until: editForm.recurrence !== 'once' ? (editForm.valid_until || null) : null,
+        rotation: editForm.assigned_to.length > 1 ? editForm.rotation : false,
       }),
     });
     if (res.ok) {
       setEditingTemplate(null);
       showNotification('Aufgabe gespeichert!');
-      fetchTemplates();
+      fetchData();
+    }
+  };
+
+  const handleDeleteTemplate = async (template: TaskTemplate) => {
+    if (!confirm(`"${template.title}" wirklich löschen? Alle zugehörigen Instanzen werden ebenfalls gelöscht.`)) return;
+    const res = await fetch(`${API_BASE}/api/tasks/templates/${template.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setTemplates((prev) => prev.filter((t) => t.id !== template.id));
+      // Falls aus dem Edit-Drawer gelöscht wurde, diesen ebenfalls schließen
+      if (editingTemplate?.id === template.id) setEditingTemplate(null);
+      showNotification('Aufgabe gelöscht.');
+    }
+  };
+
+  const handleToggleTemplate = async (template: TaskTemplate) => {
+    const res = await fetch(`${API_BASE}/api/tasks/templates/${template.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: !template.active }),
+    });
+    if (res.ok) {
+      setTemplates((prev) => prev.map((t) => (t.id === template.id ? { ...t, active: !t.active } : t)));
+      showNotification(template.active ? 'Aufgabe deaktiviert' : 'Aufgabe aktiviert');
     }
   };
 
@@ -313,10 +377,20 @@ export default function AdminPage() {
         recurrence: recurrenceValue,
         due_time: newTask.due_time || null,
         requires_approval: newTask.requires_approval,
+        icon: newTask.icon || null,
+        category: newTask.category || null,
+        due_date: newTask.recurrence === 'once' ? (newTask.due_date || null) : null,
+        valid_from: newTask.recurrence !== 'once' ? (newTask.valid_from || null) : null,
+        valid_until: newTask.recurrence !== 'once' ? (newTask.valid_until || null) : null,
+        rotation: newTask.assigned_to.length > 1 ? newTask.rotation : false,
       }),
     });
     if (res.ok) {
-      setNewTask({ title: '', points: 1, assigned_to: [], recurrence: 'daily', due_time: '', weekdays: [], requires_approval: false });
+      setNewTask({
+        title: '', points: 1, assigned_to: [], recurrence: 'daily',
+        due_time: '', weekdays: [], requires_approval: false,
+        icon: '', category: '', due_date: '', valid_from: '', valid_until: '', rotation: false,
+      });
       showNotification('Aufgabe erstellt!');
       fetchData();
     }
@@ -403,24 +477,7 @@ export default function AdminPage() {
     });
     if (res.ok) {
       showNotification('Belohnung genehmigt!');
-      fetchClaims();
-      fetchUsers();
-    }
-  };
-
-  const handleRejectClaim = async (claimId: string) => {
-    const res = await fetch(`${API_BASE}/api/rewards/${claimId}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: adminPin }),
-    });
-    if (res.ok) {
-      showNotification('Belohnung abgelehnt — Punkte zurückgebucht.');
-      fetchClaims();
-      fetchUsers();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showNotification(`Fehler: ${err.error ?? res.status}`);
+      fetchData();
     }
   };
 
@@ -434,21 +491,6 @@ export default function AdminPage() {
       showNotification('Aufgabe bestätigt! Punkte gutgeschrieben.');
       fetchPendingApprovals();
       fetchUsers();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showNotification(`Fehler: ${err.error ?? res.status}`);
-    }
-  };
-
-  const handleRejectTask = async (instanceId: string) => {
-    const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: adminPin }),
-    });
-    if (res.ok) {
-      showNotification('Aufgabe abgelehnt — zurück auf offen.');
-      fetchPendingApprovals();
     } else {
       const err = await res.json().catch(() => ({}));
       showNotification(`Fehler: ${err.error ?? res.status}`);
@@ -483,11 +525,14 @@ export default function AdminPage() {
     return names.join(', ');
   };
 
-  /** Human-readable recurrence label */
-  const recurrenceLabel = (rec: string) => {
+  /** Human-readable recurrence label including dates if present */
+  const recurrenceLabel = (template: TaskTemplate): string => {
+    const rec = template.recurrence;
     if (rec === 'daily') return 'Täglich';
     if (rec === 'weekly') return 'Wöchentlich';
-    if (rec === 'once') return 'Einmalig';
+    if (rec === 'once') {
+      return template.due_date ? `Einmalig am ${formatDateDe(template.due_date)}` : 'Einmalig';
+    }
     if (rec.startsWith('weekdays:')) {
       const days = rec.replace('weekdays:', '').split(',');
       return days.map((d) => WEEKDAYS.find((w) => w.key === d)?.label ?? d).join(', ');
@@ -507,8 +552,7 @@ export default function AdminPage() {
     );
   }
 
-  // Only show claims that are neither approved nor rejected
-  const pendingClaims = claims.filter((c) => !c.approved_at && !c.rejected_at);
+  const pendingClaims = claims.filter((c) => !c.approved_at);
 
   const tabConfig: { id: AdminTab; label: string; icon: string }[] = [
     { id: 'tasks', label: 'Aufgaben', icon: 'checklist' },
@@ -517,98 +561,55 @@ export default function AdminPage() {
     { id: 'points', label: 'Punkte', icon: 'star' },
   ];
 
-  const inputCls = 'w-full rounded-xl px-3 py-2.5 text-sm font-sans outline-none border transition-colors focus:ring-2';
+  // Input / select shared classes (light theme)
+  const inputCls =
+    'w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--family-accent)] border transition-colors';
   const inputStyle = {
-    background: 'var(--family-surface)',
+    background: 'var(--family-surface2)',
     borderColor: '#d8d4cf',
     color: 'var(--family-text)',
   } as React.CSSProperties;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--family-bg)' }}>
-      <PageHeader title="Admin" variant="page" />
+    <main className="min-h-screen" style={{ background: 'var(--family-bg)' }}>
+      <PageHeader title="Einstellungen" variant="page" />
 
       {/* Notification */}
       {notification && (
         <div
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-2xl px-6 py-3 text-sm font-sans font-semibold text-white shadow-xl"
-          style={{ background: 'rgba(26,24,20,0.9)', backdropFilter: 'blur(8px)' }}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-xl px-6 py-3 font-semibold shadow-2xl text-white"
+          style={{ background: 'var(--family-accent)' }}
         >
           {notification}
         </div>
       )}
 
-      <div className="px-6 pb-6">
-        {/* Tab bar */}
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {tabConfig.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-sans font-medium transition-colors"
-              style={
-                tab === t.id
-                  ? { background: 'var(--family-text)', color: 'var(--family-bg)' }
-                  : { background: 'var(--family-surface)', color: 'var(--family-text2)', border: '0.5px solid #d8d4cf' }
-              }
-            >
-              <Icon name={t.icon} />
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="px-4 pb-4 max-w-2xl mx-auto">
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 max-w-2xl mx-auto overflow-x-auto pb-1">
+        {tabConfig.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="px-4 py-2.5 rounded-xl font-semibold text-sm whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5"
+            style={
+              tab === t.id
+                ? { background: 'var(--family-accent)', color: '#fff', border: '1.5px solid transparent' }
+                : { background: 'var(--family-surface)', color: 'var(--family-text2)', border: '1.5px solid #d8d4cf' }
+            }
+          >
+            <Icon name={t.icon} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="max-w-2xl mx-auto">
 
         {/* ── Tasks Tab ── */}
         {tab === 'tasks' && (
           <div className="space-y-4">
-            {/* Pending task approvals */}
-            {pendingApprovals.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{ background: '#fffbeb', borderColor: '#fbbf24' }}
-              >
-                <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: '#92400e' }}>
-                  <Icon name="clock" />
-                  Warten auf Bestätigung ({pendingApprovals.length})
-                </h3>
-                <div className="space-y-2">
-                  {pendingApprovals.map((approval) => (
-                    <div
-                      key={approval.id}
-                      className="flex items-center gap-3 rounded-xl px-3 py-3 border"
-                      style={{ background: '#fef3c7', borderColor: '#fcd34d' }}
-                    >
-                      <UserAvatar user={{ avatar: approval.user_avatar, name: approval.user_name, color: approval.user_color, photo: approval.user_photo }} size={36} />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{approval.title}</p>
-                        <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
-                          {approval.user_name} · {approval.points} Pkt.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => handleApproveTask(approval.id)}
-                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                          style={{ background: '#16a34a' }}
-                        >
-                          <Icon name="check" />
-                          Ok
-                        </button>
-                        <button
-                          onClick={() => handleRejectTask(approval.id)}
-                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                          style={{ background: '#dc2626' }}
-                        >
-                          <Icon name="x" />
-                          Nein
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Create task form */}
             <div
               className="rounded-2xl border p-4"
@@ -619,15 +620,54 @@ export default function AdminPage() {
                 Neue Aufgabe
               </h3>
               <form onSubmit={handleCreateTask} className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Aufgabenname"
-                  value={newTask.title}
-                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  className={inputCls}
-                  style={inputStyle}
-                  required
-                />
+                {/* Icon + Title */}
+                <div className="flex gap-3">
+                  <div style={{ width: 72, flexShrink: 0 }}>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Icon</label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="🦷"
+                      value={newTask.icon}
+                      onChange={(e) => setNewTask({ ...newTask, icon: e.target.value })}
+                      className={inputCls}
+                      style={{ ...inputStyle, textAlign: 'center', fontSize: 22, paddingLeft: 4, paddingRight: 4 }}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Aufgabenname</label>
+                    <input
+                      type="text"
+                      placeholder="z.B. Zähne putzen"
+                      value={newTask.title}
+                      onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Icon presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  {ICON_PRESETS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setNewTask({ ...newTask, icon: emoji })}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-90 hover:scale-110"
+                      style={{
+                        background: newTask.icon === emoji ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
+                        border: `1px solid ${newTask.icon === emoji ? 'var(--family-accent)' : '#d8d4cf'}`,
+                        fontSize: 18,
+                      }}
+                      title={`Icon: ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
@@ -641,310 +681,348 @@ export default function AdminPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Fälligkeit</label>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
+                    <select
+                      value={newTask.recurrence}
+                      onChange={(e) => setNewTask({ ...newTask, recurrence: e.target.value, weekdays: [] })}
+                      className={inputCls}
+                      style={inputStyle}
+                    >
+                      <option value="daily">Täglich</option>
+                      <option value="weekdays">Bestimmte Wochentage</option>
+                      <option value="weekly">Wöchentlich</option>
+                      <option value="once">Einmalig</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Weekday picker */}
+                {newTask.recurrence === 'weekdays' && (
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                      Wochentage auswählen
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      {WEEKDAYS.map((day) => {
+                        const selected = newTask.weekdays.includes(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            onClick={() => toggleWeekday(day.key)}
+                            className="w-10 h-10 rounded-xl text-sm font-bold transition-all active:scale-95"
+                            style={
+                              selected
+                                ? { background: 'var(--family-accent)', color: '#fff', border: '2px solid var(--family-accent)' }
+                                : { background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '2px solid #d8d4cf' }
+                            }
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Due date (only for 'once') */}
+                {newTask.recurrence === 'once' && (
+                  <div
+                    className="rounded-xl p-3 border-2 border-dashed"
+                    style={{ borderColor: 'var(--family-accent)', background: 'var(--family-accent)' + '08' }}
+                  >
+                    <label className="text-xs mb-1 block font-semibold" style={{ color: 'var(--family-accent)' }}>
+                      <Icon name="calendar-event" />&nbsp;Fälligkeitsdatum&nbsp;
+                      <span className="font-normal" style={{ color: 'var(--family-text3)' }}>
+                        (leer = sofort heute)
+                      </span>
+                    </label>
                     <input
-                      type="time"
-                      value={newTask.due_time}
-                      onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
+                      type="date"
+                      value={newTask.due_date}
+                      onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
                       className={inputCls}
                       style={inputStyle}
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
-                  <select
-                    value={newTask.recurrence}
-                    onChange={(e) => setNewTask({ ...newTask, recurrence: e.target.value })}
-                    className={inputCls}
-                    style={inputStyle}
-                  >
-                    <option value="daily">Täglich</option>
-                    <option value="weekly">Wöchentlich</option>
-                    <option value="once">Einmalig</option>
-                    <option value="weekdays">Bestimmte Wochentage</option>
-                  </select>
-                </div>
-                {newTask.recurrence === 'weekdays' && (
-                  <div className="flex gap-2 flex-wrap">
-                    {WEEKDAYS.map((d) => (
-                      <button
-                        key={d.key}
-                        type="button"
-                        onClick={() => toggleWeekday(d.key)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                        style={
-                          newTask.weekdays.includes(d.key)
-                            ? { background: 'var(--family-text)', color: 'var(--family-bg)' }
-                            : { background: '#f0ede8', color: 'var(--family-text2)' }
-                        }
-                      >
-                        {d.label}
-                      </button>
-                    ))}
+                )}
+
+                {/* Valid from/until (only for recurring) */}
+                {newTask.recurrence !== 'once' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                        Gültig ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={newTask.valid_from}
+                        onChange={(e) => setNewTask({ ...newTask, valid_from: e.target.value })}
+                        className={inputCls}
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                        Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={newTask.valid_until}
+                        onChange={(e) => setNewTask({ ...newTask, valid_until: e.target.value })}
+                        className={inputCls}
+                        style={inputStyle}
+                      />
+                    </div>
                   </div>
                 )}
+
+                {/* Multi-user assignment */}
                 <div>
                   <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
                     Zugewiesen an
                     <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
-                      {newTask.assigned_to.length === 0 ? '(alle)' : ''}
+                      {newTask.assigned_to.length === 0 ? '— Alle' : `(${newTask.assigned_to.length} ausgewählt)`}
                     </span>
                   </label>
-                  <div className="flex gap-2 flex-wrap">
-                    {users.map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() =>
-                          setNewTask((prev) => ({
-                            ...prev,
-                            assigned_to: prev.assigned_to.includes(u.id)
-                              ? prev.assigned_to.filter((id) => id !== u.id)
-                              : [...prev.assigned_to, u.id],
-                          }))
-                        }
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                        style={
-                          newTask.assigned_to.includes(u.id)
-                            ? { background: u.color, color: '#fff' }
-                            : { background: '#f0ede8', color: 'var(--family-text2)' }
-                        }
-                      >
-                        {u.avatar} {u.name}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap gap-2">
+                    {users.map((u) => {
+                      const sel = newTask.assigned_to.includes(u.id);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() =>
+                            setNewTask((prev) => ({
+                              ...prev,
+                              assigned_to: sel
+                                ? prev.assigned_to.filter((id) => id !== u.id)
+                                : [...prev.assigned_to, u.id],
+                            }))
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                          style={
+                            sel
+                              ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                              : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }
+                          }
+                        >
+                          {u.photo ? (
+                            <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <span style={{ fontSize: 16 }}>{u.avatar}</span>
+                          )}
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--family-text2)' }}>
+
+                {/* Rotation toggle (only when multiple users assigned) */}
+                {newTask.assigned_to.length > 1 && (
+                  <label
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                    style={{
+                      background: newTask.rotation ? '#dbeafe' : 'var(--family-surface2)',
+                      borderColor: newTask.rotation ? '#3b82f6' : '#d8d4cf',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={newTask.rotation}
+                      onChange={(e) => setNewTask({ ...newTask, rotation: e.target.checked })}
+                      className="w-4 h-4 accent-[var(--family-accent)]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: newTask.rotation ? '#1e40af' : 'var(--family-text2)' }}>
+                        <Icon name="refresh" />&nbsp;Faire Rotation
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                        Nur ein Kind pro Tag — wechselt fair durch (z.B. Geschirrspüler)
+                      </p>
+                    </div>
+                  </label>
+                )}
+
+                {/* Category */}
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Kategorie <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="z.B. Hygiene, Schule, Haushalt"
+                    value={newTask.category}
+                    onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                    list="task-categories"
+                  />
+                  {existingCategories.length > 0 && (
+                    <datalist id="task-categories">
+                      {existingCategories.map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                  )}
+                  {existingCategories.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {existingCategories.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setNewTask({ ...newTask, category: c })}
+                          className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                          style={{
+                            background: newTask.category === c ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
+                            border: `1px solid ${newTask.category === c ? 'var(--family-accent)' : '#d8d4cf'}`,
+                            color: newTask.category === c ? 'var(--family-accent)' : 'var(--family-text3)',
+                          }}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Due time */}
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                  <input
+                    type="time"
+                    value={newTask.due_time}
+                    onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </div>
+
+                {/* Requires approval toggle */}
+                <label
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                  style={{
+                    background: newTask.requires_approval ? '#fef3c722' : 'var(--family-surface2)',
+                    borderColor: newTask.requires_approval ? '#f0a500' : '#d8d4cf',
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={newTask.requires_approval}
                     onChange={(e) => setNewTask({ ...newTask, requires_approval: e.target.checked })}
-                    className="w-4 h-4 rounded"
+                    className="w-4 h-4 accent-[var(--family-accent)]"
                   />
-                  Eltern-Bestätigung erforderlich
+                  <span className="text-sm" style={{ color: 'var(--family-text2)' }}>
+                    Muss von Elternteil bestätigt werden
+                  </span>
                 </label>
+
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
                   style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="plus" />
                   Aufgabe erstellen
                 </button>
               </form>
             </div>
 
-            {/* Template list */}
-            <div
-              className="rounded-2xl border p-4"
-              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
-            >
-              <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
-                <Icon name="list" />
-                Vorlagen ({templates.length})
-              </h3>
-              <div className="space-y-2">
-                {templates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="flex items-center gap-3 rounded-xl px-3 py-3 border"
-                    style={{ background: 'var(--family-surface2)', borderColor: '#e8e4de' }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate" style={{ color: 'var(--family-text)' }}>{template.title}</p>
-                      <p className="text-xs mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--family-text3)' }}>
-                        <span>{recurrenceLabel(template.recurrence)}</span>
-                        <span>·</span>
-                        <span>{assignedLabel(template)}</span>
-                        <span>·</span>
-                        <span>{template.points} Pkt.</span>
-                        {template.requires_approval && (
-                          <>
-                            <span>·</span>
-                            <span className="flex items-center gap-1" style={{ color: '#f59e0b' }}>
-                              <Icon name="shield-check" /> Bestätigung
-                            </span>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => openEdit(template)}
-                        className="min-h-[32px] px-3 rounded-lg text-xs font-medium transition-colors"
-                        style={{ background: '#f0ede8', color: 'var(--family-text2)' }}
-                      >
-                        <Icon name="pencil" />
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await fetch(`${API_BASE}/api/tasks/templates/${template.id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ active: !template.active }),
-                          });
-                          fetchTemplates();
-                          showNotification(template.active ? 'Aufgabe deaktiviert' : 'Aufgabe aktiviert');
-                        }}
-                        className="min-h-[32px] px-3 rounded-lg text-xs font-semibold transition-colors"
-                        style={
-                          template.active
-                            ? { background: '#fef3c7', color: '#92400e' }
-                            : { background: '#dcfce7', color: '#16a34a' }
-                        }
-                      >
-                        {template.active ? 'Aktiv' : 'Inaktiv'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {/* Templates list header */}
+            <div className="flex items-center gap-2 pl-2" style={{ color: 'var(--family-text2)' }}>
+              <Icon name="list" />
+              <p className="font-bold text-sm">Vorlagen ({templates.length})</p>
             </div>
 
-            {/* Edit template drawer */}
-            {editingTemplate && (
-              <div
-                className="fixed inset-0 z-40 flex items-end justify-center"
-                style={{ background: 'rgba(0,0,0,0.4)' }}
-                onClick={(e) => { if (e.target === e.currentTarget) setEditingTemplate(null); }}
-              >
+            {/* Templates list */}
+            <div className="space-y-2">
+              {templates.map((template) => (
                 <div
-                  className="w-full max-w-lg rounded-t-3xl p-6"
-                  style={{ background: 'var(--family-surface)', maxHeight: '80vh', overflowY: 'auto' }}
+                  key={template.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border transition-opacity"
+                  style={{
+                    background: 'var(--family-surface)',
+                    borderColor: '#d8d4cf',
+                    opacity: template.active ? 1 : 0.45,
+                  }}
                 >
-                  <h3 className="font-bold mb-4" style={{ color: 'var(--family-text)' }}>Aufgabe bearbeiten</h3>
-                  <form onSubmit={handleSaveEdit} className="space-y-3">
-                    <input
-                      type="text"
-                      value={editForm.title}
-                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                      required
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={editForm.points}
-                          onChange={(e) => setEditForm({ ...editForm, points: parseInt(e.target.value) })}
-                          className={inputCls}
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Fälligkeit</label>
-                        <input
-                          type="time"
-                          value={editForm.due_time}
-                          onChange={(e) => setEditForm({ ...editForm, due_time: e.target.value })}
-                          className={inputCls}
-                          style={inputStyle}
-                        />
-                      </div>
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'var(--family-surface2)', fontSize: template.icon ? 20 : undefined }}
+                  >
+                    {template.icon
+                      ? <span>{template.icon}</span>
+                      : <Icon name="checklist" className="text-[var(--family-accent)]" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{template.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                      {template.points} Pkt. • {recurrenceLabel(template)} • {assignedLabel(template)}
+                      {template.due_time && ` • ${template.due_time}`}
+                      {template.recurrence !== 'once' && (template.valid_from || template.valid_until) && (
+                        <span className="ml-1" style={{ color: 'var(--family-text3)' }}>
+                          {' '}• {template.valid_from ? `ab ${formatDateDe(template.valid_from)}` : ''}
+                          {template.valid_from && template.valid_until ? ' ' : ''}
+                          {template.valid_until ? `bis ${formatDateDe(template.valid_until)}` : ''}
+                        </span>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {template.category && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#e0e7ff', color: '#3730a3' }}>
+                          <Icon name="tag" />&nbsp;{template.category}
+                        </span>
+                      )}
+                      {template.rotation && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                          <Icon name="refresh" />&nbsp;Rotation
+                        </span>
+                      )}
+                      {template.requires_approval && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#fef3c7', color: '#92400e' }}>
+                          ✓ Bestätigung nötig
+                        </span>
+                      )}
                     </div>
-                    <div>
-                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
-                      <select
-                        value={editForm.recurrence}
-                        onChange={(e) => setEditForm({ ...editForm, recurrence: e.target.value })}
-                        className={inputCls}
-                        style={inputStyle}
-                      >
-                        <option value="daily">Täglich</option>
-                        <option value="weekly">Wöchentlich</option>
-                        <option value="once">Einmalig</option>
-                        <option value="weekdays">Bestimmte Wochentage</option>
-                      </select>
-                    </div>
-                    {editForm.recurrence === 'weekdays' && (
-                      <div className="flex gap-2 flex-wrap">
-                        {WEEKDAYS.map((d) => (
-                          <button
-                            key={d.key}
-                            type="button"
-                            onClick={() =>
-                              setEditForm((prev) => ({
-                                ...prev,
-                                weekdays: prev.weekdays.includes(d.key)
-                                  ? prev.weekdays.filter((x) => x !== d.key)
-                                  : [...prev.weekdays, d.key],
-                              }))
-                            }
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            style={
-                              editForm.weekdays.includes(d.key)
-                                ? { background: 'var(--family-text)', color: 'var(--family-bg)' }
-                                : { background: '#f0ede8', color: 'var(--family-text2)' }
-                            }
-                          >
-                            {d.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div>
-                      <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Zugewiesen an</label>
-                      <div className="flex gap-2 flex-wrap">
-                        {users.map((u) => (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() =>
-                              setEditForm((prev) => ({
-                                ...prev,
-                                assigned_to: prev.assigned_to.includes(u.id)
-                                  ? prev.assigned_to.filter((id) => id !== u.id)
-                                  : [...prev.assigned_to, u.id],
-                              }))
-                            }
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            style={
-                              editForm.assigned_to.includes(u.id)
-                                ? { background: u.color, color: '#fff' }
-                                : { background: '#f0ede8', color: 'var(--family-text2)' }
-                            }
-                          >
-                            {u.avatar} {u.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--family-text2)' }}>
-                      <input
-                        type="checkbox"
-                        checked={editForm.requires_approval}
-                        onChange={(e) => setEditForm({ ...editForm, requires_approval: e.target.checked })}
-                        className="w-4 h-4 rounded"
-                      />
-                      Eltern-Bestätigung erforderlich
-                    </label>
-                    <div className="flex gap-3">
-                      <button type="button" onClick={() => setEditingTemplate(null)}
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                        style={{ background: '#f0ede8', color: 'var(--family-text2)' }}>
-                        Abbrechen
-                      </button>
-                      <button type="submit"
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                        style={{ background: 'var(--family-accent)' }}>
-                        Speichern
-                      </button>
-                    </div>
-                  </form>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => openEdit(template)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                      title="Bearbeiten"
+                    >
+                      <Icon name="pencil" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTemplate(template)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: '#fee2e2', color: '#dc2626' }}
+                      title="Löschen"
+                    >
+                      <Icon name="trash" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleTemplate(template)}
+                      className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                      style={
+                        template.active
+                          ? { background: '#fef3c7', color: '#92400e' }
+                          : { background: '#dcfce7', color: '#16a34a' }
+                      }
+                    >
+                      {template.active ? 'Aktiv' : 'Inaktiv'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
         {/* ── Rewards Tab ── */}
         {tab === 'rewards' && (
           <div className="space-y-4">
-            {/* Pending reward claims */}
             {pendingClaims.length > 0 && (
               <div
                 className="rounded-2xl border p-4"
@@ -952,7 +1030,7 @@ export default function AdminPage() {
               >
                 <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: '#92400e' }}>
                   <Icon name="clock" />
-                  Warten auf Genehmigung ({pendingClaims.length})
+                  Wartend auf Genehmigung
                 </h3>
                 <div className="space-y-2">
                   {pendingClaims.map((claim) => {
@@ -971,27 +1049,17 @@ export default function AdminPage() {
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{claim.reward_title}</p>
                           <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
-                            {claim.user_name} · {claim.points_cost} Pkt.
+                            {claim.user_name} • {claim.points_cost} Pkt.
                           </p>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <button
-                            onClick={() => handleApproveClaim(claim.id)}
-                            className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                            style={{ background: '#16a34a' }}
-                          >
-                            <Icon name="check" />
-                            Ok
-                          </button>
-                          <button
-                            onClick={() => handleRejectClaim(claim.id)}
-                            className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                            style={{ background: '#dc2626' }}
-                          >
-                            <Icon name="x" />
-                            Nein
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => handleApproveClaim(claim.id)}
+                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                          style={{ background: '#16a34a' }}
+                        >
+                          <Icon name="check" />
+                          Genehmigen
+                        </button>
                       </div>
                     );
                   })}
@@ -1035,217 +1103,187 @@ export default function AdminPage() {
                   <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
                     Verfügbar für
                     <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
-                      {newReward.available_to.length === 0 ? '(alle)' : ''}
+                      {newReward.available_to.length === 0 ? '— Alle' : `(${newReward.available_to.length} ausgewählt)`}
                     </span>
                   </label>
-                  <div className="flex gap-2 flex-wrap">
-                    {users.filter(u => u.role === 'child').map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() =>
-                          setNewReward((prev) => ({
-                            ...prev,
-                            available_to: prev.available_to.includes(u.id)
-                              ? prev.available_to.filter((id) => id !== u.id)
-                              : [...prev.available_to, u.id],
-                          }))
-                        }
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={
-                          newReward.available_to.includes(u.id)
-                            ? { background: u.color, color: '#fff' }
-                            : { background: '#f0ede8', color: 'var(--family-text2)' }
-                        }
-                      >
-                        {u.avatar} {u.name}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap gap-2">
+                    {users.map((u) => {
+                      const sel = newReward.available_to.includes(u.id);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() =>
+                            setNewReward((prev) => ({
+                              ...prev,
+                              available_to: sel
+                                ? prev.available_to.filter((id) => id !== u.id)
+                                : [...prev.available_to, u.id],
+                            }))
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                          style={
+                            sel
+                              ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                              : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }
+                          }
+                        >
+                          {u.photo ? (
+                            <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <span style={{ fontSize: 16 }}>{u.avatar}</span>
+                          )}
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-white"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
                   style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="plus" />
                   Belohnung erstellen
                 </button>
               </form>
             </div>
 
-            {/* Reward list */}
-            <div
-              className="rounded-2xl border p-4"
-              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
-            >
-              <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
-                <Icon name="list" />
-                Belohnungen ({rewards.length})
-              </h3>
-              <div className="space-y-2">
-                {rewards.map((reward) => (
-                  <div
-                    key={reward.id}
-                    className="flex items-center gap-3 rounded-xl px-3 py-3 border"
-                    style={{ background: 'var(--family-surface2)', borderColor: '#e8e4de', opacity: reward.active ? 1 : 0.5 }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate" style={{ color: 'var(--family-text)' }}>{reward.title}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--family-text3)' }}>
-                        {reward.points_cost} Punkte
-                        {Array.isArray(reward.available_to) && reward.available_to.length > 0
-                          ? ` · ${reward.available_to.length === 1 ? 'Nur für ' : ''}${(reward as any).available_to_names?.join(', ') ?? '?'}`
-                          : ' · Alle'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => openEditReward(reward)}
-                        className="min-h-[32px] px-3 rounded-lg text-xs font-medium"
-                        style={{ background: '#f0ede8', color: 'var(--family-text2)' }}
-                      >
-                        <Icon name="pencil" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleReward(reward)}
-                        className="min-h-[32px] px-3 rounded-lg text-xs font-semibold"
-                        style={
-                          reward.active
-                            ? { background: '#fef3c7', color: '#92400e' }
-                            : { background: '#dcfce7', color: '#16a34a' }
-                        }
-                      >
-                        {reward.active ? 'Aktiv' : 'Inaktiv'}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteReward(reward)}
-                        className="min-h-[32px] px-3 rounded-lg text-xs font-semibold"
-                        style={{ background: '#fee2e2', color: '#dc2626' }}
-                      >
-                        <Icon name="trash" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Edit reward drawer */}
-            {editingReward && (
-              <div
-                className="fixed inset-0 z-40 flex items-end justify-center"
-                style={{ background: 'rgba(0,0,0,0.4)' }}
-                onClick={(e) => { if (e.target === e.currentTarget) setEditingReward(null); }}
-              >
+            {/* Rewards list */}
+            <div className="space-y-2">
+              {rewards.map((reward) => (
                 <div
-                  className="w-full max-w-lg rounded-t-3xl p-6"
-                  style={{ background: 'var(--family-surface)', maxHeight: '70vh', overflowY: 'auto' }}
+                  key={reward.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border transition-opacity"
+                  style={{
+                    background: 'var(--family-surface)',
+                    borderColor: '#d8d4cf',
+                    opacity: reward.active ? 1 : 0.45,
+                  }}
                 >
-                  <h3 className="font-bold mb-4" style={{ color: 'var(--family-text)' }}>Belohnung bearbeiten</h3>
-                  <form onSubmit={handleSaveReward} className="space-y-3">
-                    <input
-                      type="text"
-                      value={editRewardForm.title}
-                      onChange={(e) => setEditRewardForm({ ...editRewardForm, title: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                      required
-                    />
-                    <div>
-                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punktekosten</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={editRewardForm.points_cost}
-                        onChange={(e) => setEditRewardForm({ ...editRewardForm, points_cost: parseInt(e.target.value) })}
-                        className={inputCls}
-                        style={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Verfügbar für</label>
-                      <div className="flex gap-2 flex-wrap">
-                        {users.filter(u => u.role === 'child').map((u) => (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() =>
-                              setEditRewardForm((prev) => ({
-                                ...prev,
-                                available_to: prev.available_to.includes(u.id)
-                                  ? prev.available_to.filter((id) => id !== u.id)
-                                  : [...prev.available_to, u.id],
-                              }))
-                            }
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            style={
-                              editRewardForm.available_to.includes(u.id)
-                                ? { background: u.color, color: '#fff' }
-                                : { background: '#f0ede8', color: 'var(--family-text2)' }
-                            }
-                          >
-                            {u.avatar} {u.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <button type="button" onClick={() => setEditingReward(null)}
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                        style={{ background: '#f0ede8', color: 'var(--family-text2)' }}>
-                        Abbrechen
-                      </button>
-                      <button type="submit"
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white"
-                        style={{ background: 'var(--family-accent)' }}>
-                        Speichern
-                      </button>
-                    </div>
-                  </form>
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: 'var(--family-surface2)' }}
+                  >
+                    <Icon name="gift" className="text-[var(--family-accent)]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{reward.title}</p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                      {reward.points_cost} Pkt. • {
+                        !reward.available_to || (Array.isArray(reward.available_to) && reward.available_to.length === 0)
+                          ? 'Alle'
+                          : Array.isArray(reward.available_to)
+                            ? reward.available_to.map((id) => users.find((u) => u.id === id)?.name ?? '?').join(', ')
+                            : (users.find((u) => u.id === reward.available_to)?.name ?? reward.available_to_name ?? 'Alle')
+                      }
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => openEditReward(reward)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                      title="Bearbeiten"
+                    >
+                      <Icon name="pencil" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteReward(reward)}
+                      className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                      style={{ background: '#fee2e2', color: '#dc2626' }}
+                      title="Löschen"
+                    >
+                      <Icon name="trash" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleReward(reward)}
+                      className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95"
+                      style={
+                        reward.active
+                          ? { background: '#fef3c7', color: '#92400e' }
+                          : { background: '#dcfce7', color: '#16a34a' }
+                      }
+                    >
+                      {reward.active ? 'Aktiv' : 'Inaktiv'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
         {/* ── Users Tab ── */}
         {tab === 'users' && (
           <div className="space-y-4">
-            <div
-              className="rounded-2xl border p-4"
-              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
-            >
-              <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
-                <Icon name="users" />
-                Familienmitglieder
-              </h3>
-              <div className="space-y-3">
-                {users.map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center gap-3 rounded-xl px-3 py-3 border"
-                    style={{ background: 'var(--family-surface2)', borderColor: '#e8e4de' }}
-                  >
-                    <UserAvatar user={user} size={40} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold" style={{ color: 'var(--family-text)' }}>{user.name}</p>
-                      <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
-                        {user.role === 'parent'
-                          ? <><Icon name="crown" />&nbsp;Elternteil</>
-                          : <><Icon name="user" />&nbsp;Kind</>
-                        }
-                      </p>
+            {/* Pending approvals */}
+            {pendingApprovals.length > 0 && (
+              <div
+                className="rounded-2xl border p-4"
+                style={{ background: '#fffbeb', borderColor: '#fbbf24' }}
+              >
+                <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: '#92400e' }}>
+                  <Icon name="clock" />
+                  Aufgaben wartend auf Bestätigung
+                </h3>
+                <div className="space-y-2">
+                  {pendingApprovals.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-xl px-3 py-3 border"
+                      style={{ background: '#fef3c7', borderColor: '#fcd34d' }}
+                    >
+                      <UserAvatar user={{ avatar: item.user_avatar, photo: item.user_photo, name: item.user_name, color: item.user_color }} size={36} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{item.title}</p>
+                        <p className="text-xs" style={{ color: 'var(--family-text2)' }}>
+                          {item.user_name} • {item.points} Pkt.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleApproveTask(item.id)}
+                        className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                        style={{ background: '#16a34a' }}
+                      >
+                        <Icon name="check" />
+                        Bestätigen
+                      </button>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
-                        <Icon name="star" />{user.points}
-                      </p>
-                      <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+            )}
+
+            {/* Nutzerliste */}
+            <div className="space-y-2">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+                >
+                  <UserAvatar user={user} size={44} />
+                  <div className="flex-1">
+                    <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
+                    <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
+                      {user.role === 'parent'
+                        ? <><Icon name="crown" />&nbsp;Elternteil</>
+                        : <><Icon name="user" />&nbsp;Kind</>
+                      }
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
+                      <Icon name="star" />{user.points}
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
+                  </div>
+                </div>
+              ))}
             </div>
+
           </div>
         )}
 
@@ -1293,46 +1331,478 @@ export default function AdminPage() {
                   <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Grund (optional)</label>
                   <input
                     type="text"
-                    placeholder="z.B. Sonderaufgabe erledigt"
+                    placeholder="z.B. Bonus, Strafe..."
                     value={manualPoints.reason}
                     onChange={(e) => setManualPoints({ ...manualPoints, reason: e.target.value })}
                     className={inputCls}
-                    style={inputStyle}
+                    style={{ ...inputStyle }}
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold text-white"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
                   style={{ background: 'var(--family-accent)' }}
                 >
+                  <Icon name="check" />
                   Punkte anpassen
                 </button>
               </form>
             </div>
 
-            {/* Points overview per user */}
-            <div
-              className="rounded-2xl border p-4"
-              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
-            >
-              <h3 className="font-bold mb-3" style={{ color: 'var(--family-text)' }}>Übersicht</h3>
-              <div className="space-y-2">
-                {users.map((u) => (
-                  <div key={u.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                    style={{ background: 'var(--family-surface2)' }}>
-                    <UserAvatar user={u} size={32} />
-                    <span className="flex-1 text-sm font-medium" style={{ color: 'var(--family-text)' }}>{u.name}</span>
-                    <span className="font-bold text-sm flex items-center gap-1" style={{ color: u.color }}>
-                      <i className="ti ti-star-filled" style={{ fontSize: 11, color: '#c9a020' }} />
-                      {u.points} Pkt.
-                    </span>
-                  </div>
-                ))}
-              </div>
+            {/* Users point summary */}
+            <div className="space-y-2">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+                >
+                  <UserAvatar user={user} size={40} />
+                  <p className="flex-1 font-semibold" style={{ color: user.color }}>{user.name}</p>
+                  <p className="font-bold text-lg flex items-center gap-1" style={{ color: user.color }}>
+                    <Icon name="star" />{user.points}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
-    </div>
+
+      {/* ── Edit Template Drawer ── */}
+      {editingTemplate && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.35)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingTemplate(null); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto"
+            style={{ background: 'var(--family-bg)', maxHeight: '92dvh' }}
+          >
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex-1">
+                <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--family-text3)' }}>Aufgabe bearbeiten</p>
+                <p className="font-bold text-lg leading-tight truncate" style={{ color: 'var(--family-text)' }}>
+                  {editingTemplate.icon ? <span style={{ marginRight: 6 }}>{editingTemplate.icon}</span> : null}
+                  {editingTemplate.title}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingTemplate(null)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl"
+                style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)' }}
+              >
+                <Icon name="x" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {/* Icon + Title */}
+              <div className="flex gap-3">
+                <div style={{ width: 72, flexShrink: 0 }}>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Icon</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="🦷"
+                    value={editForm.icon}
+                    onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })}
+                    className={inputCls}
+                    style={{ ...inputStyle, textAlign: 'center', fontSize: 22, paddingLeft: 4, paddingRight: 4 }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Aufgabenname</label>
+                  <input
+                    type="text"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Icon presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {ICON_PRESETS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, icon: emoji })}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center transition-all active:scale-90 hover:scale-110"
+                    style={{
+                      background: editForm.icon === emoji ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
+                      border: `1px solid ${editForm.icon === emoji ? 'var(--family-accent)' : '#d8d4cf'}`,
+                      fontSize: 18,
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punkte</label>
+                  <input
+                    type="number" min="1"
+                    value={editForm.points}
+                    onChange={(e) => setEditForm({ ...editForm, points: parseInt(e.target.value) })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Wiederholung</label>
+                  <select
+                    value={editForm.recurrence}
+                    onChange={(e) => setEditForm({ ...editForm, recurrence: e.target.value, weekdays: [] })}
+                    className={inputCls}
+                    style={inputStyle}
+                  >
+                    <option value="daily">Täglich</option>
+                    <option value="weekdays">Bestimmte Wochentage</option>
+                    <option value="weekly">Wöchentlich</option>
+                    <option value="once">Einmalig</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Weekday picker for edit */}
+              {editForm.recurrence === 'weekdays' && (
+                <div>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Wochentage</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {WEEKDAYS.map((day) => {
+                      const sel = editForm.weekdays.includes(day.key);
+                      return (
+                        <button
+                          key={day.key}
+                          type="button"
+                          onClick={() => setEditForm((prev) => ({
+                            ...prev,
+                            weekdays: sel ? prev.weekdays.filter((d) => d !== day.key) : [...prev.weekdays, day.key],
+                          }))}
+                          className="w-10 h-10 rounded-xl text-sm font-bold transition-all active:scale-95"
+                          style={sel
+                            ? { background: 'var(--family-accent)', color: '#fff', border: '2px solid var(--family-accent)' }
+                            : { background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '2px solid #d8d4cf' }}
+                        >
+                          {day.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Due date (once) */}
+              {editForm.recurrence === 'once' && (
+                <div
+                  className="rounded-xl p-3 border-2 border-dashed"
+                  style={{ borderColor: 'var(--family-accent)', background: 'var(--family-accent)' + '08' }}
+                >
+                  <label className="text-xs mb-1 block font-semibold" style={{ color: 'var(--family-accent)' }}>
+                    <Icon name="calendar-event" />&nbsp;Fälligkeitsdatum&nbsp;
+                    <span className="font-normal" style={{ color: 'var(--family-text3)' }}>(leer = sofort)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.due_date}
+                    onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+
+              {/* Valid from/until (recurring) */}
+              {editForm.recurrence !== 'once' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                      Gültig ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.valid_from}
+                      onChange={(e) => setEditForm({ ...editForm, valid_from: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                      Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.valid_until}
+                      onChange={(e) => setEditForm({ ...editForm, valid_until: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned to */}
+              <div>
+                <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                  Zugewiesen an
+                  <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                    {editForm.assigned_to.length === 0 ? '— Alle' : `(${editForm.assigned_to.length} ausgewählt)`}
+                  </span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {users.map((u) => {
+                    const sel = editForm.assigned_to.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setEditForm((prev) => ({
+                          ...prev,
+                          assigned_to: sel ? prev.assigned_to.filter((id) => id !== u.id) : [...prev.assigned_to, u.id],
+                        }))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                        style={sel
+                          ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                          : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }}
+                      >
+                        {u.photo
+                          ? <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 16 }}>{u.avatar}</span>}
+                        {u.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rotation toggle */}
+              {editForm.assigned_to.length > 1 && (
+                <label
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                  style={{
+                    background: editForm.rotation ? '#dbeafe' : 'var(--family-surface2)',
+                    borderColor: editForm.rotation ? '#3b82f6' : '#d8d4cf',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={editForm.rotation}
+                    onChange={(e) => setEditForm({ ...editForm, rotation: e.target.checked })}
+                    className="w-4 h-4 accent-[var(--family-accent)]"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: editForm.rotation ? '#1e40af' : 'var(--family-text2)' }}>
+                      <Icon name="refresh" />&nbsp;Faire Rotation
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                      Nur ein Kind pro Tag — wechselt fair durch
+                    </p>
+                  </div>
+                </label>
+              )}
+
+              {/* Category */}
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                  Kategorie <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="z.B. Hygiene, Schule"
+                  value={editForm.category}
+                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                  list="edit-task-categories"
+                />
+                {existingCategories.length > 0 && (
+                  <datalist id="edit-task-categories">
+                    {existingCategories.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                )}
+              </div>
+
+              {/* Due time */}
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                <input
+                  type="time"
+                  value={editForm.due_time}
+                  onChange={(e) => setEditForm({ ...editForm, due_time: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Requires approval toggle */}
+              <label
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors"
+                style={{
+                  background: editForm.requires_approval ? '#fef3c722' : 'var(--family-surface2)',
+                  borderColor: editForm.requires_approval ? '#f0a500' : '#d8d4cf',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={editForm.requires_approval}
+                  onChange={(e) => setEditForm({ ...editForm, requires_approval: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--family-accent)]"
+                />
+                <span className="text-sm" style={{ color: 'var(--family-text2)' }}>
+                  Muss von Elternteil bestätigt werden
+                </span>
+              </label>
+
+              {/* Delete button — sits before the cancel/save row so it's visible
+                  but not too close to "Speichern" to avoid accidental taps */}
+              <button
+                type="button"
+                onClick={() => handleDeleteTemplate(editingTemplate)}
+                className="w-full py-2.5 font-semibold rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-2 border"
+                style={{ background: '#fee2e2', color: '#dc2626', borderColor: '#fca5a5' }}
+              >
+                <Icon name="trash" />
+                Aufgabe löschen
+              </button>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingTemplate(null)}
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95"
+                  style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
+                >
+                  <Icon name="check" />
+                  Speichern
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Reward Drawer ── */}
+      {editingReward && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.35)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingReward(null); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 overflow-y-auto"
+            style={{ background: 'var(--family-bg)', maxHeight: '92dvh' }}
+          >
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex-1">
+                <p className="text-xs font-medium mb-0.5" style={{ color: 'var(--family-text3)' }}>Belohnung bearbeiten</p>
+                <p className="font-bold text-lg leading-tight truncate" style={{ color: 'var(--family-text)' }}>{editingReward.title}</p>
+              </div>
+              <button
+                onClick={() => setEditingReward(null)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl"
+                style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)' }}
+              >
+                <Icon name="x" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReward} className="space-y-4">
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Belohnungsname</label>
+                <input
+                  type="text"
+                  value={editRewardForm.title}
+                  onChange={(e) => setEditRewardForm({ ...editRewardForm, title: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Punktekosten</label>
+                <input
+                  type="number" min="1"
+                  value={editRewardForm.points_cost}
+                  onChange={(e) => setEditRewardForm({ ...editRewardForm, points_cost: parseInt(e.target.value) })}
+                  className={inputCls}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                  Verfügbar für
+                  <span className="ml-1 font-normal" style={{ color: 'var(--family-text3)' }}>
+                    {editRewardForm.available_to.length === 0 ? '— Alle' : `(${editRewardForm.available_to.length} ausgewählt)`}
+                  </span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {users.map((u) => {
+                    const sel = editRewardForm.available_to.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setEditRewardForm((prev) => ({
+                          ...prev,
+                          available_to: sel ? prev.available_to.filter((id) => id !== u.id) : [...prev.available_to, u.id],
+                        }))}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border-2"
+                        style={sel
+                          ? { background: u.color + '22', borderColor: u.color, color: u.color }
+                          : { background: 'var(--family-surface2)', borderColor: '#d8d4cf', color: 'var(--family-text3)' }}
+                      >
+                        {u.photo
+                          ? <img src={u.photo} alt={u.name} style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 16 }}>{u.avatar}</span>}
+                        {u.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditingReward(null)}
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95"
+                  style={{ background: 'var(--family-surface2)', color: 'var(--family-text2)', border: '1px solid #d8d4cf' }}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: 'var(--family-accent)' }}
+                >
+                  <Icon name="check" />
+                  Speichern
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      </div>
+    </main>
   );
 }
