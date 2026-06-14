@@ -1,636 +1,849 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
-interface CalendarEvent {
-  id: string; title: string; start: string; end: string;
-  allDay: boolean; color?: string; calendarName?: string;
-}
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
-interface CalendarOption {
-  url: string;
+interface User {
+  id: string;
   name: string;
+  avatar: string;
+  photo?: string;
   color: string;
+  role: string;
 }
 
-const DAYS_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const START_H = 7;
-const HOURS = 15;
-const MIN_SLOT_H = 28;     // unter dem Wert wird's unleserlich → dann lieber doch scrollen
-const MIN_EVENT_H = 28;    // Mindesthöhe eines Event-Blocks (Platz für Titel + Zeit)
-const TIER_FULL_MIN = 56;  // ab dieser Höhe darf der Titel 2 Zeilen brechen
-
-function getWeekStart(offset: number): Date {
-  const now = new Date();
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
-  monday.setHours(0, 0, 0, 0);
-  return monday;
+interface Lesson {
+  name: string;
+  bg: string;
+  fg: string;
 }
 
-function toMinutes(isoStr: string): number {
-  const d = new Date(isoStr);
-  return d.getHours() * 60 + d.getMinutes();
+type Timetable = Record<string, Lesson>; // key: "Mo_0" … "Mo_8"
+type AllTimetables = Record<string, Timetable>; // key: userId
+type SubjectColorMap = Record<string, { bg: string; fg: string }>;
+
+/* ------------------------------------------------------------------ */
+/*  Slots – 9 Einzelstunden (1.–9.)                                   */
+/*  Slots 0+1 (1.+2. Stunde) = Hauptunterricht-Paar,                  */
+/*  visuell verschmolzen wenn gleiches Fach.                           */
+/* ------------------------------------------------------------------ */
+
+const DAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const;
+
+const SLOTS = [
+  '1. (08:00–08:50)',
+  '2. (08:50–09:40)',
+  '3. (10:15–11:00)',
+  '4. (11:05–11:50)',
+  '5. (12:10–12:55)',
+  '6. (13:00–13:45)',
+  '7. (13:45–14:30)',
+  '8. (14:30–15:15)',
+  '9. (15:15–16:00)',
+] as const;
+
+const SLOT_LABELS = ['1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.'] as const;
+
+/* ------------------------------------------------------------------ */
+/*  24 Farben — gut unterscheidbar auf dem Kiosk-Display               */
+/* ------------------------------------------------------------------ */
+
+interface ColorOption {
+  bg: string;
+  fg: string;
+  label: string;
 }
 
-// Lokales Datum als YYYY-MM-DD (nicht UTC) — verhindert den +1-Tag-Bug bei UTC-Offset
-function toLocalDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const COLORS: ColorOption[] = [
+  { bg: '#fde8e3', fg: '#d4432f', label: 'Rot' },
+  { bg: '#e3f0fd', fg: '#2b7cd4', label: 'Blau' },
+  { bg: '#e4f3e6', fg: '#2d8a3e', label: 'Grün' },
+  { bg: '#f0e4fd', fg: '#8b3fc4', label: 'Lila' },
+  { bg: '#fef5d4', fg: '#b88600', label: 'Gelb' },
+  { bg: '#d9f4f8', fg: '#0091a1', label: 'Türkis' },
+  { bg: '#eeecea', fg: '#6b6760', label: 'Grau' },
+  { bg: '#fce0ee', fg: '#c91a72', label: 'Pink' },
+  { bg: '#fde8d4', fg: '#c66318', label: 'Orange' },
+  { bg: '#e2e4f6', fg: '#4650a8', label: 'Indigo' },
+  { bg: '#e9e0d6', fg: '#7a5a3a', label: 'Braun' },
+  { bg: '#d6f0ee', fg: '#0e7367', label: 'Petrol' },
+  { bg: '#fbe0d8', fg: '#c03a14', label: 'Terrakotta' },
+  { bg: '#e8f4d8', fg: '#5a8c22', label: 'Limette' },
+  { bg: '#e0d6f0', fg: '#5a2d8c', label: 'Violett' },
+  { bg: '#d4ecfd', fg: '#1a6eb5', label: 'Himmelblau' },
+  { bg: '#fdf0d4', fg: '#a87010', label: 'Bernstein' },
+  { bg: '#f4d8e8', fg: '#9c1a5e', label: 'Magenta' },
+  { bg: '#d8ede0', fg: '#1a6b32', label: 'Waldgrün' },
+  { bg: '#e8d8f2', fg: '#6a2894', label: 'Pflaume' },
+  { bg: '#fce4d6', fg: '#b04a1a', label: 'Kupfer' },
+  { bg: '#d6e6f4', fg: '#2a5a92', label: 'Marine' },
+  { bg: '#f0eed6', fg: '#7a7020', label: 'Oliv' },
+  { bg: '#f0d8e0', fg: '#a82a52', label: 'Beere' },
+];
 
-// Lokale Zeit als HH:MM für input[type=time]
-function toLocalTimeStr(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+/* ------------------------------------------------------------------ */
+/*  localStorage-Migration (alt 8 Slots → neu 9 Slots)                */
+/*  Alt: Mo_0 = HU (1+2 kombiniert), Mo_1 = 3. Std, …                */
+/*  Neu: Mo_0 = 1. Std, Mo_1 = 2. Std, Mo_2 = 3. Std, …             */
+/* ------------------------------------------------------------------ */
 
-// Kombiniert Datum-String + Zeit-String zu lokalem ISO — kein UTC-Versatz
-function toLocalISO(dateStr: string, timeStr: string): string {
-  const [h, m] = timeStr.split(':').map(Number);
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setHours(h, m, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${dateStr}T${pad(h)}:${pad(m)}:00`;
-}
+const OLD_LS_KEY = 'family_timetables';
+const OLD_SC_KEY = 'family_subject_colors';
+const MIGRATED_FLAG = 'family_timetables_migrated_v2';
 
-type EventTier = 'compact' | 'full';
+function migrateLocalStorageData(): { timetables: AllTimetables; colors: SubjectColorMap } | null {
+  try {
+    if (localStorage.getItem(MIGRATED_FLAG)) return null;
+    const raw = localStorage.getItem(OLD_LS_KEY);
+    if (!raw) return null;
 
-// ---- Neuer-Termin-Modal ----
-function NewEventModal({
-  initialDate,
-  onClose,
-  onCreated,
-}: {
-  initialDate: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [calendars, setCalendars] = useState<CalendarOption[]>([]);
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState(initialDate);
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
-  const [allDay, setAllDay] = useState(false);
-  const [calendarUrl, setCalendarUrl] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+    const old: AllTimetables = JSON.parse(raw);
+    const migrated: AllTimetables = {};
 
-  useEffect(() => {
-    fetch(`${API_BASE}/api/widgets/calendar/calendars`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.calendars?.length) {
-          setCalendars(data.calendars);
-          setCalendarUrl(data.calendars[0].url);
+    for (const [userId, oldTt] of Object.entries(old)) {
+      const newTt: Timetable = {};
+      for (const [key, lesson] of Object.entries(oldTt)) {
+        const [day, idxStr] = key.split('_');
+        const oldIdx = parseInt(idxStr, 10);
+        if (isNaN(oldIdx)) continue;
+
+        if (oldIdx === 0) {
+          // Alt: HU-Block → Neu: 1. und 2. Stunde mit gleichem Fach
+          newTt[`${day}_0`] = lesson;
+          newTt[`${day}_1`] = lesson;
+        } else {
+          // Alt: Mo_1 (3. Std) → Neu: Mo_2 (Index + 1)
+          newTt[`${day}_${oldIdx + 1}`] = lesson;
         }
-      })
-      .catch(() => setError('Kalender konnten nicht geladen werden'));
+      }
+      migrated[userId] = newTt;
+    }
+
+    // Fachfarben migrieren
+    let colors: SubjectColorMap = {};
+    const scRaw = localStorage.getItem(OLD_SC_KEY);
+    if (scRaw) {
+      try { colors = JSON.parse(scRaw); } catch { /* ignorieren */ }
+    }
+
+    // Flag setzen, damit Migration nur einmal läuft
+    localStorage.setItem(MIGRATED_FLAG, 'true');
+
+    return { timetables: migrated, colors };
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function collectSubjects(timetables: AllTimetables): string[] {
+  const names = new Set<string>();
+  for (const tt of Object.values(timetables)) {
+    for (const lesson of Object.values(tt)) {
+      if (lesson.name) names.add(lesson.name);
+    }
+  }
+  return Array.from(names).sort();
+}
+
+function findColor(fg: string): ColorOption {
+  return COLORS.find(c => c.fg === fg) ?? COLORS[0];
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+export default function TimetablePage() {
+  const [mounted, setMounted] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [timetables, setTimetables] = useState<AllTimetables>({});
+  const [subjectColors, setSubjectColors] = useState<SubjectColorMap>({});
+  const [editing, setEditing] = useState<{ day: string; slot: number } | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState<ColorOption>(COLORS[0]);
+  const [fillBoth, setFillBoth] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [legendEditSubject, setLegendEditSubject] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  /* ---- SSR guard ---- */
+  useEffect(() => setMounted(true), []);
+
+  /* ---- Load data from API ---- */
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [usersRes, ttRes, scRes] = await Promise.all([
+        fetch(`${API_BASE}/api/users`),
+        fetch(`${API_BASE}/api/timetable`),
+        fetch(`${API_BASE}/api/timetable/subject-colors`),
+      ]);
+      const usersData: User[] = await usersRes.json();
+      let ttData: AllTimetables = ttRes.ok ? await ttRes.json() : {};
+      let scData: SubjectColorMap = scRes.ok ? await scRes.json() : {};
+
+      // One-time localStorage migration
+      const hasData = Object.keys(ttData).some(uid => Object.keys(ttData[uid] ?? {}).length > 0);
+      if (!hasData) {
+        const migrated = migrateLocalStorageData();
+        if (migrated && Object.keys(migrated.timetables).length > 0) {
+          ttData = migrated.timetables;
+          scData = { ...migrated.colors, ...scData };
+          // Save migrated data to API (fire-and-forget)
+          Promise.all([
+            ...Object.entries(migrated.timetables).map(([uid, data]) =>
+              fetch(`${API_BASE}/api/timetable/${uid}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+              }).catch(() => {}),
+            ),
+            Object.keys(migrated.colors).length > 0
+              ? fetch(`${API_BASE}/api/timetable/subject-colors`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(migrated.colors),
+                }).catch(() => {})
+              : Promise.resolve(),
+          ]);
+        }
+      }
+
+      if (Array.isArray(usersData)) {
+        const kids = usersData.filter(u => u.role === 'child');
+        setUsers(kids);
+        if (kids.length > 0) setActiveId(prev => prev ?? kids[0].id);
+      }
+
+      if (ttData && typeof ttData === 'object') setTimetables(ttData);
+      if (scData && typeof scData === 'object') setSubjectColors(scData);
+    } catch (err) {
+      console.error('[timetable] load error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  async function handleSave() {
-    if (!title.trim()) { setError('Bitte einen Titel eingeben'); return; }
-    if (!calendarUrl) { setError('Bitte einen Kalender wählen'); return; }
+  useEffect(() => {
+    if (mounted) loadAll();
+  }, [mounted, loadAll]);
+
+  /* ---- Derived state ---- */
+  const activeUser = users.find(u => u.id === activeId);
+  const tt: Timetable = activeId && timetables[activeId] ? timetables[activeId] : {};
+  const allSubjects = collectSubjects(timetables);
+
+  /* ---- API helpers ---- */
+  async function saveTimetableForUser(userId: string, data: Timetable) {
     setSaving(true);
-    setError('');
     try {
-      const start = allDay ? `${date}T00:00:00.000Z` : toLocalISO(date, startTime);
-      const end   = allDay ? `${date}T00:00:00.000Z` : toLocalISO(date, endTime);
-      const res = await fetch(`${API_BASE}/api/widgets/calendar`, {
-        method: 'POST',
+      await fetch(`${API_BASE}/api/timetable/${userId}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), start, end, allDay, calendarUrl }),
+        body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error ?? 'Fehler beim Speichern');
-      }
-      onCreated();
-    } catch (err: any) {
-      setError(err.message ?? 'Unbekannter Fehler');
+    } catch (err) {
+      console.error('[timetable] save error:', err);
+    } finally {
       setSaving(false);
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 12px',
-    borderRadius: 8,
-    border: '0.5px solid rgba(0,0,0,0.15)',
-    background: '#f7f4f0',
-    fontSize: 14,
-    color: '#1a1814',
-    outline: 'none',
-    fontFamily: 'Inter, sans-serif',
-  };
+  async function saveSubjectColorsToApi(colors: SubjectColorMap) {
+    try {
+      await fetch(`${API_BASE}/api/timetable/subject-colors`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(colors),
+      });
+    } catch (err) {
+      console.error('[timetable] save subject-colors error:', err);
+    }
+  }
 
+  /* ---- Edit modal logic ---- */
+  function handleEditNameChange(val: string) {
+    setEditName(val);
+    const normalized = val.trim().toLowerCase();
+    const match = Object.entries(subjectColors).find(([k]) => k.toLowerCase() === normalized);
+    if (match) {
+      const c = findColor(match[1].fg);
+      setEditColor(c);
+    }
+  }
+
+  function selectSuggestion(name: string) {
+    setEditName(name);
+    const sc = subjectColors[name];
+    if (sc) setEditColor(findColor(sc.fg));
+    inputRef.current?.focus();
+  }
+
+  function openEdit(day: string, slot: number) {
+    const key = `${day}_${slot}`;
+    const existing = tt[key];
+    setEditName(existing?.name ?? '');
+    setEditColor(existing ? findColor(existing.fg) : COLORS[0]);
+    // Default: 1. Stunde → beide ausfüllen anbieten
+    setFillBoth(slot === 0);
+    setEditing({ day, slot });
+  }
+
+  async function saveLesson() {
+    if (!activeId || !editing) return;
+    const trimmed = editName.trim();
+    const updatedTt = { ...tt };
+
+    if (trimmed) {
+      const lesson: Lesson = { name: trimmed, bg: editColor.bg, fg: editColor.fg };
+      updatedTt[`${editing.day}_${editing.slot}`] = lesson;
+
+      // "Auch 2. Stunde" — wenn Slot 0 und fillBoth aktiv
+      if (editing.slot === 0 && fillBoth) {
+        updatedTt[`${editing.day}_1`] = lesson;
+      }
+
+      // Update global subject color map
+      const sc = { ...subjectColors, [trimmed]: { bg: editColor.bg, fg: editColor.fg } };
+      setSubjectColors(sc);
+      saveSubjectColorsToApi(sc);
+    } else {
+      delete updatedTt[`${editing.day}_${editing.slot}`];
+    }
+
+    const updatedAll = { ...timetables, [activeId]: updatedTt };
+    setTimetables(updatedAll);
+    setEditing(null);
+    await saveTimetableForUser(activeId, updatedTt);
+  }
+
+  /* ---- Legend color change (propagates to all timetables) ---- */
+  async function updateLegendColor(subject: string, color: ColorOption) {
+    const sc = { ...subjectColors, [subject]: { bg: color.bg, fg: color.fg } };
+    setSubjectColors(sc);
+    setLegendEditSubject(null);
+
+    // Update all lessons with this name across all timetables
+    const updated: AllTimetables = {};
+    for (const [uid, tt2] of Object.entries(timetables)) {
+      updated[uid] = {};
+      for (const [k, lesson] of Object.entries(tt2)) {
+        if (lesson.name === subject) {
+          updated[uid][k] = { ...lesson, bg: color.bg, fg: color.fg };
+        } else {
+          updated[uid][k] = lesson;
+        }
+      }
+    }
+    setTimetables(updated);
+
+    // Save everything
+    await Promise.all([
+      saveSubjectColorsToApi(sc),
+      ...Object.entries(updated).map(([uid, data]) => saveTimetableForUser(uid, data)),
+    ]);
+  }
+
+  /* ---- Merge detection for HU (slots 0 + 1) ---- */
+  function isMergedPair(day: string): boolean {
+    const l0 = tt[`${day}_0`];
+    const l1 = tt[`${day}_1`];
+    return !!l0?.name && !!l1?.name && l0.name === l1.name;
+  }
+
+  /* ---- Subject suggestions for edit modal ---- */
+  const suggestions = (() => {
+    const query = editName.trim().toLowerCase();
+    if (!query) return allSubjects.slice(0, 12);
+    return allSubjects
+      .filter(s => s.toLowerCase().includes(query) && s.toLowerCase() !== query)
+      .slice(0, 8);
+  })();
+
+  /* ---- SSR guard ---- */
+  if (!mounted) return null;
+
+  /* ---- Render ---- */
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.35)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
-        style={{ background: '#fff', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
+    <div>
+      <PageHeader title="Stundenpläne" variant="page" />
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold font-sans" style={{ color: '#1a1814' }}>
-            Neuer Termin
-          </h2>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-black/5" style={{ color: '#a09d99' }} aria-label="Schließen">
-            <i className="ti ti-x" style={{ fontSize: 16 }} />
+      <div className="px-6 pb-6">
+        {/* Toolbar: Fachfarben + Saving indicator */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            {saving && (
+              <span className="text-[11px] font-sans" style={{ color: '#a09d99' }}>
+                Speichern…
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setShowLegend(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-sans transition-all"
+            style={{
+              background: showLegend ? '#1a1814' : '#fff',
+              color: showLegend ? '#fff' : '#6b6760',
+              border: '0.5px solid rgba(0,0,0,0.1)',
+            }}
+          >
+            <i className="ti ti-palette" style={{ fontSize: 15 }} />
+            Fachfarben
+            {allSubjects.length > 0 && (
+              <span
+                className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                style={{
+                  background: showLegend ? 'rgba(255,255,255,0.2)' : '#f0ede8',
+                  color: showLegend ? '#fff' : '#6b6760',
+                }}
+              >
+                {allSubjects.length}
+              </span>
+            )}
           </button>
         </div>
 
-        {/* Titel */}
-        <input
-          type="text"
-          placeholder="Titel"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          style={inputStyle}
-          autoFocus
-        />
-
-        {/* Datum */}
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={inputStyle}
-        />
-
-        {/* Ganztags-Toggle */}
-        <label className="flex items-center gap-2 cursor-pointer">
+        {/* Legend panel */}
+        {showLegend && allSubjects.length > 0 && (
           <div
-            onClick={() => setAllDay(v => !v)}
-            className="w-9 h-5 rounded-full transition-colors flex-shrink-0"
-            style={{ background: allDay ? '#e85d3a' : '#d1cdc8', position: 'relative', cursor: 'pointer' }}
+            className="mb-4 rounded-2xl p-4"
+            style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
           >
-            <div style={{
-              position: 'absolute', top: 2, left: allDay ? 18 : 2,
-              width: 16, height: 16, borderRadius: '50%', background: '#fff',
-              transition: 'left 0.15s',
-            }} />
-          </div>
-          <span className="text-sm font-sans" style={{ color: '#6b6760' }}>Ganztags</span>
-        </label>
-
-        {/* Zeiten */}
-        {!allDay && (
-          <div className="flex gap-2 items-center">
-            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inputStyle, width: '50%' }} />
-            <span style={{ color: '#a09d99', fontSize: 12 }}>–</span>
-            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inputStyle, width: '50%' }} />
+            <p
+              className="text-[11px] font-sans font-semibold uppercase tracking-wider mb-3"
+              style={{ color: '#a09d99' }}
+            >
+              Fachfarben
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {allSubjects.map(subject => {
+                const sc = subjectColors[subject] ?? COLORS[0];
+                const isLegendEditing = legendEditSubject === subject;
+                return (
+                  <div key={subject}>
+                    {isLegendEditing ? (
+                      <div
+                        className="rounded-xl p-2 shadow-md"
+                        style={{
+                          background: '#fff',
+                          border: '0.5px solid rgba(0,0,0,0.1)',
+                          zIndex: 10,
+                          position: 'relative',
+                        }}
+                      >
+                        <div
+                          className="text-xs font-sans font-medium mb-2"
+                          style={{ color: '#1a1814' }}
+                        >
+                          {subject}
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap" style={{ maxWidth: 240 }}>
+                          {COLORS.map(c => (
+                            <button
+                              key={c.fg}
+                              onClick={() => updateLegendColor(subject, c)}
+                              className="w-6 h-6 rounded-full transition-all"
+                              style={{
+                                background: c.bg,
+                                border:
+                                  sc.fg === c.fg
+                                    ? `2px solid ${c.fg}`
+                                    : '2px solid transparent',
+                              }}
+                              title={c.label}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setLegendEditSubject(null)}
+                          className="mt-2 text-[10px] font-sans"
+                          style={{ color: '#a09d99' }}
+                        >
+                          Schließen
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setLegendEditSubject(subject)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-sans font-medium transition-all hover:opacity-80"
+                        style={{ background: sc.bg, color: sc.fg }}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: sc.fg }}
+                        />
+                        {subject}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* Kalender-Auswahl */}
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider font-sans" style={{ color: '#a09d99' }}>Kalender</span>
-          <div className="flex flex-col gap-1">
-            {calendars.map(cal => (
+        {/* Child tabs */}
+        {users.length > 0 && (
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {users.map(u => (
               <button
-                key={cal.url}
-                onClick={() => setCalendarUrl(cal.url)}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all"
+                key={u.id}
+                onClick={() => setActiveId(u.id)}
+                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-sans font-medium transition-all"
                 style={{
-                  background: calendarUrl === cal.url ? `${cal.color}18` : 'transparent',
-                  border: calendarUrl === cal.url ? `1px solid ${cal.color}40` : '1px solid transparent',
+                  background: activeId === u.id ? u.color : '#fff',
+                  color: activeId === u.id ? '#fff' : '#6b6760',
+                  border: '0.5px solid rgba(0,0,0,0.1)',
                 }}
               >
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: cal.color, flexShrink: 0, display: 'inline-block' }} />
-                <span className="text-sm font-sans" style={{ color: '#1a1814' }}>{cal.name}</span>
-                {calendarUrl === cal.url && (
-                  <i className="ti ti-check ml-auto" style={{ fontSize: 14, color: cal.color }} aria-hidden="true" />
+                {u.photo ? (
+                  <img
+                    src={u.photo}
+                    alt={u.name}
+                    className="w-5 h-5 rounded-full object-cover"
+                  />
+                ) : (
+                  <span style={{ fontSize: 16 }}>{u.avatar}</span>
                 )}
+                {u.name}
               </button>
             ))}
           </div>
-        </div>
+        )}
 
-        {/* Fehler */}
-        {error && <p className="text-xs font-sans" style={{ color: '#e85d3a' }}>{error}</p>}
-
-        {/* Buttons */}
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2 rounded-xl text-sm font-sans transition-all hover:bg-black/5"
-            style={{ border: '0.5px solid rgba(0,0,0,0.12)', color: '#6b6760' }}
+        {/* Content area */}
+        {loading ? (
+          <div className="flex items-center justify-center h-48">
+            <span className="text-sm font-sans" style={{ color: '#a09d99' }}>
+              Lade Stundenpläne…
+            </span>
+          </div>
+        ) : users.length === 0 ? (
+          <div className="flex items-center justify-center h-48">
+            <span className="text-sm font-sans" style={{ color: '#a09d99' }}>
+              Keine Kinder angelegt.
+            </span>
+          </div>
+        ) : (
+          /* ---- Timetable grid ---- */
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ border: '0.5px solid rgba(0,0,0,0.07)', background: '#fff' }}
           >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 py-2 rounded-xl text-sm font-sans font-medium transition-all"
-            style={{ background: saving ? '#ccc' : '#e85d3a', color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}
-          >
-            {saving ? 'Speichern…' : 'Speichern'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function CalendarPage() {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [showModal, setShowModal] = useState(false);
-  const [modalDate, setModalDate] = useState('');
-  const [nowTick, setNowTick] = useState<Date | null>(null);
-  const [slotH, setSlotH] = useState<number>(40); // dynamisch, berechnet aus Container-Höhe
-  const bodyRef = useRef<HTMLDivElement>(null);
-
-  function loadEvents() {
-    setLoading(true);
-    fetch(`${API_BASE}/api/widgets/calendar`)
-      .then(r => r.json())
-      .then(data => { if (data.events) setEvents(data.events); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => { loadEvents(); }, []);
-
-  // SLOT_H so wählen, dass alle 15 Stunden ohne Scrollen in den Body passen
-  useLayoutEffect(() => {
-    if (!bodyRef.current) return;
-    const update = () => {
-      const h = bodyRef.current?.clientHeight ?? 0;
-      if (h > 0) {
-        const ideal = h / HOURS;
-        setSlotH(Math.max(MIN_SLOT_H, ideal));
-      }
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(bodyRef.current);
-    window.addEventListener('resize', update);
-    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
-  }, []);
-
-  // „Jetzt"-Linie: minütlich tickern, erst clientseitig
-  useEffect(() => {
-    setNowTick(new Date());
-    const iv = setInterval(() => setNowTick(new Date()), 60_000);
-    return () => clearInterval(iv);
-  }, []);
-
-  const weekStart = getWeekStart(weekOffset);
-  const days: Date[] = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    return d;
-  });
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(days[6]); weekEnd.setHours(23, 59, 59);
-
-  const fmt = (d: Date) => `${d.getDate()}. ${MONTHS[d.getMonth()]}`;
-  const weekLabel = `${fmt(days[0])} – ${fmt(days[6])} ${days[6].getFullYear()}`;
-
-  function openModal(date?: Date) {
-    setModalDate(toLocalDateStr(date ?? today));
-    setShowModal(true);
-  }
-
-  function eventsForDay(day: Date, allDay: boolean): CalendarEvent[] {
-    const dayStr = toLocalDateStr(day);
-    return events.filter(e => {
-      const eDay = toLocalDateStr(new Date(e.start));
-      return eDay === dayStr && e.allDay === allDay;
-    });
-  }
-
-  // Assign each event to the first column where the previous event has ended,
-  // then compute cols = max simultaneous column index + 1 per event.
-  function layoutEvents(evs: CalendarEvent[]): Array<CalendarEvent & { col: number; cols: number }> {
-    if (evs.length === 0) return [];
-    const sorted = [...evs].sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
-
-    // Pass 1: greedy column assignment
-    const colEndTimes: number[] = [];
-    const colAssignments: number[] = [];
-    for (const ev of sorted) {
-      const startMin = toMinutes(ev.start);
-      const endMin   = toMinutes(ev.end);
-      let col = colEndTimes.findIndex(t => t <= startMin);
-      if (col === -1) col = colEndTimes.length;
-      colEndTimes[col] = endMin;
-      colAssignments.push(col);
-    }
-
-    // Pass 2: for each event, cols = highest column index among all events
-    //         that truly overlap with it, + 1
-    return sorted.map((ev, idx) => {
-      const startMin = toMinutes(ev.start);
-      const endMin   = toMinutes(ev.end);
-      let maxCol = colAssignments[idx];
-      sorted.forEach((other, j) => {
-        if (toMinutes(other.start) < endMin && toMinutes(other.end) > startMin) {
-          maxCol = Math.max(maxCol, colAssignments[j]);
-        }
-      });
-      return { ...ev, col: colAssignments[idx], cols: maxCol + 1 };
-    });
-  }
-
-  // Berechnet Höhe + Tier eines Events
-  function eventMetrics(ev: CalendarEvent): { heightPx: number; tier: EventTier } {
-    const durMin = toMinutes(ev.end) - toMinutes(ev.start);
-    const heightPx = Math.max(MIN_EVENT_H, (durMin / 60) * slotH);
-    const tier: EventTier = heightPx < TIER_FULL_MIN ? 'compact' : 'full';
-    return { heightPx, tier };
-  }
-
-  function eventStyle(ev: CalendarEvent, col: number, cols: number): React.CSSProperties {
-    const startMin = toMinutes(ev.start);
-    const endMin = toMinutes(ev.end);
-    const top = ((startMin / 60) - START_H) * slotH;
-    const height = Math.max(MIN_EVENT_H, ((endMin - startMin) / 60) * slotH);
-    const gap = 3; // px zwischen kollidierenden Events
-    const width = cols > 1 ? `calc(${100 / cols}% - ${gap + 1}px)` : undefined;
-    const left = cols > 1 ? `calc(${(col / cols) * 100}% + ${gap / 2 + 1}px)` : 3;
-    const right = cols > 1 ? undefined : 3;
-    return {
-      position: 'absolute',
-      top: Math.max(0, top),
-      height,
-      left,
-      right,
-      width,
-      background: `${ev.color ?? '#6366f1'}40`, // ~25 % statt 16 % — deutlich präsenter
-      borderLeft: `3px solid ${ev.color ?? '#6366f1'}`,
-      borderRadius: 6,
-      padding: '2px 6px',
-      overflow: 'hidden',
-      zIndex: 2,
-      cursor: 'default',
-    };
-  }
-
-  // Aktuelle Uhrzeit als Minuten seit Mitternacht (oder null vor Hydration)
-  const nowMinutes = nowTick ? nowTick.getHours() * 60 + nowTick.getMinutes() : null;
-  const nowTopPx = nowMinutes !== null ? ((nowMinutes / 60) - START_H) * slotH : null;
-  const todayIndex = nowTick ? days.findIndex(d => d.getTime() === new Date(nowTick).setHours(0, 0, 0, 0)) : -1;
-  const showNowLine = nowTopPx !== null && nowTopPx >= 0 && nowTopPx <= HOURS * slotH && todayIndex >= 0;
-
-  // Wochenend-Spalten deutlich aber harmonisch abheben (Sa = 6, So = 0)
-  const weekendBg = '#f0ead7';
-
-  return (
-    <div className="flex flex-col h-full">
-      <PageHeader title="Kalender" variant="page" />
-
-      {showModal && (
-        <NewEventModal
-          initialDate={modalDate}
-          onClose={() => setShowModal(false)}
-          onCreated={() => { setShowModal(false); loadEvents(); }}
-        />
-      )}
-
-      <div className="flex flex-col flex-1 overflow-hidden px-6 pb-6 gap-4">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <button
-          onClick={() => setWeekOffset(w => w - 1)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-black/5"
-          style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
-          aria-label="Vorherige Woche"
-        ><i className="ti ti-chevron-left" style={{ fontSize: 16, color: '#6b6760' }} /></button>
-        <button
-          onClick={() => setWeekOffset(w => w + 1)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-black/5"
-          style={{ border: '0.5px solid rgba(0,0,0,0.12)' }}
-          aria-label="Nächste Woche"
-        ><i className="ti ti-chevron-right" style={{ fontSize: 16, color: '#6b6760' }} /></button>
-        <span className="text-sm font-medium font-sans" style={{ color: '#1a1814', minWidth: 200 }}>
-          {weekLabel}
-        </span>
-        <button
-          onClick={() => setWeekOffset(0)}
-          className="px-3 py-1 rounded-lg text-xs font-sans transition-all hover:bg-black/5"
-          style={{ border: '0.5px solid rgba(0,0,0,0.12)', color: '#6b6760' }}
-        >
-          Heute
-        </button>
-        {/* Neuer Termin Button */}
-        <button
-          onClick={() => openModal()}
-          className="ml-auto px-4 py-1.5 rounded-lg text-xs font-sans font-medium transition-all hover:opacity-90 flex items-center gap-1.5"
-          style={{ background: '#e85d3a', color: '#fff', border: 'none' }}
-        >
-          <i className="ti ti-plus" style={{ fontSize: 13 }} aria-hidden="true" /> Termin
-        </button>
-      </div>
-
-      {/* Calendar grid */}
-      <div
-        className="flex-1 overflow-hidden rounded-2xl flex flex-col min-h-0"
-        style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
-      >
-        {/* Day headers */}
-        <div className="grid flex-shrink-0" style={{ gridTemplateColumns: '56px repeat(7, 1fr)', borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}>
-          <div />
-          {days.map(d => {
-            const isToday = d.getTime() === today.getTime();
-            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-            return (
+            {/* Header row */}
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: '90px repeat(5, 1fr)',
+                borderBottom: '0.5px solid rgba(0,0,0,0.07)',
+              }}
+            >
               <div
-                key={d.toISOString()}
-                className="py-2 text-center cursor-pointer hover:bg-black/[0.02] transition-colors"
                 style={{
                   borderRight: '0.5px solid rgba(0,0,0,0.07)',
-                  background: isWeekend ? weekendBg : undefined,
+                  background: '#fafaf9',
                 }}
-                onClick={() => openModal(d)}
-              >
-                <div className="text-[10px] font-sans font-semibold uppercase tracking-wide" style={{ color: isToday ? '#e85d3a' : '#7a7874' }}>
-                  {DAYS_SHORT[d.getDay()]}
+              />
+              {DAYS.map((day, di) => (
+                <div
+                  key={day}
+                  className="py-3 flex items-center justify-center"
+                  style={{
+                    borderRight: di < 4 ? '0.5px solid rgba(0,0,0,0.07)' : 'none',
+                    background: '#fafaf9',
+                  }}
+                >
+                  <span
+                    className="text-[11px] font-sans font-semibold uppercase tracking-wider"
+                    style={{ color: '#a09d99' }}
+                  >
+                    {day}
+                  </span>
                 </div>
-                <div className={`text-lg font-[Georgia] mt-0.5 mx-auto leading-tight ${isToday ? 'w-8 h-8 rounded-full flex items-center justify-center text-white' : ''}`}
-                  style={isToday ? { background: '#e85d3a' } : { color: '#1a1814' }}>
-                  {d.getDate()}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
 
-        {/* All-day row — leicht abgesetzter Hintergrund */}
+            {/* Slot rows */}
+            {SLOTS.map((slotLabel, si) => {
+              // Skip rendering slot 1 row-header + cells when ALL days have merged HU
+              // (not feasible cleanly — instead handle per-cell)
+              const isSlot1 = si === 1;
+
+              return (
+                <div
+                  key={si}
+                  className="grid"
+                  style={{
+                    gridTemplateColumns: '90px repeat(5, 1fr)',
+                    borderBottom:
+                      si < SLOTS.length - 1
+                        ? '0.5px solid rgba(0,0,0,0.07)'
+                        : 'none',
+                  }}
+                >
+                  {/* Time label */}
+                  <div
+                    className="px-2 py-2 flex items-center justify-end"
+                    style={{
+                      borderRight: '0.5px solid rgba(0,0,0,0.07)',
+                      background: '#fafaf9',
+                    }}
+                  >
+                    <span
+                      className="text-[10px] font-sans text-right leading-tight"
+                      style={{ color: '#a09d99' }}
+                    >
+                      {slotLabel}
+                    </span>
+                  </div>
+
+                  {/* Day cells */}
+                  {DAYS.map((day, di) => {
+                    const key = `${day}_${si}`;
+                    const lesson = tt[key];
+
+                    // Merge detection: slot 0 merged with slot 1
+                    const merged = isMergedPair(day);
+                    const isTopOfMerge = si === 0 && merged;
+                    const isBottomOfMerge = isSlot1 && merged;
+
+                    // Bottom half of merge: show empty continuation
+                    if (isBottomOfMerge) {
+                      return (
+                        <button
+                          key={day}
+                          onClick={() => openEdit(day, si)}
+                          className="relative p-1.5 text-left group"
+                          style={{
+                            borderRight:
+                              di < 4 ? '0.5px solid rgba(0,0,0,0.07)' : 'none',
+                            minHeight: 44,
+                          }}
+                        >
+                          {/* Colored continuation bar (no text) */}
+                          <div
+                            className="w-full h-full rounded-b-lg"
+                            style={{
+                              background: lesson.bg,
+                              marginTop: -6,
+                              borderBottomLeftRadius: 8,
+                              borderBottomRightRadius: 8,
+                            }}
+                          />
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => openEdit(day, si)}
+                        className="relative p-1.5 text-left transition-all group"
+                        style={{
+                          borderRight:
+                            di < 4 ? '0.5px solid rgba(0,0,0,0.07)' : 'none',
+                          minHeight: isTopOfMerge ? 44 : 44,
+                        }}
+                      >
+                        {lesson ? (
+                          <div
+                            className="w-full h-full px-2 py-1.5 flex items-center"
+                            style={{
+                              background: lesson.bg,
+                              borderRadius: isTopOfMerge
+                                ? '8px 8px 0 0'
+                                : '8px',
+                              marginBottom: isTopOfMerge ? -6 : 0,
+                            }}
+                          >
+                            <span
+                              className="text-xs font-sans font-medium truncate"
+                              style={{ color: lesson.fg }}
+                            >
+                              {lesson.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <div
+                            className="w-full h-full rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ background: '#f0ede8' }}
+                          >
+                            <i
+                              className="ti ti-plus"
+                              style={{ fontSize: 14, color: '#a09d99' }}
+                            />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ---- Edit modal ---- */}
+      {editing && (
         <div
-          className="grid flex-shrink-0"
-          style={{
-            gridTemplateColumns: '56px repeat(7, 1fr)',
-            borderBottom: '0.5px solid rgba(0,0,0,0.07)',
-            minHeight: 28,
-            background: '#fafaf9',
+          className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ background: 'rgba(0,0,0,0.35)' }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setEditing(null);
           }}
         >
-          <div className="flex items-center justify-end pr-2">
-            <span className="text-[9px] font-sans" style={{ color: '#7a7874' }}>ganztags</span>
-          </div>
-          {days.map(d => {
-            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-            return (
-              <div
-                key={d.toISOString()}
-                className="p-0.5"
-                style={{
-                  borderRight: '0.5px solid rgba(0,0,0,0.07)',
-                  background: isWeekend ? weekendBg : undefined,
-                }}
-              >
-                {eventsForDay(d, true).map(ev => (
-                  <div
-                    key={ev.id}
-                    className="text-[11px] font-sans font-medium rounded px-1.5 py-0.5 mb-0.5 truncate"
-                    style={{
-                      background: `${ev.color ?? '#6366f1'}38`,
-                      color: ev.color ?? '#6366f1',
-                    }}
-                  >
-                    {ev.title}
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
+          <div className="rounded-2xl p-6 w-80 shadow-xl" style={{ background: '#fff' }}>
+            <div
+              className="text-base font-sans font-medium mb-4"
+              style={{ color: '#1a1814' }}
+            >
+              {editing.day} · {SLOT_LABELS[editing.slot]} Stunde
+            </div>
 
-        {/* Time body — füllt restliche Höhe, kein Scroll */}
-        <div ref={bodyRef} className="flex-1 grid min-h-0 overflow-hidden" style={{ gridTemplateColumns: '56px repeat(7, 1fr)' }}>
-          {/* Time labels */}
-          <div className="flex flex-col">
-            {Array.from({ length: HOURS }, (_, i) => (
-              <div
-                key={i}
-                className="flex-shrink-0 flex items-start justify-end pr-2 pt-0.5"
-                style={{ height: slotH, borderBottom: '0.5px solid rgba(0,0,0,0.07)' }}
-              >
-                <span className="text-[10px] font-sans" style={{ color: '#7a7874' }}>{START_H + i}:00</span>
-              </div>
-            ))}
-          </div>
+            {/* Subject input */}
+            <label
+              className="text-[11px] font-sans font-semibold uppercase tracking-wider block mb-1.5"
+              style={{ color: '#a09d99' }}
+            >
+              Fach
+            </label>
+            <input
+              ref={inputRef}
+              autoFocus
+              value={editName}
+              onChange={e => handleEditNameChange(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && saveLesson()}
+              placeholder="z.B. Englisch"
+              className="w-full rounded-xl px-3 py-2.5 text-sm font-sans outline-none mb-2"
+              style={{
+                background: '#f5f3f0',
+                color: '#1a1814',
+                border: '0.5px solid rgba(0,0,0,0.1)',
+              }}
+            />
 
-          {/* Day columns */}
-          {days.map((d, dayIdx) => {
-            const isTodayCol = dayIdx === todayIndex;
-            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-            return (
-              <div
-                key={d.toISOString()}
-                className="relative"
-                style={{
-                  borderRight: '0.5px solid rgba(0,0,0,0.07)',
-                  background: isWeekend ? weekendBg : undefined,
-                }}
-              >
-                {/* Hour slots — mit dezenter Halbstunden-Linie */}
-                {Array.from({ length: HOURS }, (_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      height: slotH,
-                      borderBottom: '0.5px solid rgba(0,0,0,0.07)',
-                      backgroundImage: 'linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(0,0,0,0.035) calc(50% - 0.5px), rgba(0,0,0,0.035) 50%, transparent 50%)',
-                    }}
-                  />
-                ))}
-
-                {/* Events — einheitliches Layout: Titel oben, Zeit-Spanne darunter */}
-                {layoutEvents(eventsForDay(d, false)).map(ev => {
-                  const { tier } = eventMetrics(ev);
-                  const startStr = new Date(ev.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                  const endStr   = new Date(ev.end).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                  const timeStr  = `${startStr} – ${endStr}`;
-                  const evColor  = ev.color ?? '#6366f1';
-
+            {/* Subject suggestions — tippbare Chips */}
+            {suggestions.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {suggestions.map(s => {
+                  const sc = subjectColors[s];
                   return (
-                    <div key={ev.id} style={eventStyle(ev, ev.col, ev.cols)}>
-                      {/* Titel — 1 oder 2 Zeilen je nach verfügbarer Höhe */}
-                      <div
-                        className="font-semibold font-sans"
-                        style={{
-                          fontSize: 11,
-                          color: evColor,
-                          lineHeight: 1.15,
-                          ...(tier === 'full' ? {
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical' as const,
-                            overflow: 'hidden',
-                            wordBreak: 'break-word',
-                          } : {
-                            whiteSpace: 'nowrap' as const,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }),
-                        }}
-                      >
-                        {ev.title}
-                      </div>
-                      {/* Zeit-Spanne — immer dasselbe Format, ggf. mit Ellipsis bei sehr engen Spalten */}
-                      <div
-                        className="font-sans"
-                        style={{
-                          fontSize: 10,
-                          color: '#5f5e5a',
-                          marginTop: 1,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {timeStr}
-                      </div>
-                    </div>
+                    <button
+                      key={s}
+                      onClick={() => selectSuggestion(s)}
+                      className="px-2 py-1 rounded-lg text-[11px] font-sans font-medium transition-all hover:opacity-80"
+                      style={{
+                        background: sc?.bg ?? '#f0ede8',
+                        color: sc?.fg ?? '#6b6760',
+                      }}
+                    >
+                      {s}
+                    </button>
                   );
                 })}
-
-                {/* „Jetzt"-Linie nur in der heutigen Spalte */}
-                {isTodayCol && showNowLine && nowTopPx !== null && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: nowTopPx,
-                      left: 0,
-                      right: 0,
-                      height: 0,
-                      borderTop: '1.5px solid #e85d3a',
-                      zIndex: 3,
-                      pointerEvents: 'none',
-                    }}
-                    aria-hidden="true"
-                  >
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: -5,
-                        top: -5,
-                        width: 9,
-                        height: 9,
-                        borderRadius: '50%',
-                        background: '#e85d3a',
-                      }}
-                    />
-                  </div>
-                )}
               </div>
-            );
-          })}
+            )}
+
+            {/* Color picker */}
+            <label
+              className="text-[11px] font-sans font-semibold uppercase tracking-wider block mb-2"
+              style={{ color: '#a09d99' }}
+            >
+              Farbe
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {COLORS.map(c => (
+                <button
+                  key={c.fg}
+                  onClick={() => setEditColor(c)}
+                  className="w-7 h-7 rounded-full transition-all"
+                  style={{
+                    background: c.bg,
+                    border:
+                      editColor.fg === c.fg
+                        ? `2.5px solid ${c.fg}`
+                        : '2.5px solid transparent',
+                  }}
+                  title={c.label}
+                />
+              ))}
+            </div>
+
+            {/* "Auch 2. Stunde" checkbox — only when editing slot 0 */}
+            {editing.slot === 0 && (
+              <label
+                className="flex items-center gap-2 mb-4 cursor-pointer select-none"
+                onClick={() => setFillBoth(v => !v)}
+              >
+                <span
+                  className="w-5 h-5 rounded flex items-center justify-center text-xs transition-all"
+                  style={{
+                    background: fillBoth ? '#1a1814' : '#f0ede8',
+                    color: fillBoth ? '#fff' : 'transparent',
+                    border: '0.5px solid rgba(0,0,0,0.15)',
+                  }}
+                >
+                  ✓
+                </span>
+                <span className="text-xs font-sans" style={{ color: '#6b6760' }}>
+                  Auch 2. Stunde (HU-Block)
+                </span>
+              </label>
+            )}
+
+            {/* Preview */}
+            {editName.trim() && (
+              <div
+                className="rounded-lg px-3 py-2 mb-4 flex items-center"
+                style={{ background: editColor.bg }}
+              >
+                <span
+                  className="text-sm font-sans font-medium"
+                  style={{ color: editColor.fg }}
+                >
+                  {editName.trim()}
+                </span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setEditName('');
+                  saveLesson();
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-sans transition-all"
+                style={{ background: '#f5f3f0', color: '#6b6760' }}
+              >
+                Löschen
+              </button>
+              <button
+                onClick={saveLesson}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl text-sm font-sans font-medium transition-all"
+                style={{ background: saving ? '#ccc' : '#1a1814', color: '#fff' }}
+              >
+                {saving ? 'Speichern…' : 'Speichern'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-      </div>
+      )}
     </div>
   );
 }

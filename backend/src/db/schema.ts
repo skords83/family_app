@@ -326,4 +326,11 @@ CREATE TABLE IF NOT EXISTS timetables (
   data       JSONB NOT NULL DEFAULT '{}',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Globale Fachfarben: einmal festgelegt, gelten für alle Stundenpläne
+CREATE TABLE IF NOT EXISTS timetable_subject_colors (
+  subject    TEXT PRIMARY KEY,
+  bg         TEXT NOT NULL,
+  fg         TEXT NOT NULL
+);
 `;
