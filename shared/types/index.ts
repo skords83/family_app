@@ -12,6 +12,8 @@ export interface User {
   color: string;
   pin: string | null;
   role: 'child' | 'parent';
+  /** ISO-Datum YYYY-MM-DD oder null. Bestimmt den Alters-Multiplikator für Belohnungen. */
+  birthdate: string | null;
 }
 
 export interface TaskTemplate {
@@ -46,8 +48,13 @@ export interface PointEvent {
 export interface Reward {
   id: string;
   title: string;
+  /** Basispreis. Tatsächlicher Preis beim Einlösen = `effective_cost`. */
   points_cost: number;
-  available_to: string | null;
+  /** Vom Backend pro Anfrage berechnet: points_cost × Altersfaktor des `user_id`-Parameters. */
+  effective_cost?: number;
+  /** Verwendeter Multiplikator (z.B. 0.6, 1.0, 1.6, 2.0). */
+  age_factor?: number;
+  available_to: string[] | null;
   active: boolean;
 }
 
@@ -57,6 +64,8 @@ export interface RewardClaim {
   user_id: string;
   claimed_at: string;
   approved_at: string | null;
+  /** Tatsächlich abgebuchte Punkte (Audit-Trail; kann von points_cost abweichen). */
+  points_spent: number | null;
   reward_title?: string;
 }
 

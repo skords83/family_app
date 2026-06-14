@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { emitSSE } from '../sse';
+import { ageFactorFromBirthdate, effectiveRewardCost } from '../lib/age-factor';
 
 export const rewardsRouter = Router();
 
@@ -17,7 +18,19 @@ async function verifyParentPin(pin: string): Promise<boolean> {
   return result.rows.length > 0;
 }
 
-// GET /api/rewards - all active rewards with available_to filter
+/** Look up a user's birthdate (or null). Returns null if user not found. */
+async function getUserBirthdate(userId: string): Promise<Date | null> {
+  const r = await pool.query<{ birthdate: Date | null }>(
+    `SELECT birthdate FROM users WHERE id = $1`,
+    [userId]
+  );
+  if (r.rows.length === 0) return null;
+  return r.rows[0].birthdate;
+}
+
+// GET /api/rewards - all active rewards with available_to filter.
+// When `user_id` is provided, each reward is annotated with `effective_cost`
+// and `age_factor` computed from that user's birthdate.
 rewardsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const { user_id, admin } = req.query;
@@ -44,7 +57,21 @@ rewardsRouter.get('/', async (req: Request, res: Response) => {
     query += ` ORDER BY r.points_cost ASC`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+
+    // Annotate with effective_cost based on user's age (1.0× if no user_id given)
+    let factor = 1.0;
+    if (user_id) {
+      const birthdate = await getUserBirthdate(user_id as string);
+      factor = ageFactorFromBirthdate(birthdate);
+    }
+
+    const rows = result.rows.map((r) => ({
+      ...r,
+      effective_cost: effectiveRewardCost(r.points_cost, factor),
+      age_factor: Number(factor.toFixed(2)),
+    }));
+
+    res.json(rows);
   } catch (err) {
     console.error('Error fetching rewards:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -52,6 +79,7 @@ rewardsRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/rewards/claims - get claims (admin: all; user: filtered by user_id)
+// `points_cost` reflects the actual amount spent (falls back to reward base for legacy claims).
 rewardsRouter.get('/claims', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.query;
@@ -65,8 +93,10 @@ rewardsRouter.get('/claims', async (req: Request, res: Response) => {
         rc.approved_at,
         rc.rejected_at,
         rc.reject_reason,
+        rc.points_spent,
         r.title AS reward_title,
-        r.points_cost,
+        COALESCE(rc.points_spent, r.points_cost) AS points_cost,
+        r.points_cost AS base_cost,
         u.name AS user_name,
         u.avatar AS user_avatar,
         u.photo AS user_photo,
@@ -125,7 +155,7 @@ rewardsRouter.post('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/rewards/:id/claim - claim a reward (user)
-// NOTE: :id here is the reward id
+// NOTE: :id here is the reward id. Charges effective_cost = points_cost × age_factor.
 rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -152,6 +182,11 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Reward not available to this user' });
     }
 
+    // Compute effective cost from user's age
+    const birthdate = await getUserBirthdate(user_id);
+    const factor = ageFactorFromBirthdate(birthdate);
+    const cost = effectiveRewardCost(reward.points_cost, factor);
+
     // Get user's current point balance
     const balanceResult = await pool.query(`
       SELECT COALESCE(SUM(points), 0)::integer AS balance
@@ -161,33 +196,35 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
 
     const balance = balanceResult.rows[0].balance;
 
-    if (balance < reward.points_cost) {
+    if (balance < cost) {
       return res.status(400).json({
         error: 'Insufficient points',
         balance,
-        required: reward.points_cost,
+        required: cost,
       });
     }
 
-    // Insert claim and deduct points
+    // Insert claim with the actual amount spent
     const claimResult = await pool.query(`
-      INSERT INTO reward_claims (reward_id, user_id)
-      VALUES ($1, $2)
+      INSERT INTO reward_claims (reward_id, user_id, points_spent)
+      VALUES ($1, $2, $3)
       RETURNING *
-    `, [id, user_id]);
+    `, [id, user_id, cost]);
 
     // Deduct points immediately
     await pool.query(`
       INSERT INTO point_events (user_id, points, reason)
       VALUES ($1, $2, $3)
-    `, [user_id, -reward.points_cost, `reward:${claimResult.rows[0].id}`]);
+    `, [user_id, -cost, `reward:${claimResult.rows[0].id}`]);
 
     emitSSE({ type: 'reward_claimed', data: { reward_id: id, user_id } });
     emitSSE({ type: 'points_updated', data: { user_id } });
     res.status(201).json({
       ...claimResult.rows[0],
       reward_title: reward.title,
-      points_spent: reward.points_cost,
+      points_spent: cost,
+      base_cost: reward.points_cost,
+      age_factor: Number(factor.toFixed(2)),
     });
   } catch (err) {
     console.error('Error claiming reward:', err);
@@ -232,7 +269,8 @@ rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
 });
 
 // POST /api/rewards/:id/reject - reject a reward claim + refund points (parent only)
-// NOTE: :id here is the claim id
+// NOTE: :id here is the claim id. Refunds the actual amount spent (points_spent),
+// falling back to the reward's base points_cost for legacy claims (pre-age-factor).
 rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -247,9 +285,12 @@ rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid parent PIN' });
     }
 
-    // Fetch the claim to get user_id and points_cost for refund
+    // Fetch the claim — refund uses points_spent if present, else falls back to base cost
     const claimResult = await pool.query(`
-      SELECT rc.*, r.points_cost, r.title AS reward_title
+      SELECT
+        rc.*,
+        r.title AS reward_title,
+        COALESCE(rc.points_spent, r.points_cost)::integer AS refund_amount
       FROM reward_claims rc
       JOIN rewards r ON rc.reward_id = r.id
       WHERE rc.id = $1 AND rc.approved_at IS NULL AND rc.rejected_at IS NULL
@@ -260,6 +301,7 @@ rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
     }
 
     const claim = claimResult.rows[0];
+    const refundAmount: number = claim.refund_amount;
 
     // Mark as rejected
     await pool.query(`
@@ -272,12 +314,12 @@ rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
     await pool.query(`
       INSERT INTO point_events (user_id, points, reason)
       VALUES ($1, $2, $3)
-    `, [claim.user_id, claim.points_cost, `reward_rejected:${id}`]);
+    `, [claim.user_id, refundAmount, `reward_rejected:${id}`]);
 
     emitSSE({ type: 'reward_claimed', data: { claim_id: id, user_id: claim.user_id } });
     emitSSE({ type: 'points_updated', data: { user_id: claim.user_id } });
 
-    res.json({ success: true, refunded: claim.points_cost });
+    res.json({ success: true, refunded: refundAmount });
   } catch (err) {
     console.error('Error rejecting reward claim:', err);
     res.status(500).json({ error: 'Internal server error' });

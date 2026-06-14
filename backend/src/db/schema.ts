@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   photo TEXT,
   color TEXT NOT NULL DEFAULT '#6366f1',
   pin TEXT,
-  role TEXT NOT NULL CHECK (role IN ('child', 'parent'))
+  role TEXT NOT NULL CHECK (role IN ('child', 'parent')),
+  birthdate DATE
 );
 
 -- Add photo column if it doesn't exist yet (safe migration)
@@ -18,6 +19,16 @@ DO $$ BEGIN
     WHERE table_name='users' AND column_name='photo'
   ) THEN
     ALTER TABLE users ADD COLUMN photo TEXT;
+  END IF;
+END $$;
+
+-- Add birthdate column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='users' AND column_name='birthdate'
+  ) THEN
+    ALTER TABLE users ADD COLUMN birthdate DATE;
   END IF;
 END $$;
 
@@ -240,8 +251,41 @@ CREATE TABLE IF NOT EXISTS reward_claims (
   reward_id UUID NOT NULL REFERENCES rewards(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  approved_at TIMESTAMPTZ
+  approved_at TIMESTAMPTZ,
+  rejected_at TIMESTAMPTZ,
+  reject_reason TEXT,
+  points_spent INTEGER
 );
+
+-- Add rejected_at column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='reward_claims' AND column_name='rejected_at'
+  ) THEN
+    ALTER TABLE reward_claims ADD COLUMN rejected_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+-- Add reject_reason column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='reward_claims' AND column_name='reject_reason'
+  ) THEN
+    ALTER TABLE reward_claims ADD COLUMN reject_reason TEXT;
+  END IF;
+END $$;
+
+-- Add points_spent column if it doesn't exist yet (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='reward_claims' AND column_name='points_spent'
+  ) THEN
+    ALTER TABLE reward_claims ADD COLUMN points_spent INTEGER;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS calendar_cache (
   id SERIAL PRIMARY KEY,

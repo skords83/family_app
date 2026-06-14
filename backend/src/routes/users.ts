@@ -1,18 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { getTodayInAppTz } from '../utils/date';
-import { ensureTodayTasksGenerated } from '../jobs/generateDailyTasks';
 
 export const usersRouter = Router();
 
 // GET /api/users – all users with points + today's task progress
 usersRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    // Self-heal: if cron was missed / failed, generate today's instances now.
-    // Memoised per date — no DB cost once today is covered.
-    await ensureTodayTasksGenerated();
-
-    const today = getTodayInAppTz();
+    const today = new Date().toISOString().split('T')[0];
     const result = await pool.query(`
       SELECT
         u.id,
@@ -21,6 +15,7 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
         u.photo,
         u.color,
         u.role,
+        u.birthdate,
         COALESCE(pe.total_points, 0)::integer AS points,
         COALESCE(ti.tasks_total, 0)::integer AS tasks_total,
         COALESCE(ti.tasks_done, 0)::integer AS tasks_done
@@ -51,10 +46,8 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
 // GET /api/users/:id – single user with points + task progress
 usersRouter.get('/:id', async (req: Request, res: Response) => {
   try {
-    await ensureTodayTasksGenerated();
-
     const { id } = req.params;
-    const today = getTodayInAppTz();
+    const today = new Date().toISOString().split('T')[0];
     const result = await pool.query(`
       SELECT
         u.id,
@@ -63,6 +56,7 @@ usersRouter.get('/:id', async (req: Request, res: Response) => {
         u.photo,
         u.color,
         u.role,
+        u.birthdate,
         COALESCE(pe.total_points, 0)::integer AS points,
         COALESCE(ti.tasks_total, 0)::integer AS tasks_total,
         COALESCE(ti.tasks_done, 0)::integer AS tasks_done
@@ -116,24 +110,33 @@ usersRouter.post('/:id/photo', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/users/:id – update name / avatar / color / pin
+// PUT /api/users/:id – update name / avatar / color / pin / birthdate
 usersRouter.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, avatar, color, pin } = req.body as {
-      name?: string; avatar?: string; color?: string; pin?: string;
+    const { name, avatar, color, pin, birthdate } = req.body as {
+      name?: string;
+      avatar?: string;
+      color?: string;
+      pin?: string;
+      birthdate?: string | null;
     };
+
+    // birthdate explicitly nullable — treat null as "clear", undefined as "leave alone"
+    const birthdateSql = birthdate === undefined ? null : birthdate;
+    const birthdateChanged = birthdate !== undefined;
 
     const result = await pool.query(`
       UPDATE users
       SET
-        name   = COALESCE($1, name),
-        avatar = COALESCE($2, avatar),
-        color  = COALESCE($3, color),
-        pin    = COALESCE($4, pin)
-      WHERE id = $5
-      RETURNING id, name, avatar, photo, color, role
-    `, [name, avatar, color, pin, id]);
+        name      = COALESCE($1, name),
+        avatar    = COALESCE($2, avatar),
+        color     = COALESCE($3, color),
+        pin       = COALESCE($4, pin),
+        birthdate = CASE WHEN $6::boolean THEN $5::date ELSE birthdate END
+      WHERE id = $7
+      RETURNING id, name, avatar, photo, color, role, birthdate
+    `, [name, avatar, color, pin, birthdateSql, birthdateChanged, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -148,22 +151,28 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
 // POST /api/users – create new user (admin)
 usersRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, avatar, color, pin, role } = req.body as {
-      name: string; avatar?: string; color?: string; pin?: string; role?: string;
+    const { name, avatar, color, pin, role, birthdate } = req.body as {
+      name: string;
+      avatar?: string;
+      color?: string;
+      pin?: string;
+      role?: string;
+      birthdate?: string | null;
     };
 
     if (!name) return res.status(400).json({ error: 'name is required' });
 
     const result = await pool.query(`
-      INSERT INTO users (name, avatar, color, pin, role)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, name, avatar, photo, color, role
+      INSERT INTO users (name, avatar, color, pin, role, birthdate)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, name, avatar, photo, color, role, birthdate
     `, [
       name,
       avatar ?? '👤',
       color ?? '#6366f1',
       pin ?? null,
       role ?? 'child',
+      birthdate ?? null,
     ]);
 
     res.status(201).json(result.rows[0]);
