@@ -1,13 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { toBerlinDateStr } from '../utils/date';
+import { getTodayInAppTz } from '../utils/date';
+import { ensureTodayTasksGenerated } from '../jobs/generateDailyTasks';
 
 export const usersRouter = Router();
 
 // GET /api/users – all users with points + today's task progress
 usersRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    const today = toBerlinDateStr();
+    // Self-heal: if cron was missed / failed, generate today's instances now.
+    // Memoised per date — no DB cost once today is covered.
+    await ensureTodayTasksGenerated();
+
+    const today = getTodayInAppTz();
     const result = await pool.query(`
       SELECT
         u.id,
@@ -46,8 +51,10 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
 // GET /api/users/:id – single user with points + task progress
 usersRouter.get('/:id', async (req: Request, res: Response) => {
   try {
+    await ensureTodayTasksGenerated();
+
     const { id } = req.params;
-    const today = toBerlinDateStr();
+    const today = getTodayInAppTz();
     const result = await pool.query(`
       SELECT
         u.id,

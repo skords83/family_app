@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { v4 as uuidv4 } from 'uuid';
 import { emitSSE } from '../sse';
-import { generateDailyTasks } from '../jobs/generateDailyTasks';
+import { generateDailyTasks, ensureTodayTasksGenerated } from '../jobs/generateDailyTasks';
+import { getTodayInAppTz, pgDateToStr } from '../utils/date';
 
 export const tasksRouter = Router();
 
@@ -38,30 +39,6 @@ function extractUserId(value: unknown): string {
   return String(value);
 }
 
-/**
- * Convert a DATE column value to YYYY-MM-DD string in local time.
- * pg returns DATE as JS Date in local TZ — use getters, not toISOString().
- */
-function dateToLocalStr(value: unknown): string | null {
-  if (!value) return null;
-  if (value instanceof Date) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, '0');
-    const d = String(value.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  // Already a string like "2026-06-20" or "2026-06-20T00:00:00.000Z"
-  return String(value).split('T')[0];
-}
-
-function todayLocalStr(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 async function verifyParentPin(pin: string): Promise<boolean> {
   const result = await pool.query(
     `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
@@ -73,7 +50,11 @@ async function verifyParentPin(pin: string): Promise<boolean> {
 // GET /api/tasks/today - return task_instances for today, joined with template
 tasksRouter.get('/today', async (_req: Request, res: Response) => {
   try {
-    const today = todayLocalStr();
+    // Self-heal: if cron was missed / failed, generate now.
+    // Memoised per date — no DB cost once today is covered.
+    await ensureTodayTasksGenerated();
+
+    const today = getTodayInAppTz();
     const result = await pool.query(`
       SELECT
         ti.id,
@@ -326,9 +307,9 @@ tasksRouter.get('/templates', async (_req: Request, res: Response) => {
     const rows = result.rows.map((t) => ({
       ...t,
       assigned_to: normaliseAssignedTo(t.assigned_to),
-      due_date: dateToLocalStr(t.due_date),
-      valid_from: dateToLocalStr(t.valid_from),
-      valid_until: dateToLocalStr(t.valid_until),
+      due_date: pgDateToStr(t.due_date),
+      valid_from: pgDateToStr(t.valid_from),
+      valid_until: pgDateToStr(t.valid_until),
     }));
 
     res.json(rows);
@@ -398,9 +379,9 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     const created = {
       ...createdRow,
       assigned_to: normaliseAssignedTo(createdRow.assigned_to),
-      due_date: dateToLocalStr(createdRow.due_date),
-      valid_from: dateToLocalStr(createdRow.valid_from),
-      valid_until: dateToLocalStr(createdRow.valid_until),
+      due_date: pgDateToStr(createdRow.due_date),
+      valid_from: pgDateToStr(createdRow.valid_from),
+      valid_until: pgDateToStr(createdRow.valid_until),
     };
 
     res.status(201).json(created);
@@ -408,9 +389,12 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     // For once-templates with no due_date OR due_date <= today, trigger immediate
     // instance generation so the task appears right away (no waiting for cron).
     // Fire-and-forget: the response is already sent.
+    // Direct generateDailyTasks() — not ensureTodayTasksGenerated() — because we
+    // want to bypass the per-day memo cache (a new template may need new rows
+    // even if today was already "ensured" earlier).
     if (recurrence === 'once') {
-      const today = todayLocalStr();
-      const dueStr = dateToLocalStr(createdRow.due_date);
+      const today = getTodayInAppTz();
+      const dueStr = pgDateToStr(createdRow.due_date);
       if (!dueStr || dueStr <= today) {
         generateDailyTasks().catch((err) =>
           console.error('[tasks] Immediate generation after create failed:', err),
@@ -419,8 +403,8 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     } else if (active !== false) {
       // For recurring templates starting today (valid_from in the past or null),
       // also trigger an immediate run so the row appears on today's list.
-      const today = todayLocalStr();
-      const fromStr = dateToLocalStr(createdRow.valid_from);
+      const today = getTodayInAppTz();
+      const fromStr = pgDateToStr(createdRow.valid_from);
       if (!fromStr || fromStr <= today) {
         generateDailyTasks().catch((err) =>
           console.error('[tasks] Immediate generation after create failed:', err),
@@ -504,19 +488,20 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
     res.json({
       ...updatedRow,
       assigned_to: normaliseAssignedTo(updatedRow.assigned_to),
-      due_date: dateToLocalStr(updatedRow.due_date),
-      valid_from: dateToLocalStr(updatedRow.valid_from),
-      valid_until: dateToLocalStr(updatedRow.valid_until),
+      due_date: pgDateToStr(updatedRow.due_date),
+      valid_from: pgDateToStr(updatedRow.valid_from),
+      valid_until: pgDateToStr(updatedRow.valid_until),
     });
 
     // If the patch changes the template into "should be visible today" state,
     // trigger an immediate generation. Cheap due to idempotency (UNIQUE constraint).
+    // Direct generateDailyTasks() to bypass the per-day memo cache.
     if (updatedRow.active) {
-      const today = todayLocalStr();
+      const today = getTodayInAppTz();
       const recur = updatedRow.recurrence;
-      const dueStr = dateToLocalStr(updatedRow.due_date);
-      const fromStr = dateToLocalStr(updatedRow.valid_from);
-      const untilStr = dateToLocalStr(updatedRow.valid_until);
+      const dueStr = pgDateToStr(updatedRow.due_date);
+      const fromStr = pgDateToStr(updatedRow.valid_from);
+      const untilStr = pgDateToStr(updatedRow.valid_until);
 
       const inRange = (!fromStr || fromStr <= today) && (!untilStr || untilStr >= today);
       const onceMatch = recur === 'once' && (!dueStr || dueStr <= today);

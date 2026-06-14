@@ -10,13 +10,12 @@ import { tasksRouter } from './routes/tasks';
 import { pointsRouter, userPointsRouter } from './routes/points';
 import { rewardsRouter } from './routes/rewards';
 import { configRouter } from './routes/config';
-import { timetableRouter } from './routes/timetable';
 import { weatherRouter } from './widgets/weather';
 import { caldavRouter } from './widgets/caldav';
 import { norishRouter } from './widgets/norish';
 import { immichRouter } from './widgets/immich';
 import { wasteRouter, fetchAndStoreWasteEvents } from './widgets/waste';
-import { startDailyTaskCron, generateDailyTasks } from './jobs/generateDailyTasks';
+import { startDailyTaskCron, ensureTodayTasksGenerated } from './jobs/generateDailyTasks';
 import { startWasteCron } from './jobs/refreshWaste';
 import { sseHandler } from './sse';
 
@@ -35,7 +34,6 @@ app.use('/api/tasks', tasksRouter);
 app.use('/api/points', pointsRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/config', configRouter);
-app.use('/api/timetable', timetableRouter);
 app.use('/api/widgets/weather', weatherRouter);
 app.use('/api/widgets/calendar', caldavRouter);
 app.use('/api/widgets/meals', norishRouter);
@@ -51,24 +49,6 @@ async function runMigrations(): Promise<void> {
   try {
     console.log('Running database migrations...');
     await client.query(schema);
-
-    // Timetables-Tabelle (idempotent)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS timetables (
-        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-        data    JSONB NOT NULL DEFAULT '{}',
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    // Subject-colors-Tabelle (global, pro Installation)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS timetable_subject_colors (
-        id   SERIAL PRIMARY KEY,
-        data JSONB NOT NULL DEFAULT '{}'
-      )
-    `);
-
     console.log('Migrations completed.');
   } finally {
     client.release();
@@ -79,8 +59,11 @@ async function start(): Promise<void> {
   try {
     await runMigrations();
 
+    // Catch-up generation on startup — covers the case where the 00:05 cron
+    // was missed (container down, deployment, DB hiccup). Idempotent and
+    // memoised, so safe even if today's instances already exist.
     try {
-      await generateDailyTasks();
+      await ensureTodayTasksGenerated();
     } catch (err) {
       console.error('Initial task generation failed (non-fatal):', err);
     }

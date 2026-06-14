@@ -1,17 +1,62 @@
 /**
- * Shared date utilities for Europe/Berlin timezone.
+ * Date utilities for the Family Organizer backend.
  *
- * NEVER use `new Date().toISOString().split('T')[0]` for local date comparisons —
- * toISOString() returns UTC, which is 1–2 hours behind Berlin (CET/CEST).
- * After midnight UTC (= 02:00 MESZ) the UTC date flips to the next day,
- * breaking every query that compares against dates stored in Berlin time.
+ * The app is anchored to Europe/Berlin (the kiosk timezone). The Node container
+ * itself usually runs in UTC, so naive `new Date().getDate()` returns the UTC
+ * date — wrong by up to ±2h around midnight Berlin time. These helpers use
+ * `Intl.DateTimeFormat` with an explicit `timeZone` parameter, so they are
+ * **independent** of whatever TZ the container is running under.
  *
- * This helper is the project-wide standard and replaces all `.toISOString().split('T')[0]`
- * patterns in the backend. The same pattern already exists in waste.ts (toBerlinDate)
- * and throughout the frontend (toLocalDateStr).
+ * Use these helpers anywhere we need "what day is it for the kiosk users".
+ * Never call `.toISOString().split('T')[0]` or `.getDate()` directly for this.
  */
 
-/** YYYY-MM-DD in Europe/Berlin — safe for DB date comparisons */
-export function toBerlinDateStr(d: Date = new Date()): string {
-  return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
+export const APP_TZ = 'Europe/Berlin';
+
+/**
+ * Today's date in Europe/Berlin as `YYYY-MM-DD`.
+ * Works regardless of the container's TZ.
+ */
+export function getTodayInAppTz(): string {
+  return formatDateInAppTz(new Date());
+}
+
+/**
+ * Formats any `Date` as `YYYY-MM-DD` in Europe/Berlin.
+ * Uses the `en-CA` locale because it natively produces ISO-style output.
+ */
+export function formatDateInAppTz(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/**
+ * Returns the day-of-week (0=Sunday … 6=Saturday) for a `YYYY-MM-DD` string.
+ * Anchors to noon UTC so any reasonable timezone interpretation lands on the
+ * same calendar day, then uses `getUTCDay()` for full determinism.
+ */
+export function getDayOfWeek(dateStr: string): number {
+  return new Date(dateStr + 'T12:00:00Z').getUTCDay();
+}
+
+/**
+ * Converts a value from a Postgres `DATE` column to `YYYY-MM-DD`.
+ *
+ * `node-postgres` returns DATE as a `Date` object at UTC midnight. We must
+ * read it back with UTC accessors — local accessors would shift by the
+ * container's TZ offset and produce off-by-one bugs.
+ */
+export function pgDateToStr(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).split('T')[0];
 }
