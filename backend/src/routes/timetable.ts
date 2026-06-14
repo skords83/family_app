@@ -1,7 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { emitSSE } from '../sse';
-
 export const timetableRouter = Router();
 
 // ──────────────────────────────────────────────────────────────────────
@@ -114,7 +112,6 @@ timetableRouter.put('/:userId', async (req: Request, res: Response) => {
       [userId, JSON.stringify(data)],
     );
 
-    emitSSE({ type: 'timetable_updated', data: { user_id: userId } });
     res.json({ ok: true });
   } catch (err) {
     console.error('[timetable] PUT error:', err);
