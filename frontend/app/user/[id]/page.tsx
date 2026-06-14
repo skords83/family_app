@@ -26,6 +26,10 @@ interface CalendarEvent {
 
 interface Reward {
   id: string; title: string; points_cost: number;
+  /** Vom Backend pro Nutzer berechnet: points_cost × Altersfaktor. */
+  effective_cost?: number;
+  /** Verwendeter Multiplikator (0.6 / 1.0 / 1.6 / 2.0 …). */
+  age_factor?: number;
   available_to: string | null; active: boolean;
 }
 
@@ -267,8 +271,8 @@ export default function UserPage() {
   // ── Rewards split ──
   // Only show rewards that have no active pending claim (prevent double-claiming)
   const pendingClaimRewardIds = new Set(pendingClaims.map(c => c.reward_id));
-  const affordable   = rewards.filter(r => r.points_cost <= user.points && !pendingClaimRewardIds.has(r.id));
-  const unaffordable = rewards.filter(r => r.points_cost > user.points && !pendingClaimRewardIds.has(r.id));
+  const affordable   = rewards.filter(r => (r.effective_cost ?? r.points_cost) <= user.points && !pendingClaimRewardIds.has(r.id));
+  const unaffordable = rewards.filter(r => (r.effective_cost ?? r.points_cost) > user.points && !pendingClaimRewardIds.has(r.id));
 
   // ── Calendar events ──
   const SHARED_CALENDARS = ['familie', 'family'];
@@ -556,7 +560,7 @@ export default function UserPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
                     <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#5cb85c' }}>
-                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.points_cost} Punkte · du hast genug!
+                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.effective_cost ?? r.points_cost} Punkte · du hast genug!
                     </p>
                   </div>
                   <span className="text-xs font-sans rounded-full px-3 py-1 font-medium flex-shrink-0" style={{ background: '#bbf7d0', color: '#15803d' }}>Einlösen</span>
@@ -573,11 +577,11 @@ export default function UserPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
                     <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>
-                      Noch {r.points_cost - user.points} Punkte fehlen
+                      Noch {(r.effective_cost ?? r.points_cost) - user.points} Punkte fehlen
                     </p>
                   </div>
                   <span className="text-xs font-sans font-semibold flex-shrink-0 flex items-center gap-1" style={{ color: '#a09d99' }}>
-                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> {r.points_cost}
+                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> {r.effective_cost ?? r.points_cost}
                   </span>
                 </div>
               ))}
