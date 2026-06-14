@@ -88,7 +88,7 @@ export default function TimetablePage() {
         fetch(`${API_BASE}/api/timetable`),
       ]);
       const usersData: User[] = await usersRes.json();
-      const ttData: AllTimetables = await ttRes.json();
+      const ttData: AllTimetables = ttRes.ok ? await ttRes.json() : {};
 
       if (Array.isArray(usersData)) {
         const kids = usersData.filter(u => u.role === 'child');

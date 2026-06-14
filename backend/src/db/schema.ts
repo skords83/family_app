@@ -319,4 +319,11 @@ CREATE TABLE IF NOT EXISTS external_events (
 
 CREATE INDEX IF NOT EXISTS idx_external_events_source_date
   ON external_events (source, date);
+
+-- Stundenplan: ein JSONB-Blob pro Kind (key: "Mo_0", value: { name, bg, fg })
+CREATE TABLE IF NOT EXISTS timetables (
+  user_id    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data       JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
