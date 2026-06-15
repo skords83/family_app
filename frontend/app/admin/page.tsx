@@ -946,68 +946,116 @@ export default function AdminPage() {
                   )}
                 </div>
 
-                {/* Available from (time-of-day gate) */}
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                    Verfügbar ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                  </label>
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="time"
-                      value={newTask.available_from}
-                      onChange={(e) => setNewTask({ ...newTask, available_from: e.target.value })}
-                      className={inputCls}
-                      style={{ ...inputStyle, flex: 1 }}
-                    />
-                    {newTask.available_from && (
-                      <button
-                        type="button"
-                        onClick={() => setNewTask({ ...newTask, available_from: '' })}
-                        className="px-3 py-2 rounded-lg text-xs"
-                        style={{ background: 'var(--family-surface2)', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
-                      >
-                        <Icon name="x" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {[
-                      { label: 'Ganztägig', value: '' },
-                      { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
-                      { label: 'Ab 18:00 (abends)', value: '18:00' },
-                    ].map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => setNewTask({ ...newTask, available_from: preset.value })}
-                        className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
-                        style={{
-                          background: newTask.available_from === preset.value ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
-                          border: `1px solid ${newTask.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
-                          color: newTask.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
-                        }}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--family-text3)' }}>
-                    Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                {/* ── Zeitfenster (Verfügbar ab / Verfügbar bis) ── */}
+                <div
+                  className="rounded-xl p-3 space-y-3"
+                  style={{ background: 'var(--family-surface2)', border: '1px solid #d8d4cf' }}
+                >
+                  <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--family-text2)' }}>
+                    <Icon name="clock-hour-4" />
+                    Zeitfenster <span className="font-normal" style={{ color: 'var(--family-text3)' }}>(opt.)</span>
                   </p>
-                </div>
 
-                {/* Due time */}
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                    Fällig um <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={newTask.due_time}
-                    onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
-                    className={inputCls}
-                    style={inputStyle}
-                  />
+                  {/* Verfügbar ab */}
+                  <div>
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                      Verfügbar ab
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="time"
+                        value={newTask.available_from}
+                        onChange={(e) => setNewTask({ ...newTask, available_from: e.target.value })}
+                        className={inputCls}
+                        style={{ ...inputStyle, flex: 1, background: '#fff' }}
+                      />
+                      {newTask.available_from && (
+                        <button
+                          type="button"
+                          onClick={() => setNewTask({ ...newTask, available_from: '' })}
+                          className="px-3 py-2 rounded-lg text-xs"
+                          style={{ background: '#fff', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                        >
+                          <Icon name="x" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {[
+                        { label: 'Ganztägig', value: '' },
+                        { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
+                        { label: 'Ab 18:00 (abends)', value: '18:00' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setNewTask({ ...newTask, available_from: preset.value })}
+                          className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                          style={{
+                            background: newTask.available_from === preset.value ? 'var(--family-accent)' + '22' : '#fff',
+                            border: `1px solid ${newTask.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
+                            color: newTask.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
+                      Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                    </p>
+                  </div>
+
+                  {/* Verfügbar bis (Deadline) */}
+                  <div>
+                    <label className="text-[11px] mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                      Verfügbar bis
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="time"
+                        value={newTask.due_time}
+                        onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
+                        className={inputCls}
+                        style={{ ...inputStyle, flex: 1, background: '#fff' }}
+                      />
+                      {newTask.due_time && (
+                        <button
+                          type="button"
+                          onClick={() => setNewTask({ ...newTask, due_time: '' })}
+                          className="px-3 py-2 rounded-lg text-xs"
+                          style={{ background: '#fff', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                        >
+                          <Icon name="x" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {[
+                        { label: 'Keine Deadline', value: '' },
+                        { label: 'Bis 10:00', value: '10:00' },
+                        { label: 'Bis 16:00', value: '16:00' },
+                        { label: 'Bis 18:00', value: '18:00' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => setNewTask({ ...newTask, due_time: preset.value })}
+                          className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                          style={{
+                            background: newTask.due_time === preset.value ? '#fff0e6' : '#fff',
+                            border: `1px solid ${newTask.due_time === preset.value ? '#c2410c' : '#d8d4cf'}`,
+                            color: newTask.due_time === preset.value ? '#c2410c' : 'var(--family-text3)',
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
+                      Deadline — danach kann die Aufgabe nicht mehr erledigt werden.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Requires approval toggle */}
@@ -1071,7 +1119,6 @@ export default function AdminPage() {
                     <p className="font-semibold truncate" style={{ color: 'var(--family-text)' }}>{template.title}</p>
                     <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
                       {template.points} Pkt. • {recurrenceLabel(template)} • {assignedLabel(template)}
-                      {template.due_time && ` • ${template.due_time}`}
                       {template.recurrence !== 'once' && (template.valid_from || template.valid_until) && (
                         <span className="ml-1" style={{ color: 'var(--family-text3)' }}>
                           {' '}• {template.valid_from ? `ab ${formatDateDe(template.valid_from)}` : ''}
@@ -1089,6 +1136,11 @@ export default function AdminPage() {
                       {template.available_from && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#dcfce7', color: '#166534' }}>
                           <Icon name="clock" />&nbsp;ab {template.available_from}
+                        </span>
+                      )}
+                      {template.due_time && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#fff0e6', color: '#c2410c' }}>
+                          <Icon name="clock-exclamation" />&nbsp;bis {template.due_time}
                         </span>
                       )}
                       {template.rotation && (
@@ -1777,68 +1829,116 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Available from (time-of-day gate) */}
-              <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                  Verfügbar ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                </label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="time"
-                    value={editForm.available_from}
-                    onChange={(e) => setEditForm({ ...editForm, available_from: e.target.value })}
-                    className={inputCls}
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
-                  {editForm.available_from && (
-                    <button
-                      type="button"
-                      onClick={() => setEditForm({ ...editForm, available_from: '' })}
-                      className="px-3 py-2 rounded-lg text-xs"
-                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
-                    >
-                      <Icon name="x" />
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[
-                    { label: 'Ganztägig', value: '' },
-                    { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
-                    { label: 'Ab 18:00 (abends)', value: '18:00' },
-                  ].map((preset) => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => setEditForm({ ...editForm, available_from: preset.value })}
-                      className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
-                      style={{
-                        background: editForm.available_from === preset.value ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
-                        border: `1px solid ${editForm.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
-                        color: editForm.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[10px] mt-1.5" style={{ color: 'var(--family-text3)' }}>
-                  Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+              {/* ── Zeitfenster (Verfügbar ab / Verfügbar bis) ── */}
+              <div
+                className="rounded-xl p-3 space-y-3"
+                style={{ background: 'var(--family-surface2)', border: '1px solid #d8d4cf' }}
+              >
+                <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--family-text2)' }}>
+                  <Icon name="clock-hour-4" />
+                  Zeitfenster <span className="font-normal" style={{ color: 'var(--family-text3)' }}>(opt.)</span>
                 </p>
-              </div>
 
-              {/* Due time */}
-              <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                  Fällig um <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                </label>
-                <input
-                  type="time"
-                  value={editForm.due_time}
-                  onChange={(e) => setEditForm({ ...editForm, due_time: e.target.value })}
-                  className={inputCls}
-                  style={inputStyle}
-                />
+                {/* Verfügbar ab */}
+                <div>
+                  <label className="text-[11px] mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Verfügbar ab
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="time"
+                      value={editForm.available_from}
+                      onChange={(e) => setEditForm({ ...editForm, available_from: e.target.value })}
+                      className={inputCls}
+                      style={{ ...inputStyle, flex: 1, background: '#fff' }}
+                    />
+                    {editForm.available_from && (
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, available_from: '' })}
+                        className="px-3 py-2 rounded-lg text-xs"
+                        style={{ background: '#fff', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                      >
+                        <Icon name="x" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {[
+                      { label: 'Ganztägig', value: '' },
+                      { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
+                      { label: 'Ab 18:00 (abends)', value: '18:00' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, available_from: preset.value })}
+                        className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                        style={{
+                          background: editForm.available_from === preset.value ? 'var(--family-accent)' + '22' : '#fff',
+                          border: `1px solid ${editForm.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
+                          color: editForm.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
+                    Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                  </p>
+                </div>
+
+                {/* Verfügbar bis (Deadline) */}
+                <div>
+                  <label className="text-[11px] mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Verfügbar bis
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="time"
+                      value={editForm.due_time}
+                      onChange={(e) => setEditForm({ ...editForm, due_time: e.target.value })}
+                      className={inputCls}
+                      style={{ ...inputStyle, flex: 1, background: '#fff' }}
+                    />
+                    {editForm.due_time && (
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, due_time: '' })}
+                        className="px-3 py-2 rounded-lg text-xs"
+                        style={{ background: '#fff', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                      >
+                        <Icon name="x" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {[
+                      { label: 'Keine Deadline', value: '' },
+                      { label: 'Bis 10:00', value: '10:00' },
+                      { label: 'Bis 16:00', value: '16:00' },
+                      { label: 'Bis 18:00', value: '18:00' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, due_time: preset.value })}
+                        className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                        style={{
+                          background: editForm.due_time === preset.value ? '#fff0e6' : '#fff',
+                          border: `1px solid ${editForm.due_time === preset.value ? '#c2410c' : '#d8d4cf'}`,
+                          color: editForm.due_time === preset.value ? '#c2410c' : 'var(--family-text3)',
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
+                    Deadline — danach kann die Aufgabe nicht mehr erledigt werden.
+                  </p>
+                </div>
               </div>
 
               {/* Requires approval toggle */}

@@ -6,6 +6,7 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 interface TaskCardTask {
   id: string; title: string; points: number;
   completed_at: string | null; due_time?: string | null;
+  available_from?: string | null;
 }
 interface TaskCardProps {
   task: TaskCardTask;
@@ -67,7 +68,15 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{task.title}</p>
-        {task.due_time && <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time} Uhr</p>}
+        {task.due_time && (
+          <span
+            className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-semibold"
+            style={{ background: '#fff0e6', color: '#c2410c' }}
+          >
+            <i className="ti ti-clock-exclamation" style={{ fontSize: 11 }} />
+            bis {task.due_time} Uhr
+          </span>
+        )}
       </div>
       <span className="text-xs font-sans font-semibold flex-shrink-0 rounded-full px-2 py-0.5" style={{ color: userColor, background: `${userColor}18` }}>
         +{task.points}⭐
