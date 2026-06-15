@@ -48,6 +48,7 @@ interface TaskTemplate {
   valid_from: string | null;     // YYYY-MM-DD
   valid_until: string | null;    // YYYY-MM-DD
   rotation: boolean;
+  available_from: string | null; // HH:MM — Aufgabe vor dieser Uhrzeit nicht abhakbar
 }
 
 interface Reward {
@@ -159,6 +160,7 @@ export default function AdminPage() {
     valid_from: '',
     valid_until: '',
     rotation: false,
+    available_from: '',
   });
   const [newReward, setNewReward] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
@@ -261,6 +263,7 @@ export default function AdminPage() {
     valid_from: '',
     valid_until: '',
     rotation: false,
+    available_from: '',
   });
 
   const openEdit = (template: TaskTemplate) => {
@@ -272,6 +275,9 @@ export default function AdminPage() {
     if (template.recurrence.startsWith('weekdays:')) {
       weekdays = template.recurrence.replace('weekdays:', '').split(',');
       recurrence = 'weekdays';
+    } else if (template.recurrence.startsWith('biweekly:')) {
+      weekdays = template.recurrence.replace('biweekly:', '').split(',');
+      recurrence = 'biweekly';
     }
     setEditForm({
       title: template.title,
@@ -287,6 +293,7 @@ export default function AdminPage() {
       valid_from: template.valid_from ?? '',
       valid_until: template.valid_until ?? '',
       rotation: template.rotation ?? false,
+      available_from: template.available_from ?? '',
     });
     setEditingTemplate(template);
   };
@@ -298,6 +305,10 @@ export default function AdminPage() {
     if (editForm.recurrence === 'weekdays') {
       if (editForm.weekdays.length === 0) { showNotification('Bitte mindestens einen Wochentag auswählen.'); return; }
       recurrenceValue = `weekdays:${editForm.weekdays.join(',')}`;
+    } else if (editForm.recurrence === 'biweekly') {
+      if (editForm.weekdays.length === 0) { showNotification('Bitte mindestens einen Wochentag auswählen.'); return; }
+      if (!editForm.valid_from) { showNotification('Bei "Alle 14 Tage" ist ein Startdatum (Gültig ab) erforderlich.'); return; }
+      recurrenceValue = `biweekly:${editForm.weekdays.join(',')}`;
     }
     const res = await fetch(`${API_BASE}/api/tasks/templates/${editingTemplate.id}`, {
       method: 'PATCH',
@@ -315,6 +326,7 @@ export default function AdminPage() {
         valid_from: editForm.recurrence !== 'once' ? (editForm.valid_from || null) : null,
         valid_until: editForm.recurrence !== 'once' ? (editForm.valid_until || null) : null,
         rotation: editForm.assigned_to.length > 1 ? editForm.rotation : false,
+        available_from: editForm.available_from || null,
       }),
     });
     if (res.ok) {
@@ -365,6 +377,16 @@ export default function AdminPage() {
         return;
       }
       recurrenceValue = `weekdays:${newTask.weekdays.join(',')}`;
+    } else if (newTask.recurrence === 'biweekly') {
+      if (newTask.weekdays.length === 0) {
+        showNotification('Bitte mindestens einen Wochentag auswählen.');
+        return;
+      }
+      if (!newTask.valid_from) {
+        showNotification('Bei "Alle 14 Tage" ist ein Startdatum (Gültig ab) erforderlich.');
+        return;
+      }
+      recurrenceValue = `biweekly:${newTask.weekdays.join(',')}`;
     }
 
     const res = await fetch(`${API_BASE}/api/tasks/templates`, {
@@ -383,6 +405,7 @@ export default function AdminPage() {
         valid_from: newTask.recurrence !== 'once' ? (newTask.valid_from || null) : null,
         valid_until: newTask.recurrence !== 'once' ? (newTask.valid_until || null) : null,
         rotation: newTask.assigned_to.length > 1 ? newTask.rotation : false,
+        available_from: newTask.available_from || null,
       }),
     });
     if (res.ok) {
@@ -390,6 +413,7 @@ export default function AdminPage() {
         title: '', points: 1, assigned_to: [], recurrence: 'daily',
         due_time: '', weekdays: [], requires_approval: false,
         icon: '', category: '', due_date: '', valid_from: '', valid_until: '', rotation: false,
+        available_from: '',
       });
       showNotification('Aufgabe erstellt!');
       fetchData();
@@ -536,6 +560,11 @@ export default function AdminPage() {
     if (rec.startsWith('weekdays:')) {
       const days = rec.replace('weekdays:', '').split(',');
       return days.map((d) => WEEKDAYS.find((w) => w.key === d)?.label ?? d).join(', ');
+    }
+    if (rec.startsWith('biweekly:')) {
+      const days = rec.replace('biweekly:', '').split(',');
+      const dayLabels = days.map((d) => WEEKDAYS.find((w) => w.key === d)?.label ?? d).join(', ');
+      return `Alle 14 Tage (${dayLabels})`;
     }
     return rec;
   };
@@ -691,16 +720,17 @@ export default function AdminPage() {
                       <option value="daily">Täglich</option>
                       <option value="weekdays">Bestimmte Wochentage</option>
                       <option value="weekly">Wöchentlich</option>
+                      <option value="biweekly">Alle 14 Tage</option>
                       <option value="once">Einmalig</option>
                     </select>
                   </div>
                 </div>
 
-                {/* Weekday picker */}
-                {newTask.recurrence === 'weekdays' && (
+                {/* Weekday picker — both for 'weekdays' and 'biweekly' */}
+                {(newTask.recurrence === 'weekdays' || newTask.recurrence === 'biweekly') && (
                   <div>
                     <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
-                      Wochentage auswählen
+                      {newTask.recurrence === 'biweekly' ? 'Wochentag (alle 14 Tage)' : 'Wochentage auswählen'}
                     </label>
                     <div className="flex gap-2 flex-wrap">
                       {WEEKDAYS.map((day) => {
@@ -749,30 +779,46 @@ export default function AdminPage() {
 
                 {/* Valid from/until (only for recurring) */}
                 {newTask.recurrence !== 'once' && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                        Gültig ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={newTask.valid_from}
-                        onChange={(e) => setNewTask({ ...newTask, valid_from: e.target.value })}
-                        className={inputCls}
-                        style={inputStyle}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                        Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={newTask.valid_until}
-                        onChange={(e) => setNewTask({ ...newTask, valid_until: e.target.value })}
-                        className={inputCls}
-                        style={inputStyle}
-                      />
+                  <div
+                    className={newTask.recurrence === 'biweekly' ? 'rounded-xl p-3 border-2 border-dashed' : ''}
+                    style={newTask.recurrence === 'biweekly'
+                      ? { borderColor: 'var(--family-accent)', background: 'var(--family-accent)' + '08' }
+                      : undefined
+                    }
+                  >
+                    {newTask.recurrence === 'biweekly' && (
+                      <p className="text-xs mb-2 font-semibold" style={{ color: 'var(--family-accent)' }}>
+                        <Icon name="calendar-event" />&nbsp;Start-Anker — ab diesem Datum wird alle 14 Tage gerechnet
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                          Gültig ab {newTask.recurrence === 'biweekly'
+                            ? <span style={{ color: 'var(--family-accent)' }}>(Pflicht)</span>
+                            : <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>}
+                        </label>
+                        <input
+                          type="date"
+                          value={newTask.valid_from}
+                          onChange={(e) => setNewTask({ ...newTask, valid_from: e.target.value })}
+                          className={inputCls}
+                          style={inputStyle}
+                          required={newTask.recurrence === 'biweekly'}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                          Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={newTask.valid_until}
+                          onChange={(e) => setNewTask({ ...newTask, valid_until: e.target.value })}
+                          className={inputCls}
+                          style={inputStyle}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -885,9 +931,61 @@ export default function AdminPage() {
                   )}
                 </div>
 
+                {/* Available from (time-of-day gate) */}
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Verfügbar ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="time"
+                      value={newTask.available_from}
+                      onChange={(e) => setNewTask({ ...newTask, available_from: e.target.value })}
+                      className={inputCls}
+                      style={{ ...inputStyle, flex: 1 }}
+                    />
+                    {newTask.available_from && (
+                      <button
+                        type="button"
+                        onClick={() => setNewTask({ ...newTask, available_from: '' })}
+                        className="px-3 py-2 rounded-lg text-xs"
+                        style={{ background: 'var(--family-surface2)', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                      >
+                        <Icon name="x" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[
+                      { label: 'Ganztägig', value: '' },
+                      { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
+                      { label: 'Ab 18:00 (abends)', value: '18:00' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setNewTask({ ...newTask, available_from: preset.value })}
+                        className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                        style={{
+                          background: newTask.available_from === preset.value ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
+                          border: `1px solid ${newTask.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
+                          color: newTask.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--family-text3)' }}>
+                    Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                  </p>
+                </div>
+
                 {/* Due time */}
                 <div>
-                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                    Fällig um <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                  </label>
                   <input
                     type="time"
                     value={newTask.due_time}
@@ -971,6 +1069,11 @@ export default function AdminPage() {
                       {template.category && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#e0e7ff', color: '#3730a3' }}>
                           <Icon name="tag" />&nbsp;{template.category}
+                        </span>
+                      )}
+                      {template.available_from && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold" style={{ background: '#dcfce7', color: '#166534' }}>
+                          <Icon name="clock" />&nbsp;ab {template.available_from}
                         </span>
                       )}
                       {template.rotation && (
@@ -1466,15 +1569,18 @@ export default function AdminPage() {
                     <option value="daily">Täglich</option>
                     <option value="weekdays">Bestimmte Wochentage</option>
                     <option value="weekly">Wöchentlich</option>
+                    <option value="biweekly">Alle 14 Tage</option>
                     <option value="once">Einmalig</option>
                   </select>
                 </div>
               </div>
 
-              {/* Weekday picker for edit */}
-              {editForm.recurrence === 'weekdays' && (
+              {/* Weekday picker for edit — both 'weekdays' and 'biweekly' */}
+              {(editForm.recurrence === 'weekdays' || editForm.recurrence === 'biweekly') && (
                 <div>
-                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Wochentage</label>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>
+                    {editForm.recurrence === 'biweekly' ? 'Wochentag (alle 14 Tage)' : 'Wochentage'}
+                  </label>
                   <div className="flex gap-2 flex-wrap">
                     {WEEKDAYS.map((day) => {
                       const sel = editForm.weekdays.includes(day.key);
@@ -1521,30 +1627,46 @@ export default function AdminPage() {
 
               {/* Valid from/until (recurring) */}
               {editForm.recurrence !== 'once' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                      Gültig ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={editForm.valid_from}
-                      onChange={(e) => setEditForm({ ...editForm, valid_from: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
-                      Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={editForm.valid_until}
-                      onChange={(e) => setEditForm({ ...editForm, valid_until: e.target.value })}
-                      className={inputCls}
-                      style={inputStyle}
-                    />
+                <div
+                  className={editForm.recurrence === 'biweekly' ? 'rounded-xl p-3 border-2 border-dashed' : ''}
+                  style={editForm.recurrence === 'biweekly'
+                    ? { borderColor: 'var(--family-accent)', background: 'var(--family-accent)' + '08' }
+                    : undefined
+                  }
+                >
+                  {editForm.recurrence === 'biweekly' && (
+                    <p className="text-xs mb-2 font-semibold" style={{ color: 'var(--family-accent)' }}>
+                      <Icon name="calendar-event" />&nbsp;Start-Anker — ab diesem Datum wird alle 14 Tage gerechnet
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                        Gültig ab {editForm.recurrence === 'biweekly'
+                          ? <span style={{ color: 'var(--family-accent)' }}>(Pflicht)</span>
+                          : <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>}
+                      </label>
+                      <input
+                        type="date"
+                        value={editForm.valid_from}
+                        onChange={(e) => setEditForm({ ...editForm, valid_from: e.target.value })}
+                        className={inputCls}
+                        style={inputStyle}
+                        required={editForm.recurrence === 'biweekly'}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                        Gültig bis <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={editForm.valid_until}
+                        onChange={(e) => setEditForm({ ...editForm, valid_until: e.target.value })}
+                        className={inputCls}
+                        style={inputStyle}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1630,9 +1752,61 @@ export default function AdminPage() {
                 )}
               </div>
 
+              {/* Available from (time-of-day gate) */}
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                  Verfügbar ab <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="time"
+                    value={editForm.available_from}
+                    onChange={(e) => setEditForm({ ...editForm, available_from: e.target.value })}
+                    className={inputCls}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  {editForm.available_from && (
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, available_from: '' })}
+                      className="px-3 py-2 rounded-lg text-xs"
+                      style={{ background: 'var(--family-surface2)', color: 'var(--family-text3)', border: '1px solid #d8d4cf' }}
+                    >
+                      <Icon name="x" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[
+                    { label: 'Ganztägig', value: '' },
+                    { label: 'Ab 13:00 (nach Schule)', value: '13:00' },
+                    { label: 'Ab 18:00 (abends)', value: '18:00' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, available_from: preset.value })}
+                      className="px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95"
+                      style={{
+                        background: editForm.available_from === preset.value ? 'var(--family-accent)' + '22' : 'var(--family-surface2)',
+                        border: `1px solid ${editForm.available_from === preset.value ? 'var(--family-accent)' : '#d8d4cf'}`,
+                        color: editForm.available_from === preset.value ? 'var(--family-accent)' : 'var(--family-text3)',
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--family-text3)' }}>
+                  Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                </p>
+              </div>
+
               {/* Due time */}
               <div>
-                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Uhrzeit (opt.)</label>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                  Fällig um <span style={{ color: 'var(--family-text3)' }}>(opt.)</span>
+                </label>
                 <input
                   type="time"
                   value={editForm.due_time}
