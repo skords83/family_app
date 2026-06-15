@@ -47,6 +47,77 @@ async function verifyParentPin(pin: string): Promise<boolean> {
   return result.rows.length > 0;
 }
 
+/**
+ * Clean up today's stale uncompleted task_instances for a template, so that
+ * a subsequent generateDailyTasks() run can rebuild them correctly.
+ *
+ * This is the bit that was missing: generateDailyTasks() only ever INSERTs,
+ * never DELETEs. So when rotation is enabled (or assignees change) on a
+ * template that already produced instances for today, the old instances
+ * stay around and every assignee keeps seeing the task — even though only
+ * one (rotation) or a smaller subset (assignees changed) should.
+ *
+ * Rules:
+ *  - Rotation active + effective pool > 1
+ *      → Delete ALL today's uncompleted instances for this template.
+ *        generateDailyTasks() will then pick one rotation winner.
+ *  - Rotation off + specific pool (assigned_to is an explicit list)
+ *      → Delete only uncompleted instances for users no longer in the pool.
+ *  - Otherwise (assigned_to = null = "all users", rotation off)
+ *      → Nothing to clean. All users should have an instance.
+ *
+ * Completed instances are NEVER touched — they're historical record and
+ * also feed the rotation fairness calculation.
+ */
+async function cleanupStaleInstancesForToday(
+  templateId: string,
+  assignedTo: string[] | null,
+  rotation: boolean,
+): Promise<void> {
+  const today = getTodayInAppTz();
+
+  // Effective pool size: explicit list length, or all users when null.
+  let effectivePoolSize: number;
+  if (assignedTo === null) {
+    const ucnt = await pool.query(`SELECT COUNT(*)::int AS cnt FROM users`);
+    effectivePoolSize = ucnt.rows[0].cnt;
+  } else {
+    effectivePoolSize = assignedTo.length;
+  }
+
+  if (rotation && effectivePoolSize > 1) {
+    // Rotation: only one instance should exist for today. Clear the slate.
+    const del = await pool.query(`
+      DELETE FROM task_instances
+      WHERE template_id = $1
+        AND date = $2
+        AND completed_at IS NULL
+    `, [templateId, today]);
+    if (del.rowCount && del.rowCount > 0) {
+      console.log(
+        `[tasks] Rotation cleanup: removed ${del.rowCount} stale uncompleted ` +
+        `instance(s) for template ${templateId} on ${today}`
+      );
+    }
+  } else if (assignedTo !== null) {
+    // Specific pool without rotation: prune users no longer assigned.
+    const del = await pool.query(`
+      DELETE FROM task_instances
+      WHERE template_id = $1
+        AND date = $2
+        AND completed_at IS NULL
+        AND NOT (assigned_to = ANY($3::uuid[]))
+    `, [templateId, today, assignedTo]);
+    if (del.rowCount && del.rowCount > 0) {
+      console.log(
+        `[tasks] Assignment cleanup: removed ${del.rowCount} stale instance(s) ` +
+        `for users no longer assigned to template ${templateId} on ${today}`
+      );
+    }
+  }
+  // else: assigned_to=null (all users), rotation off → nothing to prune.
+}
+
 // GET /api/tasks/today - return task_instances for today, joined with template
 tasksRouter.get('/today', async (_req: Request, res: Response) => {
   try {
@@ -496,6 +567,12 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
     // If the patch changes the template into "should be visible today" state,
     // trigger an immediate generation. Cheap due to idempotency (UNIQUE constraint).
     // Direct generateDailyTasks() to bypass the per-day memo cache.
+    //
+    // IMPORTANT: clean up stale uncompleted instances first. generateDailyTasks
+    // only INSERTs — it never DELETEs. So when rotation was just toggled on
+    // (or the assignee pool shrank), the old instances would otherwise linger
+    // and the bug "Aufgabe wird angezeigt obwohl Kind gar nicht dran ist"
+    // appears.
     if (updatedRow.active) {
       const today = getTodayInAppTz();
       const recur = updatedRow.recurrence;
@@ -507,9 +584,18 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       const onceMatch = recur === 'once' && (!dueStr || dueStr <= today);
 
       if (onceMatch || (recur !== 'once' && inRange)) {
-        generateDailyTasks().catch((err) =>
-          console.error('[tasks] Immediate generation after patch failed:', err),
-        );
+        const updatedAssigned = normaliseAssignedTo(updatedRow.assigned_to);
+        const updatedRotation = updatedRow.rotation === true;
+
+        (async () => {
+          try {
+            await cleanupStaleInstancesForToday(id, updatedAssigned, updatedRotation);
+            await generateDailyTasks();
+            emitSSE({ type: 'task_updated', data: { template_id: id } });
+          } catch (err) {
+            console.error('[tasks] Cleanup + regen after patch failed:', err);
+          }
+        })();
       }
     }
   } catch (err) {
