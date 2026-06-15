@@ -521,6 +521,21 @@ export default function AdminPage() {
     }
   };
 
+  const handleRejectTask = async (instanceId: string) => {
+    const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: adminPin }),
+    });
+    if (res.ok) {
+      showNotification('Aufgabe abgelehnt – zurück auf offen.');
+      fetchPendingApprovals();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
   const handleManualPoints = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await fetch(`${API_BASE}/api/points/manual`, {
@@ -1345,14 +1360,24 @@ export default function AdminPage() {
                           {item.user_name} • {item.points} Pkt.
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleApproveTask(item.id)}
-                        className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                        style={{ background: '#16a34a' }}
-                      >
-                        <Icon name="check" />
-                        Bestätigen
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => handleRejectTask(item.id)}
+                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95 flex items-center gap-1"
+                          style={{ background: '#fee2e2', color: '#dc2626' }}
+                        >
+                          <Icon name="x" />
+                          Ablehnen
+                        </button>
+                        <button
+                          onClick={() => handleApproveTask(item.id)}
+                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                          style={{ background: '#16a34a' }}
+                        >
+                          <Icon name="check" />
+                          Bestätigen
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

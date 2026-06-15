@@ -351,6 +351,56 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/tasks/:id/reject - parent rejects a pending task (resets to open)
+tasksRouter.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'pin is required' });
+    }
+
+    const isParent = await verifyParentPin(pin);
+    if (!isParent) {
+      return res.status(401).json({ error: 'Invalid parent PIN' });
+    }
+
+    const taskResult = await pool.query(`
+      SELECT ti.*, tt.requires_approval
+      FROM task_instances ti
+      JOIN task_templates tt ON ti.template_id = tt.id
+      WHERE ti.id = $1
+    `, [id]);
+
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Task instance not found' });
+    }
+
+    const task = taskResult.rows[0];
+
+    if (!task.completed_at) {
+      return res.status(400).json({ error: 'Task is not completed yet' });
+    }
+    if (task.approved_at) {
+      return res.status(400).json({ error: 'Task already approved, use uncomplete instead' });
+    }
+
+    // Reset to open — no points were granted yet (approval pending)
+    await pool.query(`
+      UPDATE task_instances
+      SET completed_at = NULL, completed_by = NULL
+      WHERE id = $1
+    `, [id]);
+
+    emitSSE({ type: 'task_updated', data: { task_id: id, date: task.date } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error rejecting task:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/:id/uncomplete - reverse completion (anyone, no PIN needed)
 tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
   try {
