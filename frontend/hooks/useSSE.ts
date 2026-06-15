@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from 'react';
 
 export type SSEEventType =
   | 'task_updated'
+  | 'task_uncompleted'
   | 'points_updated'
   | 'reward_claimed'
   | 'shopping_updated'
@@ -28,6 +29,7 @@ type SSEHandler = (event: SSEEvent) => void;
  * useSSE({
  *   task_updated: () => refetchTasks(),
  *   points_updated: (e) => refetchPoints(e.data.user_id as string),
+ *   task_uncompleted: (e) => showNotification(e.data.task_title as string),
  * });
  */
 export function useSSE(handlers: Partial<Record<SSEEventType, SSEHandler>>): void {

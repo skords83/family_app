@@ -10,6 +10,7 @@ interface User {
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
+  requires_approval?: boolean; approved_at?: string | null;
 }
 interface TaskColumnsProps {
   users: User[]; tasks: TaskInstance[];
@@ -37,9 +38,11 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
     <div className={`grid gap-4 ${cols}`}>
       {users.map(user => {
         const userTasks = tasks.filter(t => t.assigned_to === user.id);
-        const completedTasks = userTasks.filter(t => t.completed_at);
-        const pendingTasks = userTasks.filter(t => !t.completed_at);
-        const pct = userTasks.length ? Math.round(completedTasks.length / userTasks.length * 100) : 0;
+        const openTasks = userTasks.filter(t => !t.completed_at);
+        const pendingApprovalTasks = userTasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
+        const doneTasks = userTasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
+        const completedCount = pendingApprovalTasks.length + doneTasks.length;
+        const pct = userTasks.length ? Math.round(completedCount / userTasks.length * 100) : 0;
         const bg = pastel(user.color);
 
         return (
@@ -63,7 +66,7 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold font-sans text-sm truncate" style={{ color: user.color }}>{user.name}</p>
-                  <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedTasks.length}/{userTasks.length} erledigt</p>
+                  <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedCount}/{userTasks.length} erledigt</p>
                 </div>
               </Link>
               <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full flex-shrink-0 flex items-center gap-1" style={{ color: user.color, background: `${user.color}18` }}>
@@ -78,11 +81,14 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
 
             {/* Tasks */}
             <div className="space-y-1.5">
-              {pendingTasks.map(task => (
+              {openTasks.map(task => (
                 <TaskCard key={task.id} task={task} userColor={user.color} compact={compact}
                   onComplete={onComplete ? id => onComplete(id, user.id) : undefined} />
               ))}
-              {completedTasks.map(task => (
+              {pendingApprovalTasks.map(task => (
+                <TaskCard key={task.id} task={task} userColor={user.color} compact={compact} />
+              ))}
+              {doneTasks.map(task => (
                 <TaskCard key={task.id} task={task} userColor={user.color} compact={compact} />
               ))}
               {userTasks.length === 0 && (

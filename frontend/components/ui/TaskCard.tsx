@@ -6,7 +6,7 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 interface TaskCardTask {
   id: string; title: string; points: number;
   completed_at: string | null; due_time?: string | null;
-  available_from?: string | null;
+  requires_approval?: boolean; approved_at?: string | null;
 }
 interface TaskCardProps {
   task: TaskCardTask;
@@ -21,6 +21,7 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
   const [justCompleted, setJustCompleted] = useState(false);
   const { isOnline } = useOnlineStatus();
   const isCompleted = !!task.completed_at;
+  const isPendingApproval = isCompleted && task.requires_approval && !task.approved_at;
 
   const handleClick = async () => {
     if (loading || !isOnline) return;
@@ -36,6 +37,27 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
     } finally { setLoading(false); }
   };
 
+  // ── Pending Approval State (gelb/orange) ──
+  if (isPendingApproval) {
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-xl px-3 ${compact ? 'py-2' : 'py-2.5'}`}
+        style={{ background: '#fffbeb', border: '0.5px solid #fbbf2440' }}
+      >
+        <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+          style={{ background: '#fef3c7', border: '2px solid #f59e0b' }}>
+          <i className="ti ti-clock" style={{ fontSize: 9, color: '#f59e0b' }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-sans line-clamp-1" style={{ color: '#1a1814' }}>{task.title}</span>
+          <p className="text-[10px] font-sans" style={{ color: '#f59e0b' }}>Wartet auf Bestätigung</p>
+        </div>
+        <span className="text-xs font-sans" style={{ color: '#f59e0b' }}>+{task.points}⭐</span>
+      </div>
+    );
+  }
+
+  // ── Completed State (grün, durchgestrichen) ──
   if (isCompleted) {
     return (
       <div
@@ -51,6 +73,7 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
     );
   }
 
+  // ── Open State (klickbar) ──
   return (
     <button
       onClick={handleClick}
@@ -67,16 +90,13 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
         {!isOnline && !loading && <i className="ti ti-wifi-off" style={{ fontSize: 9, color: userColor }} />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{task.title}</p>
-        {task.due_time && (
-          <span
-            className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-semibold"
-            style={{ background: '#fff0e6', color: '#c2410c' }}
-          >
-            <i className="ti ti-clock-exclamation" style={{ fontSize: 11 }} />
-            bis {task.due_time} Uhr
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{task.title}</p>
+          {task.requires_approval && (
+            <i className="ti ti-eye" style={{ fontSize: 12, color: '#a09d99', flexShrink: 0 }} title="Wird geprüft" />
+          )}
+        </div>
+        {task.due_time && <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time} Uhr</p>}
       </div>
       <span className="text-xs font-sans font-semibold flex-shrink-0 rounded-full px-2 py-0.5" style={{ color: userColor, background: `${userColor}18` }}>
         +{task.points}⭐

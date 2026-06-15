@@ -88,6 +88,23 @@ interface PendingTaskApproval {
   user_color: string;
 }
 
+interface CompletedTodayTask {
+  id: string;
+  template_id: string;
+  assigned_to: string;
+  date: string;
+  completed_at: string;
+  approved_at: string | null;
+  title: string;
+  points: number;
+  icon: string | null;
+  requires_approval: boolean;
+  user_name: string;
+  user_avatar: string;
+  user_photo?: string;
+  user_color: string;
+}
+
 type AdminTab = 'tasks' | 'rewards' | 'users' | 'points';
 
 /** Small avatar: photo if available, otherwise emoji fallback */
@@ -143,6 +160,7 @@ export default function AdminPage() {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [claims, setClaims] = useState<RewardClaim[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingTaskApproval[]>([]);
+  const [completedToday, setCompletedToday] = useState<CompletedTodayTask[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
 
   // Forms
@@ -173,12 +191,13 @@ export default function AdminPage() {
   };
 
   const fetchData = useCallback(async () => {
-    const [usersRes, templatesRes, rewardsRes, claimsRes, pendingRes] = await Promise.allSettled([
+    const [usersRes, templatesRes, rewardsRes, claimsRes, pendingRes, completedRes] = await Promise.allSettled([
       fetch(`${API_BASE}/api/users`).then((r) => r.json()),
       fetch(`${API_BASE}/api/tasks/templates`).then((r) => r.json()),
       fetch(`${API_BASE}/api/rewards?admin=true`).then((r) => r.json()),
       fetch(`${API_BASE}/api/rewards/claims`).then((r) => r.json()),
       fetch(`${API_BASE}/api/tasks/instances/pending-approval`).then((r) => r.json()),
+      fetch(`${API_BASE}/api/tasks/instances/completed-today`).then((r) => r.json()),
     ]);
 
     if (usersRes.status === 'fulfilled' && Array.isArray(usersRes.value)) setUsers(usersRes.value);
@@ -186,6 +205,7 @@ export default function AdminPage() {
     if (rewardsRes.status === 'fulfilled' && Array.isArray(rewardsRes.value)) setRewards(rewardsRes.value);
     if (claimsRes.status === 'fulfilled' && Array.isArray(claimsRes.value)) setClaims(claimsRes.value);
     if (pendingRes.status === 'fulfilled' && Array.isArray(pendingRes.value)) setPendingApprovals(pendingRes.value);
+    if (completedRes.status === 'fulfilled' && Array.isArray(completedRes.value)) setCompletedToday(completedRes.value);
   }, []);
 
   useEffect(() => {
@@ -218,6 +238,11 @@ export default function AdminPage() {
     if (Array.isArray(res)) setPendingApprovals(res);
   }, []);
 
+  const fetchCompletedToday = useCallback(async () => {
+    const res = await fetch(`${API_BASE}/api/tasks/instances/completed-today`).then(r => r.json());
+    if (Array.isArray(res)) setCompletedToday(res);
+  }, []);
+
   const handleRewardClaimed = useCallback(() => {
     fetchClaims();
     fetchRewards();
@@ -226,12 +251,14 @@ export default function AdminPage() {
   const handleTaskUpdated = useCallback(() => {
     fetchTemplates();
     fetchPendingApprovals();
-  }, [fetchTemplates, fetchPendingApprovals]);
+    fetchCompletedToday();
+  }, [fetchTemplates, fetchPendingApprovals, fetchCompletedToday]);
 
   // SSE-Subscription nur wenn authentifiziert
   useSSE(authenticated ? {
     points_updated: fetchUsers,
     task_updated: handleTaskUpdated,
+    task_uncompleted: handleTaskUpdated,
     reward_claimed: handleRewardClaimed,
   } : {});
 
@@ -530,6 +557,22 @@ export default function AdminPage() {
     if (res.ok) {
       showNotification('Aufgabe abgelehnt – zurück auf offen.');
       fetchPendingApprovals();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
+  const handleUncompleteTask = async (instanceId: string) => {
+    const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/uncomplete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (res.ok) {
+      showNotification('Aufgabe zurückgesetzt. Kind wird benachrichtigt.');
+      fetchCompletedToday();
+      fetchPendingApprovals();
+      fetchUsers();
     } else {
       const err = await res.json().catch(() => ({}));
       showNotification(`Fehler: ${err.error ?? res.status}`);
@@ -1445,6 +1488,52 @@ export default function AdminPage() {
                           Bestätigen
                         </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Heutige erledigte Aufgaben — Rückgängig */}
+            {completedToday.length > 0 && (
+              <div
+                className="rounded-2xl border p-4"
+                style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+              >
+                <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+                  <Icon name="arrow-back-up" />
+                  Heutige Aufgaben zurücknehmen
+                </h3>
+                <p className="text-xs mb-3" style={{ color: 'var(--family-text3)' }}>
+                  Erledigte Aufgaben von heute. Bei Rücknahme wird das Kind benachrichtigt.
+                </p>
+                <div className="space-y-2">
+                  {completedToday.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-xl px-3 py-3 border"
+                      style={{ background: item.approved_at ? '#f0fdf4' : item.requires_approval ? '#fffbeb' : '#f0fdf4', borderColor: '#d8d4cf' }}
+                    >
+                      <UserAvatar user={{ avatar: item.user_avatar, photo: item.user_photo, name: item.user_name, color: item.user_color }} size={36} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate flex items-center gap-1.5" style={{ color: 'var(--family-text)' }}>
+                          {item.icon && <span>{item.icon}</span>}
+                          {item.title}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--family-text3)' }}>
+                          {item.user_name} • {item.points} Pkt.
+                          {item.requires_approval && !item.approved_at && ' • wartend'}
+                          {item.approved_at && ' • bestätigt'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleUncompleteTask(item.id)}
+                        className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95 flex items-center gap-1"
+                        style={{ background: '#fee2e2', color: '#dc2626' }}
+                      >
+                        <Icon name="arrow-back-up" />
+                        Rückgängig
+                      </button>
                     </div>
                   ))}
                 </div>

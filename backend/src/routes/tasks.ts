@@ -230,6 +230,42 @@ tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Respon
   }
 });
 
+// GET /api/tasks/instances/completed-today - all completed instances for today
+// Used by the admin "Rückgängig" UI to show tasks that can be reversed.
+// IMPORTANT: must be registered before /:id/... routes.
+tasksRouter.get('/instances/completed-today', async (_req: Request, res: Response) => {
+  try {
+    const today = getTodayInAppTz();
+    const result = await pool.query(`
+      SELECT
+        ti.id,
+        ti.template_id,
+        ti.assigned_to,
+        ti.date,
+        ti.completed_at,
+        ti.approved_at,
+        tt.title,
+        tt.points,
+        tt.icon,
+        tt.requires_approval,
+        u.name        AS user_name,
+        u.avatar      AS user_avatar,
+        u.photo       AS user_photo,
+        u.color       AS user_color
+      FROM task_instances ti
+      JOIN task_templates tt ON ti.template_id = tt.id
+      JOIN users u           ON ti.assigned_to  = u.id
+      WHERE ti.date = $1
+        AND ti.completed_at IS NOT NULL
+      ORDER BY u.name ASC, ti.completed_at DESC
+    `, [today]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching completed-today:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/verify-parent-pin - check if a parent PIN is valid (used by admin login)
 tasksRouter.post('/verify-parent-pin', async (req: Request, res: Response) => {
   try {
@@ -422,7 +458,7 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const taskResult = await pool.query(`
-      SELECT ti.*, tt.points, tt.requires_approval
+      SELECT ti.*, tt.points, tt.title, tt.requires_approval
       FROM task_instances ti
       JOIN task_templates tt ON ti.template_id = tt.id
       WHERE ti.id = $1
@@ -458,6 +494,8 @@ tasksRouter.post('/:id/uncomplete', async (req: Request, res: Response) => {
     `, [id]);
 
     emitSSE({ type: 'task_updated', data: { task_id: id } });
+    // Notify child's page so it can show a "wurde zurückgesetzt" notification
+    emitSSE({ type: 'task_uncompleted', data: { task_id: id, task_title: task.title, user_id: assignedTo } });
     if (pointsWereGranted) {
       emitSSE({ type: 'points_updated', data: { user_id: assignedTo } });
     }

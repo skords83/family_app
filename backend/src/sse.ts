@@ -5,12 +5,13 @@ import { EventEmitter } from 'events';
 // ─── Event Types ────────────────────────────────────────────────────────────
 
 export type SSEEventType =
-  | 'task_updated'      // Aufgabe abgehakt / wieder geöffnet
-  | 'points_updated'    // Punktestand geändert
-  | 'reward_claimed'    // Belohnung eingelöst / genehmigt
-  | 'shopping_updated'  // Einkaufsliste geändert
-  | 'config_updated'    // Widget-Konfiguration geändert
-  | 'ping';             // Heartbeat (kein Reload nötig)
+  | 'task_updated'        // Aufgabe abgehakt / wieder geöffnet
+  | 'task_uncompleted'    // Aufgabe wurde zurückgesetzt (Kind bekommt Notification)
+  | 'points_updated'      // Punktestand geändert
+  | 'reward_claimed'      // Belohnung eingelöst / genehmigt
+  | 'shopping_updated'    // Einkaufsliste geändert
+  | 'config_updated'      // Widget-Konfiguration geändert
+  | 'ping';               // Heartbeat (kein Reload nötig)
 
 export interface SSEEvent {
   type: SSEEventType;

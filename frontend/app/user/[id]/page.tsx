@@ -200,6 +200,15 @@ export default function UserPage() {
     task_updated: fetchTasks,
     points_updated: fetchUser,
     reward_claimed: () => { fetchRewards(); fetchClaims(); fetchUser(); },
+    task_uncompleted: (event) => {
+      // Nur Notification zeigen wenn dieses Kind betroffen ist
+      if (event.data.user_id === userId) {
+        const title = event.data.task_title as string;
+        showNotification(`„${title}" wurde zurückgesetzt`, false);
+      }
+      fetchTasks();
+      fetchUser();
+    },
   });
 
   const handleComplete = async (taskId: string) => {
@@ -399,7 +408,12 @@ export default function UserPage() {
                   style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)' }}>
                   <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                      {t.requires_approval && (
+                        <i className="ti ti-eye" style={{ fontSize: 13, color: '#a09d99', flexShrink: 0 }} title="Wird geprüft" />
+                      )}
+                    </div>
                     {t.due_time && (
                       <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>{t.due_time} Uhr</p>
                     )}
