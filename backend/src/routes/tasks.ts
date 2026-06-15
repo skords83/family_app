@@ -230,6 +230,21 @@ tasksRouter.get('/instances/pending-approval', async (_req: Request, res: Respon
   }
 });
 
+// POST /api/tasks/verify-parent-pin - check if a parent PIN is valid (used by admin login)
+tasksRouter.post('/verify-parent-pin', async (req: Request, res: Response) => {
+  try {
+    const { pin } = req.body;
+    if (!pin) {
+      return res.status(400).json({ valid: false });
+    }
+    const valid = await verifyParentPin(pin);
+    res.json({ valid });
+  } catch (err) {
+    console.error('Error verifying PIN:', err);
+    res.status(500).json({ valid: false });
+  }
+});
+
 // POST /api/tasks/:id/complete - mark task as completed (or pending if requires_approval)
 tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
   try {

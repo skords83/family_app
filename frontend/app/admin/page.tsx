@@ -584,6 +584,20 @@ export default function AdminPage() {
     return rec;
   };
 
+  const verifyAdminPin = async (pin: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/verify-parent-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json();
+      return data.valid === true;
+    } catch {
+      return false;
+    }
+  };
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--family-bg)' }}>
@@ -591,6 +605,7 @@ export default function AdminPage() {
           title="Admin PIN"
           onSuccess={handlePinSuccess}
           onCancel={() => router.push('/')}
+          verify={verifyAdminPin}
         />
       </div>
     );
