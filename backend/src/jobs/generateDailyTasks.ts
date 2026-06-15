@@ -10,6 +10,14 @@ import { getTodayInAppTz, getDayOfWeek, pgDateToStr } from '../utils/date';
  *   callers (cron + lazy guard) are serialised. The second caller sees the
  *   idempotency rows of the first and exits cleanly.
  * — Safe to call any number of times. Idempotent.
+ *
+ * Recurrence values supported:
+ *   'daily'                  → every day
+ *   'weekly'                 → every Monday
+ *   'once'                   → exactly once (gated by due_date)
+ *   'weekdays:mon,wed,fri'   → every selected weekday
+ *   'biweekly:sun'           → every 14 days on the given weekday(s),
+ *                              anchored to valid_from. valid_from is required.
  */
 export async function generateDailyTasks(dateOverride?: string): Promise<void> {
   const today = dateOverride ?? getTodayInAppTz();
@@ -98,6 +106,32 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
         // e.g. "weekdays:mon,wed,fri"
         const days = template.recurrence.replace('weekdays:', '').split(',');
         shouldCreate = days.includes(todayKey);
+      } else if (template.recurrence.startsWith('biweekly:')) {
+        // e.g. "biweekly:sun" — every 14 days on the given weekday(s),
+        // anchored to valid_from. Without an anchor we cannot tell which
+        // "every other week" we're in, so we skip.
+        const days = template.recurrence.replace('biweekly:', '').split(',');
+        if (!days.includes(todayKey)) {
+          shouldCreate = false;
+        } else if (!validFrom) {
+          console.warn(
+            `[generateDailyTasks] Template ${template.id} ("${template.title}") is biweekly ` +
+            `but has no valid_from anchor. Skipping.`
+          );
+          shouldCreate = false;
+        } else {
+          // Group days since anchor into 7-day buckets; even bucket = active week.
+          // Use noon UTC to dodge DST edge-cases for date-only diffs.
+          const anchorMs = new Date(validFrom + 'T12:00:00Z').getTime();
+          const todayMs = new Date(today + 'T12:00:00Z').getTime();
+          const daysDiff = Math.floor((todayMs - anchorMs) / (1000 * 60 * 60 * 24));
+          if (daysDiff < 0) {
+            shouldCreate = false;
+          } else {
+            const weekIndex = Math.floor(daysDiff / 7);
+            shouldCreate = weekIndex % 2 === 0;
+          }
+        }
       }
 
       if (!shouldCreate) continue;
