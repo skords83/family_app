@@ -2,6 +2,61 @@ import cron from 'node-cron';
 import { pool } from '../db/pool';
 import { getTodayInAppTz, getDayOfWeek, pgDateToStr } from '../utils/date';
 
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/**
+ * Pure check: does a recurrence pattern apply to a given date?
+ *
+ * Handles 'daily' | 'weekly' | 'weekdays:…' | 'biweekly:…' and the
+ * valid_from / valid_until gate. Returns false for 'once' — the caller
+ * must special-case it because "once" depends on whether instances
+ * already exist (stateful).
+ *
+ * Used by both generateDailyTasks (decide whether to create) and the
+ * PATCH /templates/:id route (decide whether to keep existing instances
+ * when the recurrence has just changed).
+ */
+export function recurrenceMatchesDate(
+  recurrence: string,
+  dateStr: string,
+  validFromRaw: unknown,
+  validUntilRaw: unknown,
+): boolean {
+  if (recurrence === 'once') return false; // caller must handle
+
+  const validFrom = pgDateToStr(validFromRaw as any);
+  const validUntil = pgDateToStr(validUntilRaw as any);
+  if (validFrom && dateStr < validFrom) return false;
+  if (validUntil && dateStr > validUntil) return false;
+
+  const dayOfWeek = getDayOfWeek(dateStr);
+  const isMonday = dayOfWeek === 1;
+  const todayKey = WEEKDAY_KEYS[dayOfWeek];
+
+  if (recurrence === 'daily') return true;
+  if (recurrence === 'weekly') return isMonday;
+
+  if (recurrence.startsWith('weekdays:')) {
+    const days = recurrence.replace('weekdays:', '').split(',');
+    return days.includes(todayKey);
+  }
+
+  if (recurrence.startsWith('biweekly:')) {
+    // Every 14 days on the configured weekday(s), anchored to valid_from.
+    const days = recurrence.replace('biweekly:', '').split(',');
+    if (!days.includes(todayKey)) return false;
+    if (!validFrom) return false; // anchor required
+    // Noon UTC to dodge DST edge-cases on date-only diffs.
+    const anchorMs = new Date(validFrom + 'T12:00:00Z').getTime();
+    const todayMs = new Date(dateStr + 'T12:00:00Z').getTime();
+    const daysDiff = Math.floor((todayMs - anchorMs) / (1000 * 60 * 60 * 24));
+    if (daysDiff < 0) return false;
+    return Math.floor(daysDiff / 7) % 2 === 0;
+  }
+
+  return false; // unknown recurrence type
+}
+
 /**
  * Generates today's task instances from all active templates.
  *
@@ -22,7 +77,6 @@ import { getTodayInAppTz, getDayOfWeek, pgDateToStr } from '../utils/date';
 export async function generateDailyTasks(dateOverride?: string): Promise<void> {
   const today = dateOverride ?? getTodayInAppTz();
   const dayOfWeek = getDayOfWeek(today); // 0=Sunday, 1=Monday, …
-  const isMonday = dayOfWeek === 1;
 
   console.log(`[generateDailyTasks] Generating tasks for ${today} (day ${dayOfWeek})`);
 
@@ -44,24 +98,10 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
     const usersResult = await client.query(`SELECT id FROM users`);
     const allUserIds: string[] = usersResult.rows.map((r: any) => r.id);
 
-    // Weekday key for today: 0=sun→'sun', 1=mon→'mon', …
-    const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const todayKey = WEEKDAY_KEYS[dayOfWeek];
-
     let created = 0;
     let skipped = 0;
 
     for (const template of templates) {
-      // ── Date-range gate (valid_from / valid_until) ──
-      // Applies to recurring templates. For 'once', due_date is the gate.
-      const validFrom = pgDateToStr(template.valid_from);
-      const validUntil = pgDateToStr(template.valid_until);
-
-      if (template.recurrence !== 'once') {
-        if (validFrom && today < validFrom) continue;  // not yet valid
-        if (validUntil && today > validUntil) continue; // expired
-      }
-
       // ── Normalise assigned_to: JSONB array, legacy single UUID, or null → string[] ──
       let userIds: string[];
       const raw = template.assigned_to;
@@ -82,12 +122,9 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
 
       // ── Recurrence check ──
       let shouldCreate = false;
-      if (template.recurrence === 'daily') {
-        shouldCreate = true;
-      } else if (template.recurrence === 'weekly') {
-        shouldCreate = isMonday;
-      } else if (template.recurrence === 'once') {
-        // One-off templates: gated by due_date if set, else "first run wins"
+      if (template.recurrence === 'once') {
+        // One-off templates: gated by due_date if set, else "first run wins".
+        // Stateful — depends on whether instances already exist.
         const existingAny = await client.query(`
           SELECT COUNT(*) FROM task_instances WHERE template_id = $1
         `, [template.id]);
@@ -102,35 +139,25 @@ export async function generateDailyTasks(dateOverride?: string): Promise<void> {
             shouldCreate = true; // no date set → create on first generation
           }
         }
-      } else if (template.recurrence.startsWith('weekdays:')) {
-        // e.g. "weekdays:mon,wed,fri"
-        const days = template.recurrence.replace('weekdays:', '').split(',');
-        shouldCreate = days.includes(todayKey);
-      } else if (template.recurrence.startsWith('biweekly:')) {
-        // e.g. "biweekly:sun" — every 14 days on the given weekday(s),
-        // anchored to valid_from. Without an anchor we cannot tell which
-        // "every other week" we're in, so we skip.
-        const days = template.recurrence.replace('biweekly:', '').split(',');
-        if (!days.includes(todayKey)) {
-          shouldCreate = false;
-        } else if (!validFrom) {
+      } else {
+        // Pure check for all recurring patterns + valid_from/until gate.
+        shouldCreate = recurrenceMatchesDate(
+          template.recurrence,
+          today,
+          template.valid_from,
+          template.valid_until,
+        );
+
+        // Warn about biweekly without anchor (helper silently returns false).
+        if (
+          !shouldCreate &&
+          template.recurrence.startsWith('biweekly:') &&
+          !pgDateToStr(template.valid_from)
+        ) {
           console.warn(
             `[generateDailyTasks] Template ${template.id} ("${template.title}") is biweekly ` +
             `but has no valid_from anchor. Skipping.`
           );
-          shouldCreate = false;
-        } else {
-          // Group days since anchor into 7-day buckets; even bucket = active week.
-          // Use noon UTC to dodge DST edge-cases for date-only diffs.
-          const anchorMs = new Date(validFrom + 'T12:00:00Z').getTime();
-          const todayMs = new Date(today + 'T12:00:00Z').getTime();
-          const daysDiff = Math.floor((todayMs - anchorMs) / (1000 * 60 * 60 * 24));
-          if (daysDiff < 0) {
-            shouldCreate = false;
-          } else {
-            const weekIndex = Math.floor(daysDiff / 7);
-            shouldCreate = weekIndex % 2 === 0;
-          }
         }
       }
 

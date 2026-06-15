@@ -2,7 +2,11 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { v4 as uuidv4 } from 'uuid';
 import { emitSSE } from '../sse';
-import { generateDailyTasks, ensureTodayTasksGenerated } from '../jobs/generateDailyTasks';
+import {
+  generateDailyTasks,
+  ensureTodayTasksGenerated,
+  recurrenceMatchesDate,
+} from '../jobs/generateDailyTasks';
 import { getTodayInAppTz, pgDateToStr } from '../utils/date';
 
 export const tasksRouter = Router();
@@ -51,71 +55,105 @@ async function verifyParentPin(pin: string): Promise<boolean> {
  * Clean up today's stale uncompleted task_instances for a template, so that
  * a subsequent generateDailyTasks() run can rebuild them correctly.
  *
- * This is the bit that was missing: generateDailyTasks() only ever INSERTs,
- * never DELETEs. So when rotation is enabled (or assignees change) on a
- * template that already produced instances for today, the old instances
- * stay around and every assignee keeps seeing the task — even though only
- * one (rotation) or a smaller subset (assignees changed) should.
+ * This is the bit that's missing in generateDailyTasks itself: it only ever
+ * INSERTs, never DELETEs. So when a template is edited in a way that should
+ * change today's instance set, the old instances would otherwise linger and
+ * the bug "Aufgabe wird angezeigt obwohl Kind/Tag gar nicht dran ist"
+ * appears.
  *
- * Rules:
- *  - Rotation active + effective pool > 1
- *      → Delete ALL today's uncompleted instances for this template.
- *        generateDailyTasks() will then pick one rotation winner.
- *  - Rotation off + specific pool (assigned_to is an explicit list)
+ * Rules (checked in order):
+ *  1. Today no longer matches the recurrence pattern (e.g. changed from
+ *     "weekly" / Monday → "biweekly:sat", or out of valid_from/until range)
+ *      → Delete ALL today's uncompleted instances. generateDailyTasks won't
+ *        recreate them.
+ *  2. Rotation active + effective pool > 1
+ *      → Delete ALL today's uncompleted instances. generateDailyTasks picks
+ *        one rotation winner.
+ *  3. Rotation off + specific pool (assigned_to is an explicit list)
  *      → Delete only uncompleted instances for users no longer in the pool.
- *  - Otherwise (assigned_to = null = "all users", rotation off)
+ *  4. Otherwise (assigned_to = null = "all users", rotation off, today matches)
  *      → Nothing to clean. All users should have an instance.
  *
  * Completed instances are NEVER touched — they're historical record and
  * also feed the rotation fairness calculation.
+ *
+ * 'once' templates aren't handled here (caller skips the call). They have
+ * stateful semantics (depends on existing instances) and don't fit this
+ * cleanup pattern.
  */
-async function cleanupStaleInstancesForToday(
-  templateId: string,
-  assignedTo: string[] | null,
-  rotation: boolean,
-): Promise<void> {
+async function cleanupStaleInstancesForToday(template: {
+  id: string;
+  recurrence: string;
+  assigned_to: string[] | null;
+  rotation: boolean;
+  valid_from: unknown;
+  valid_until: unknown;
+}): Promise<void> {
   const today = getTodayInAppTz();
+  const { id, recurrence, assigned_to, rotation, valid_from, valid_until } = template;
+
+  // Rule 1: today doesn't match recurrence (or moved out of valid range).
+  // Skip for 'once' — its semantics are stateful and handled elsewhere.
+  if (recurrence !== 'once') {
+    const matches = recurrenceMatchesDate(recurrence, today, valid_from, valid_until);
+    if (!matches) {
+      const del = await pool.query(`
+        DELETE FROM task_instances
+        WHERE template_id = $1
+          AND date = $2
+          AND completed_at IS NULL
+      `, [id, today]);
+      if (del.rowCount && del.rowCount > 0) {
+        console.log(
+          `[tasks] Recurrence cleanup: removed ${del.rowCount} uncompleted ` +
+          `instance(s) for template ${id} on ${today} ` +
+          `(today no longer matches recurrence "${recurrence}")`
+        );
+      }
+      return;
+    }
+  }
 
   // Effective pool size: explicit list length, or all users when null.
   let effectivePoolSize: number;
-  if (assignedTo === null) {
+  if (assigned_to === null) {
     const ucnt = await pool.query(`SELECT COUNT(*)::int AS cnt FROM users`);
     effectivePoolSize = ucnt.rows[0].cnt;
   } else {
-    effectivePoolSize = assignedTo.length;
+    effectivePoolSize = assigned_to.length;
   }
 
   if (rotation && effectivePoolSize > 1) {
-    // Rotation: only one instance should exist for today. Clear the slate.
+    // Rule 2: rotation — only one instance should exist for today.
     const del = await pool.query(`
       DELETE FROM task_instances
       WHERE template_id = $1
         AND date = $2
         AND completed_at IS NULL
-    `, [templateId, today]);
+    `, [id, today]);
     if (del.rowCount && del.rowCount > 0) {
       console.log(
         `[tasks] Rotation cleanup: removed ${del.rowCount} stale uncompleted ` +
-        `instance(s) for template ${templateId} on ${today}`
+        `instance(s) for template ${id} on ${today}`
       );
     }
-  } else if (assignedTo !== null) {
-    // Specific pool without rotation: prune users no longer assigned.
+  } else if (assigned_to !== null) {
+    // Rule 3: specific pool without rotation — prune users no longer assigned.
     const del = await pool.query(`
       DELETE FROM task_instances
       WHERE template_id = $1
         AND date = $2
         AND completed_at IS NULL
         AND NOT (assigned_to = ANY($3::uuid[]))
-    `, [templateId, today, assignedTo]);
+    `, [id, today, assigned_to]);
     if (del.rowCount && del.rowCount > 0) {
       console.log(
         `[tasks] Assignment cleanup: removed ${del.rowCount} stale instance(s) ` +
-        `for users no longer assigned to template ${templateId} on ${today}`
+        `for users no longer assigned to template ${id} on ${today}`
       );
     }
   }
-  // else: assigned_to=null (all users), rotation off → nothing to prune.
+  // else: rule 4 — assigned_to=null (all users), rotation off → nothing to prune.
 }
 
 // GET /api/tasks/today - return task_instances for today, joined with template
@@ -413,8 +451,9 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'title and recurrence are required' });
     }
 
-    // Validate recurrence value
-    const validRecurrence = /^(daily|weekly|once|weekdays:[a-z,]+)$/.test(recurrence);
+    // Validate recurrence value. Must mirror the patterns understood by
+    // recurrenceMatchesDate / generateDailyTasks. Includes biweekly:.
+    const validRecurrence = /^(daily|weekly|once|weekdays:[a-z,]+|biweekly:[a-z,]+)$/.test(recurrence);
     if (!validRecurrence) {
       return res.status(400).json({ error: 'Invalid recurrence value' });
     }
@@ -515,6 +554,14 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
 
     const current = existing.rows[0];
 
+    // Validate recurrence if provided
+    if (recurrence !== undefined) {
+      const validRecurrence = /^(daily|weekly|once|weekdays:[a-z,]+|biweekly:[a-z,]+)$/.test(recurrence);
+      if (!validRecurrence) {
+        return res.status(400).json({ error: 'Invalid recurrence value' });
+      }
+    }
+
     const newAssigned = assigned_to !== undefined
       ? normaliseAssignedTo(assigned_to)
       : normaliseAssignedTo(current.assigned_to);
@@ -564,38 +611,41 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       valid_until: pgDateToStr(updatedRow.valid_until),
     });
 
-    // If the patch changes the template into "should be visible today" state,
-    // trigger an immediate generation. Cheap due to idempotency (UNIQUE constraint).
-    // Direct generateDailyTasks() to bypass the per-day memo cache.
+    // Cleanup + regen for today, fire-and-forget. The cleanup deals with stale
+    // instances that no longer fit the new template state (recurrence change,
+    // rotation toggle, pool shrink, valid_from/until shift). generateDailyTasks
+    // then recreates what should be there.
     //
-    // IMPORTANT: clean up stale uncompleted instances first. generateDailyTasks
-    // only INSERTs — it never DELETEs. So when rotation was just toggled on
-    // (or the assignee pool shrank), the old instances would otherwise linger
-    // and the bug "Aufgabe wird angezeigt obwohl Kind gar nicht dran ist"
-    // appears.
-    if (updatedRow.active) {
+    // Skipped for 'once' templates — their semantics are stateful and we don't
+    // want to nuke an already-generated one-off.
+    if (updatedRow.active && updatedRow.recurrence !== 'once') {
+      const updatedAssigned = normaliseAssignedTo(updatedRow.assigned_to);
+      const updatedRotation = updatedRow.rotation === true;
+
+      (async () => {
+        try {
+          await cleanupStaleInstancesForToday({
+            id,
+            recurrence: updatedRow.recurrence,
+            assigned_to: updatedAssigned,
+            rotation: updatedRotation,
+            valid_from: updatedRow.valid_from,
+            valid_until: updatedRow.valid_until,
+          });
+          await generateDailyTasks();
+          emitSSE({ type: 'task_updated', data: { template_id: id } });
+        } catch (err) {
+          console.error('[tasks] Cleanup + regen after patch failed:', err);
+        }
+      })();
+    } else if (updatedRow.active && updatedRow.recurrence === 'once') {
+      // 'once' path: just trigger generation if today matches due_date or none set.
       const today = getTodayInAppTz();
-      const recur = updatedRow.recurrence;
       const dueStr = pgDateToStr(updatedRow.due_date);
-      const fromStr = pgDateToStr(updatedRow.valid_from);
-      const untilStr = pgDateToStr(updatedRow.valid_until);
-
-      const inRange = (!fromStr || fromStr <= today) && (!untilStr || untilStr >= today);
-      const onceMatch = recur === 'once' && (!dueStr || dueStr <= today);
-
-      if (onceMatch || (recur !== 'once' && inRange)) {
-        const updatedAssigned = normaliseAssignedTo(updatedRow.assigned_to);
-        const updatedRotation = updatedRow.rotation === true;
-
-        (async () => {
-          try {
-            await cleanupStaleInstancesForToday(id, updatedAssigned, updatedRotation);
-            await generateDailyTasks();
-            emitSSE({ type: 'task_updated', data: { template_id: id } });
-          } catch (err) {
-            console.error('[tasks] Cleanup + regen after patch failed:', err);
-          }
-        })();
+      if (!dueStr || dueStr <= today) {
+        generateDailyTasks().catch((err) =>
+          console.error('[tasks] Immediate generation after patch failed:', err),
+        );
       }
     }
   } catch (err) {
