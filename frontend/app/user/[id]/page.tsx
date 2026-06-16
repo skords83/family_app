@@ -16,6 +16,7 @@ interface User {
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
+  available_from?: string | null;
   requires_approval: boolean; approved_at: string | null;
 }
 
@@ -63,6 +64,16 @@ function formatDateLabel(dateStr: string): string {
   if (dateStr === tomorrowStr) return 'Morgen';
   const date = new Date(dateStr + 'T12:00:00');
   return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** Current Berlin time as "HH:MM" string. */
+function nowHHMM(): string {
+  return new Date().toLocaleTimeString('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Berlin',
+    hour12: false,
+  });
 }
 
 /** WeekStreak — 7 Kreise Mo–So, gefüllt wenn Aufgaben erledigt */
@@ -116,6 +127,13 @@ export default function UserPage() {
   const [notification, setNotification] = useState<{ text: string; ok: boolean } | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Re-check available_from locks every 30s
+  const [currentTime, setCurrentTime] = useState(nowHHMM);
+  useEffect(() => {
+    const iv = setInterval(() => setCurrentTime(nowHHMM()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
 
   const startCountdown = useCallback(() => {
     setIdleCountdown(5);
@@ -266,7 +284,14 @@ export default function UserPage() {
   // open:           no completed_at
   // pendingApproval: completed_at set, requires_approval=true, no approved_at
   // done:           completed_at set, and (no requires_approval OR approved_at set)
-  const openTasks       = tasks.filter(t => !t.completed_at);
+  const openTasks       = tasks.filter(t => !t.completed_at)
+    .sort((a, b) => {
+      // Unlocked tasks first, then locked tasks sorted by available_from
+      const aLocked = !!a.available_from && currentTime < a.available_from;
+      const bLocked = !!b.available_from && currentTime < b.available_from;
+      if (aLocked !== bLocked) return aLocked ? 1 : -1;
+      return 0; // keep server order within each group
+    });
   const pendingApproval = tasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
   const doneTasks       = tasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
 
@@ -311,6 +336,10 @@ export default function UserPage() {
     acc[d].push(ev);
     return acc;
   }, {});
+
+  // ── Helper: is a task locked (before available_from)? ──
+  const isTaskLocked = (t: TaskInstance) =>
+    !t.completed_at && !!t.available_from && currentTime < t.available_from;
 
   return (
     <div className="p-4" style={{ minHeight: '100vh', background: '#f5f2ee' }}>
@@ -401,28 +430,67 @@ export default function UserPage() {
             )}
 
             <div className="space-y-2">
-              {/* Open tasks — interactable */}
-              {openTasks.map(t => (
-                <button key={t.id} onClick={() => handleComplete(t.id)}
-                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
-                  style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)' }}>
-                  <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
-                      {t.requires_approval && (
-                        <i className="ti ti-eye" style={{ fontSize: 13, color: '#a09d99', flexShrink: 0 }} title="Wird geprüft" />
+              {/* Open tasks — interactable (or locked if before available_from) */}
+              {openTasks.map(t => {
+                const locked = isTaskLocked(t);
+                const timeLabel = t.available_from ? `${t.available_from} Uhr` : null;
+                const deadlineLabel = t.due_time ? `bis ${t.due_time}` : null;
+
+                if (locked) {
+                  return (
+                    <div key={t.id}
+                      className="flex items-center gap-3 rounded-xl px-4 py-3"
+                      style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)', opacity: 0.5 }}>
+                      <div className="w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center" style={{ borderColor: `${user.color}60` }}>
+                        <i className="ti ti-lock" style={{ fontSize: 11, color: `${user.color}80` }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#6b6760' }}>{t.title}</p>
+                        <p className="text-[10px] font-sans flex items-center gap-1.5" style={{ color: '#a09d99' }}>
+                          ab {t.available_from} Uhr
+                          {deadlineLabel && (
+                            <span className="inline-flex items-center gap-0.5" style={{ color: '#c2410c' }}>
+                              <i className="ti ti-clock-exclamation" style={{ fontSize: 10 }} />{deadlineLabel}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: `${user.color}80` }}>
+                        <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <button key={t.id} onClick={() => handleComplete(t.id)}
+                    className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                    style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)' }}>
+                    <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                        {t.requires_approval && (
+                          <i className="ti ti-eye" style={{ fontSize: 13, color: '#a09d99', flexShrink: 0 }} title="Wird geprüft" />
+                        )}
+                      </div>
+                      {(timeLabel || deadlineLabel) && (
+                        <p className="text-[10px] font-sans flex items-center gap-1.5 mt-0.5" style={{ color: '#a09d99' }}>
+                          {timeLabel}
+                          {deadlineLabel && (
+                            <span className="inline-flex items-center gap-0.5" style={{ color: '#c2410c' }}>
+                              <i className="ti ti-clock-exclamation" style={{ fontSize: 10 }} />{deadlineLabel}
+                            </span>
+                          )}
+                        </p>
                       )}
                     </div>
-                    {t.due_time && (
-                      <p className="text-xs font-sans mt-0.5" style={{ color: '#a09d99' }}>{t.due_time} Uhr</p>
-                    )}
-                  </div>
-                  <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: user.color }}>
-                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: user.color }}>
+                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                    </span>
+                  </button>
+                );
+              })}
 
               {/* Pending approval tasks — yellow state, not clickable */}
               {pendingApproval.map(t => (

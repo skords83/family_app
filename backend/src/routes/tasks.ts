@@ -177,6 +177,7 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
         tt.title,
         tt.points,
         tt.due_time,
+        tt.available_from,
         tt.requires_approval,
         tt.icon,
         tt.category,
@@ -187,7 +188,7 @@ tasksRouter.get('/today', async (_req: Request, res: Response) => {
       JOIN task_templates tt ON ti.template_id = tt.id
       JOIN users u ON ti.assigned_to = u.id
       WHERE ti.date = $1
-      ORDER BY tt.due_time ASC NULLS LAST, tt.title ASC
+      ORDER BY tt.available_from ASC NULLS FIRST, tt.due_time ASC NULLS LAST, tt.title ASC
     `, [today]);
     res.json(result.rows);
   } catch (err) {
@@ -548,6 +549,7 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
       valid_from,
       valid_until,
       rotation,
+      available_from,
     } = req.body;
 
     if (!title || !recurrence) {
@@ -568,9 +570,9 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
     const result = await pool.query(`
       INSERT INTO task_templates (
         title, points, assigned_to, recurrence, due_time, active, requires_approval,
-        icon, category, due_date, valid_from, valid_until, rotation
+        icon, category, due_date, valid_from, valid_until, rotation, available_from
       )
-      VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `, [
       title,
@@ -586,6 +588,7 @@ tasksRouter.post('/templates', async (req: Request, res: Response) => {
       valid_from ?? null,
       valid_until ?? null,
       rotation ?? false,
+      available_from ?? null,
     ]);
 
     const createdRow = result.rows[0];
@@ -648,6 +651,7 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       valid_from,
       valid_until,
       rotation,
+      available_from,
     } = req.body;
 
     const existing = await pool.query(`SELECT * FROM task_templates WHERE id = $1`, [id]);
@@ -685,8 +689,9 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
         due_date = $10,
         valid_from = $11,
         valid_until = $12,
-        rotation = $13
-      WHERE id = $14
+        rotation = $13,
+        available_from = $14
+      WHERE id = $15
       RETURNING *
     `, [
       title ?? current.title,
@@ -702,6 +707,7 @@ tasksRouter.patch('/templates/:id', async (req: Request, res: Response) => {
       valid_from !== undefined ? valid_from : current.valid_from,
       valid_until !== undefined ? valid_until : current.valid_until,
       rotation !== undefined ? rotation : current.rotation,
+      available_from !== undefined ? available_from : current.available_from,
       id,
     ]);
 

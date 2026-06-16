@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 interface TaskCardTask {
   id: string; title: string; points: number;
   completed_at: string | null; due_time?: string | null;
+  available_from?: string | null;
   requires_approval?: boolean; approved_at?: string | null;
 }
 interface TaskCardProps {
@@ -16,6 +17,16 @@ interface TaskCardProps {
   compact?: boolean;
 }
 
+/** Current Berlin time as "HH:MM" string. Recalculated each render. */
+function nowHHMM(): string {
+  return new Date().toLocaleTimeString('de-DE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Berlin',
+    hour12: false,
+  });
+}
+
 export default function TaskCard({ task, onComplete, onUncomplete, userColor = '#6366f1', compact = false }: TaskCardProps) {
   const [loading, setLoading] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
@@ -23,8 +34,18 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
   const isCompleted = !!task.completed_at;
   const isPendingApproval = isCompleted && task.requires_approval && !task.approved_at;
 
+  // Re-check availability every 30s so tasks unlock without a page reload
+  const [currentTime, setCurrentTime] = useState(nowHHMM);
+  useEffect(() => {
+    if (!task.available_from || isCompleted) return;
+    const iv = setInterval(() => setCurrentTime(nowHHMM()), 30_000);
+    return () => clearInterval(iv);
+  }, [task.available_from, isCompleted]);
+
+  const isLocked = !isCompleted && !!task.available_from && currentTime < task.available_from;
+
   const handleClick = async () => {
-    if (loading || !isOnline) return;
+    if (loading || !isOnline || isLocked) return;
     setLoading(true);
     try {
       if (isCompleted && onUncomplete) {
@@ -36,6 +57,10 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
       }
     } finally { setLoading(false); }
   };
+
+  // ── Time label: show available_from as primary time, due_time as deadline ──
+  const timeLabel = task.available_from ? `${task.available_from} Uhr` : null;
+  const deadlineLabel = task.due_time ? `bis ${task.due_time}` : null;
 
   // ── Pending Approval State (gelb/orange) ──
   if (isPendingApproval) {
@@ -73,6 +98,37 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
     );
   }
 
+  // ── Locked State (vor available_from — sichtbar aber nicht abhakbar) ──
+  if (isLocked) {
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-xl px-3 ${compact ? 'py-2' : 'py-2.5'}`}
+        style={{ background: `${userColor}08`, border: `0.5px solid ${userColor}15`, opacity: 0.5 }}
+      >
+        <div
+          className="w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
+          style={{ borderColor: `${userColor}60` }}
+        >
+          <i className="ti ti-lock" style={{ fontSize: 9, color: `${userColor}80` }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-sans font-medium truncate" style={{ color: '#6b6760' }}>{task.title}</p>
+          <p className="text-[10px] font-sans flex items-center gap-1.5" style={{ color: '#a09d99' }}>
+            ab {task.available_from} Uhr
+            {deadlineLabel && (
+              <span className="inline-flex items-center gap-0.5 text-[10px]" style={{ color: '#c2410c' }}>
+                <i className="ti ti-clock-exclamation" style={{ fontSize: 10 }} />{deadlineLabel}
+              </span>
+            )}
+          </p>
+        </div>
+        <span className="text-xs font-sans font-semibold flex-shrink-0 rounded-full px-2 py-0.5" style={{ color: `${userColor}80`, background: `${userColor}10` }}>
+          +{task.points}⭐
+        </span>
+      </div>
+    );
+  }
+
   // ── Open State (klickbar) ──
   return (
     <button
@@ -96,7 +152,16 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
             <i className="ti ti-eye" style={{ fontSize: 12, color: '#a09d99', flexShrink: 0 }} title="Wird geprüft" />
           )}
         </div>
-        {task.due_time && <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{task.due_time} Uhr</p>}
+        {(timeLabel || deadlineLabel) && (
+          <p className="text-[10px] font-sans flex items-center gap-1.5" style={{ color: '#a09d99' }}>
+            {timeLabel}
+            {deadlineLabel && (
+              <span className="inline-flex items-center gap-0.5 text-[10px]" style={{ color: '#c2410c' }}>
+                <i className="ti ti-clock-exclamation" style={{ fontSize: 10 }} />{deadlineLabel}
+              </span>
+            )}
+          </p>
+        )}
       </div>
       <span className="text-xs font-sans font-semibold flex-shrink-0 rounded-full px-2 py-0.5" style={{ color: userColor, background: `${userColor}18` }}>
         +{task.points}⭐

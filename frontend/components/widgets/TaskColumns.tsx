@@ -10,6 +10,7 @@ interface User {
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
+  available_from?: string | null;
   requires_approval?: boolean; approved_at?: string | null;
 }
 interface TaskColumnsProps {
