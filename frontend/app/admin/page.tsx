@@ -532,6 +532,21 @@ export default function AdminPage() {
     }
   };
 
+  const handleRejectClaim = async (claimId: string) => {
+    const res = await fetch(`${API_BASE}/api/rewards/${claimId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: adminPin }),
+    });
+    if (res.ok) {
+      showNotification('Belohnung abgelehnt – Punkte zurückerstattet.');
+      fetchData();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
   const handleApproveTask = async (instanceId: string) => {
     const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/approve`, {
       method: 'POST',
@@ -1280,14 +1295,24 @@ export default function AdminPage() {
                             {claim.user_name} • {claim.points_cost} Pkt.
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleApproveClaim(claim.id)}
-                          className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
-                          style={{ background: '#16a34a' }}
-                        >
-                          <Icon name="check" />
-                          Genehmigen
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => handleRejectClaim(claim.id)}
+                            className="min-h-[36px] px-3 rounded-lg text-xs font-semibold transition-colors active:scale-95 flex items-center gap-1"
+                            style={{ background: '#fee2e2', color: '#dc2626' }}
+                          >
+                            <Icon name="x" />
+                            Ablehnen
+                          </button>
+                          <button
+                            onClick={() => handleApproveClaim(claim.id)}
+                            className="min-h-[36px] px-3 rounded-lg text-xs font-semibold text-white transition-colors active:scale-95 flex items-center gap-1"
+                            style={{ background: '#16a34a' }}
+                          >
+                            <Icon name="check" />
+                            Genehmigen
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
