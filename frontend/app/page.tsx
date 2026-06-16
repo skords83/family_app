@@ -11,7 +11,7 @@ import Link from 'next/link';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 interface User { id: string; name: string; avatar: string; photo?: string; color: string; points: number; role: string; tasks_total?: number; tasks_done?: number; }
-interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; }
+interface TaskInstance { id: string; title: string; points: number; assigned_to: string; completed_at: string | null; due_time?: string | null; available_from?: string | null; }
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
 interface WasteTodayData { active: boolean; events: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
@@ -75,6 +75,14 @@ function AvatarRing({ user, pct, size = 56 }: { user: User; pct: number; size?: 
   );
 }
 
+/** Current Berlin time as "HH:MM" string. */
+function nowHHMM(): string {
+  return new Date().toLocaleTimeString('de-DE', {
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Berlin', hour12: false,
+  });
+}
+
 export default function HomePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
@@ -82,6 +90,7 @@ export default function HomePage() {
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [waste, setWaste] = useState<WasteTodayData | undefined>();
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(nowHHMM);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -106,6 +115,12 @@ export default function HomePage() {
     const iv = setInterval(fetchAll, 5 * 60_000);
     return () => clearInterval(iv);
   }, [fetchAll]);
+
+  // Re-check available_from locks every 30s so cards unlock without a full reload
+  useEffect(() => {
+    const iv = setInterval(() => setCurrentTime(nowHHMM()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
 
   const fetchTasks = useCallback(async () => {
     const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
@@ -175,6 +190,11 @@ export default function HomePage() {
                 const userTasks = tasks.filter(t => t.assigned_to === user.id);
                 const done = userTasks.filter(t => t.completed_at);
                 const pending = userTasks.filter(t => !t.completed_at);
+                // Split pending into unlocked and locked
+                const unlocked = pending.filter(t => !t.available_from || currentTime >= t.available_from);
+                const locked = pending.filter(t => !!t.available_from && currentTime < t.available_from);
+                // Show unlocked first, then locked
+                const sortedPending = [...unlocked, ...locked];
                 const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
                 const bg = PASTELS[user.color] ?? `${user.color}18`;
                 const allDone = userTasks.length > 0 && pending.length === 0;
@@ -224,26 +244,42 @@ export default function HomePage() {
                         </div>
                       )}
 
-                      {pending.slice(0, MAX_VISIBLE_TASKS).map(task => (
-                        <div key={task.id} className="flex items-center gap-2.5 py-1">
-                          <span
-                            style={{ width: 4, height: 20, borderRadius: 2, background: user.color, flexShrink: 0 }}
-                          />
-                          <span
-                            className="font-sans flex-1 truncate"
-                            style={{ fontSize: 14, color: '#1a1814' }}
-                          >
-                            {task.title}
-                          </span>
-                          <span
-                            className="font-sans flex-shrink-0 flex items-center gap-0.5"
-                            style={{ fontSize: 12, color: '#a09d99' }}
-                          >
-                            <i className="ti ti-star-filled" style={{ fontSize: 10, color: '#c9a020' }} aria-hidden="true" />
-                            {task.points}
-                          </span>
-                        </div>
-                      ))}
+                      {sortedPending.slice(0, MAX_VISIBLE_TASKS).map(task => {
+                        const isLocked = !!task.available_from && currentTime < task.available_from;
+                        return (
+                          <div key={task.id} className="flex items-center gap-2.5 py-1" style={{ opacity: isLocked ? 0.4 : 1 }}>
+                            {isLocked ? (
+                              <i
+                                className="ti ti-lock"
+                                style={{ fontSize: 12, color: '#a09d99', flexShrink: 0, width: 4, marginLeft: 0 }}
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <span
+                                style={{ width: 4, height: 20, borderRadius: 2, background: user.color, flexShrink: 0 }}
+                              />
+                            )}
+                            <span
+                              className="font-sans flex-1 truncate"
+                              style={{ fontSize: 14, color: isLocked ? '#a09d99' : '#1a1814' }}
+                            >
+                              {task.title}
+                              {isLocked && (
+                                <span className="font-sans ml-1.5" style={{ fontSize: 11, color: '#c0bcb8' }}>
+                                  ab {task.available_from}
+                                </span>
+                              )}
+                            </span>
+                            <span
+                              className="font-sans flex-shrink-0 flex items-center gap-0.5"
+                              style={{ fontSize: 12, color: '#a09d99' }}
+                            >
+                              <i className="ti ti-star-filled" style={{ fontSize: 10, color: isLocked ? '#d8d4ce' : '#c9a020' }} aria-hidden="true" />
+                              {task.points}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* Fuß: links Überhang, rechts Hinweis auf Kind-Modus — eine Zeile, kein Überlapp */}
@@ -252,7 +288,7 @@ export default function HomePage() {
                       style={{ fontSize: 12, color: '#a09d99' }}
                     >
                       <span className="font-sans truncate">
-                        {pending.length > MAX_VISIBLE_TASKS ? `+ ${pending.length - MAX_VISIBLE_TASKS} weitere` : ''}
+                        {sortedPending.length > MAX_VISIBLE_TASKS ? `+ ${sortedPending.length - MAX_VISIBLE_TASKS} weitere` : ''}
                       </span>
                       <span className="font-sans flex items-center gap-1 flex-shrink-0">
                         {hint}
