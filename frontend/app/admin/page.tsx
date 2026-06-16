@@ -66,6 +66,7 @@ interface RewardClaim {
   user_id: string;
   claimed_at: string;
   approved_at: string | null;
+  rejected_at: string | null;
   reward_title: string;
   user_name: string;
   user_avatar: string;
@@ -669,7 +670,7 @@ export default function AdminPage() {
     );
   }
 
-  const pendingClaims = claims.filter((c) => !c.approved_at);
+  const pendingClaims = claims.filter((c) => !c.approved_at && !c.rejected_at);
 
   const tabConfig: { id: AdminTab; label: string; icon: string }[] = [
     { id: 'tasks', label: 'Aufgaben', icon: 'checklist' },
