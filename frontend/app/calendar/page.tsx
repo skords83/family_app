@@ -48,13 +48,12 @@ function toLocalTimeStr(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-// Kombiniert Datum-String + Zeit-String zu lokalem ISO — kein UTC-Versatz
+// Kombiniert Datum-String + Zeit-String zu UTC-ISO-String mit Z-Suffix.
+// new Date('2026-06-16T09:00:00') interpretiert als Lokalzeit (Berlin),
+// .toISOString() konvertiert korrekt nach UTC → passt zu Zod z.string().datetime().
 function toLocalISO(dateStr: string, timeStr: string): string {
-  const [h, m] = timeStr.split(':').map(Number);
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setHours(h, m, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${dateStr}T${pad(h)}:${pad(m)}:00`;
+  const d = new Date(`${dateStr}T${timeStr}:00`);
+  return d.toISOString();
 }
 
 type EventTier = 'compact' | 'full';
@@ -97,16 +96,35 @@ function NewEventModal({
     setSaving(true);
     setError('');
     try {
-      const start = allDay ? `${date}T00:00:00.000Z` : toLocalISO(date, startTime);
-      const end   = allDay ? `${date}T00:00:00.000Z` : toLocalISO(date, endTime);
+      // Ganztags: DTEND ist exklusiv → Folgetag als Ende
+      let start: string;
+      let end: string;
+      if (allDay) {
+        start = `${date}T00:00:00.000Z`;
+        const nextDay = new Date(date + 'T00:00:00');
+        nextDay.setDate(nextDay.getDate() + 1);
+        const nd = toLocalDateStr(nextDay);
+        end = `${nd}T00:00:00.000Z`;
+      } else {
+        start = toLocalISO(date, startTime);
+        end = toLocalISO(date, endTime);
+      }
+
       const res = await fetch(`${API_BASE}/api/widgets/calendar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim(), start, end, allDay, calendarUrl }),
       });
       if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error ?? 'Fehler beim Speichern');
+        // Defensiv: Antwort könnte HTML sein (Cloudflare-Fehlerseite etc.)
+        let errorMsg = `Fehler beim Speichern (${res.status})`;
+        try {
+          const d = await res.json();
+          if (d.error) errorMsg = d.error;
+        } catch {
+          // Response war kein JSON — Fallback-Meldung bleibt
+        }
+        throw new Error(errorMsg);
       }
       onCreated();
     } catch (err: any) {
