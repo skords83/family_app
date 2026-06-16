@@ -6,11 +6,12 @@ import { ageFactorFromBirthdate, effectiveRewardCost } from '../lib/age-factor';
 export const rewardsRouter = Router();
 
 async function verifyParentPin(pin: string): Promise<boolean> {
+  // Accept the global admin PIN if set
   const adminPin = process.env.ADMIN_PIN;
-  if (adminPin) {
-    return pin === adminPin;
+  if (adminPin && pin === adminPin) {
+    return true;
   }
-  // Fallback: check against any parent user's pin in DB
+  // Also accept any parent user's personal PIN from the DB
   const result = await pool.query(
     `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
     [pin]
