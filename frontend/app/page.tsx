@@ -190,14 +190,16 @@ export default function HomePage() {
                 const userTasks = tasks.filter(t => t.assigned_to === user.id);
                 const done = userTasks.filter(t => t.completed_at);
                 const pending = userTasks.filter(t => !t.completed_at);
-                // Split pending into unlocked and locked
-                const unlocked = pending.filter(t => !t.available_from || currentTime >= t.available_from);
-                const locked = pending.filter(t => !!t.available_from && currentTime < t.available_from);
-                // Show unlocked first, then locked
-                const sortedPending = [...unlocked, ...locked];
+                // Split pending into unlocked, locked, and expired
+                const expired = pending.filter(t => !!t.due_time && currentTime > t.due_time);
+                const active = pending.filter(t => !t.due_time || currentTime <= t.due_time);
+                const unlocked = active.filter(t => !t.available_from || currentTime >= t.available_from);
+                const locked = active.filter(t => !!t.available_from && currentTime < t.available_from);
+                // Show unlocked first, then locked, then expired
+                const sortedPending = [...unlocked, ...locked, ...expired];
                 const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
                 const bg = PASTELS[user.color] ?? `${user.color}18`;
-                const allDone = userTasks.length > 0 && pending.length === 0;
+                const allDone = userTasks.length > 0 && active.length === 0;
                 const hint = allDone || userTasks.length === 0 ? 'Aufgaben ansehen' : 'Aufgaben abhaken';
 
                 return (

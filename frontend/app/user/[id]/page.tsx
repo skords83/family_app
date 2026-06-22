@@ -332,11 +332,14 @@ export default function UserPage() {
   // done:           completed_at set, and (no requires_approval OR approved_at set)
   const openTasks       = tasks.filter(t => !t.completed_at)
     .sort((a, b) => {
-      // Unlocked tasks first, then locked tasks sorted by available_from
+      // Expired tasks last, then locked, then active
+      const aExpired = !!a.due_time && currentTime > a.due_time;
+      const bExpired = !!b.due_time && currentTime > b.due_time;
+      if (aExpired !== bExpired) return aExpired ? 1 : -1;
       const aLocked = !!a.available_from && currentTime < a.available_from;
       const bLocked = !!b.available_from && currentTime < b.available_from;
       if (aLocked !== bLocked) return aLocked ? 1 : -1;
-      return 0; // keep server order within each group
+      return 0;
     });
   const pendingApproval = tasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
   const doneTasks       = tasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
@@ -383,9 +386,11 @@ export default function UserPage() {
     return acc;
   }, {});
 
-  // ── Helper: is a task locked (before available_from)? ──
+  // ── Helper: is a task locked (before available_from) or expired (after due_time)? ──
   const isTaskLocked = (t: TaskInstance) =>
     !t.completed_at && !!t.available_from && currentTime < t.available_from;
+  const isTaskExpired = (t: TaskInstance) =>
+    !t.completed_at && !!t.due_time && currentTime > t.due_time;
 
   return (
     <div className="p-4" style={{ minHeight: '100vh', background: '#f5f2ee' }}>
@@ -479,8 +484,28 @@ export default function UserPage() {
               {/* Open tasks — interactable (or locked if before available_from) */}
               {openTasks.map(t => {
                 const locked = isTaskLocked(t);
+                const expired = isTaskExpired(t);
                 const timeLabel = t.available_from ? `${t.available_from} Uhr` : null;
                 const deadlineLabel = t.due_time ? `bis ${t.due_time}` : null;
+
+                if (expired) {
+                  return (
+                    <div key={t.id}
+                      className="flex items-center gap-3 rounded-xl px-4 py-3"
+                      style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)', opacity: 0.4 }}>
+                      <div className="w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center" style={{ borderColor: 'rgba(0,0,0,0.2)' }}>
+                        <i className="ti ti-clock-off" style={{ fontSize: 11, color: '#6b6760' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#6b6760' }}>{t.title}</p>
+                        <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Abgelaufen · bis {t.due_time} Uhr</p>
+                      </div>
+                      <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#a09d99' }}>
+                        <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                      </span>
+                    </div>
+                  );
+                }
 
                 if (locked) {
                   return (

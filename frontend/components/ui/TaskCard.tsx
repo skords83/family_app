@@ -34,18 +34,19 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
   const isCompleted = !!task.completed_at;
   const isPendingApproval = isCompleted && task.requires_approval && !task.approved_at;
 
-  // Re-check availability every 30s so tasks unlock without a page reload
+  // Re-check availability every 30s so tasks unlock/expire without a page reload
   const [currentTime, setCurrentTime] = useState(nowHHMM);
   useEffect(() => {
-    if (!task.available_from || isCompleted) return;
+    if ((!task.available_from && !task.due_time) || isCompleted) return;
     const iv = setInterval(() => setCurrentTime(nowHHMM()), 30_000);
     return () => clearInterval(iv);
-  }, [task.available_from, isCompleted]);
+  }, [task.available_from, task.due_time, isCompleted]);
 
   const isLocked = !isCompleted && !!task.available_from && currentTime < task.available_from;
+  const isExpired = !isCompleted && !!task.due_time && currentTime > task.due_time;
 
   const handleClick = async () => {
-    if (loading || !isOnline || isLocked) return;
+    if (loading || !isOnline || isLocked || isExpired) return;
     setLoading(true);
     try {
       if (isCompleted && onUncomplete) {
@@ -125,6 +126,26 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
         <span className="text-xs font-sans font-semibold flex-shrink-0 rounded-full px-2 py-0.5" style={{ color: `${userColor}80`, background: `${userColor}10` }}>
           +{task.points}⭐
         </span>
+      </div>
+    );
+  }
+
+  // ── Expired State (nach due_time — sichtbar aber nicht mehr abhakbar) ──
+  if (isExpired) {
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-xl px-3 ${compact ? 'py-2' : 'py-2.5'}`}
+        style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', opacity: 0.4 }}
+      >
+        <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.06)', border: '2px solid rgba(0,0,0,0.15)' }}>
+          <i className="ti ti-clock-off" style={{ fontSize: 9, color: '#6b6760' }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-sans font-medium truncate" style={{ color: '#6b6760' }}>{task.title}</p>
+          <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Abgelaufen · bis {task.due_time} Uhr</p>
+        </div>
+        <span className="text-xs font-sans flex-shrink-0" style={{ color: '#a09d99' }}>+{task.points}⭐</span>
       </div>
     );
   }
