@@ -205,7 +205,7 @@ export default function HomePage() {
                     key={user.id}
                     href={`/user/${user.id}`}
                     className="rounded-2xl p-4 flex flex-col active:opacity-75 transition-opacity"
-                    style={{ background: bg, border: `0.5px solid ${user.color}25`, minHeight: 0 }}
+                    style={{ background: bg, border: '0.5px solid var(--family-border)', minHeight: 0 }}
                   >
                     {/* Kopf: Ring-Avatar + Name + Punkte */}
                     <div className="flex items-center gap-3 mb-3 flex-shrink-0">
