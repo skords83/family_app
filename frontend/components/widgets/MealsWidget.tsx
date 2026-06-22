@@ -47,7 +47,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
 
   if (loading) {
     return (
-      <div className="rounded-2xl p-4 border animate-pulse" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
+      <div className="rounded-2xl p-4 animate-pulse" style={{ background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}>
         <div className="h-4 rounded w-24 mb-3" style={{ background: '#e8e4de' }} />
         {[0, 1].map(i => (
           <div key={i} className="mb-3">
@@ -64,7 +64,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
   // Vor Hydration: leere Shell ohne datumsabhängigen Inhalt
   if (!todayStr) {
     return (
-      <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
+      <div className="rounded-2xl p-4" style={{ background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
             Essensplan
@@ -79,7 +79,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
   const presentSlots = SLOT_ORDER.filter(s => todaySlots[s]?.length);
 
   return (
-    <div className="rounded-2xl p-4 border" style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.07)' }}>
+    <div className="rounded-2xl p-4" style={{ background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
@@ -104,7 +104,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
       ) : (
         <div className="space-y-1">
           {presentSlots.map(slot => (
-            <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: '#f5f2ee' }}>
+            <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--family-surface2)' }}>
               <span className="text-sm flex-shrink-0">{SLOT_ICONS[slot]}</span>
               <div>
                 <p className="text-[10px] font-sans font-medium" style={{ color: '#6b6760' }}>{SLOT_LABELS[slot]}</p>

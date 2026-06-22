@@ -86,7 +86,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
     return (
       <div
         className="rounded-2xl p-5 flex-1 min-h-0"
-        style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
+        style={{ background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}
       >
         <div style={{ background: '#e8e4de', borderRadius: 4, height: 12, width: 80, marginBottom: 16 }} />
         {[0, 1, 2].map(i => (
@@ -106,7 +106,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
     return (
       <div
         className="rounded-2xl p-5 flex-1 min-h-0"
-        style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}
+        style={{ background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider" style={{ color: '#a09d99' }}>
@@ -194,7 +194,7 @@ export default function CalendarWidget({ events = [], fetched_at, loading, daysA
                         key={event.id}
                         className="flex items-center gap-3 px-4 py-2.5"
                         style={{
-                          background: '#f7f4f0',
+                          background: 'var(--family-surface2)',
                           borderLeft: `3px solid ${event.color ?? '#6366f1'}`,
                           borderRadius: '0 10px 10px 0',
                         }}

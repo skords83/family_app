@@ -86,10 +86,10 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
   const todayStr = useClientDateStr();
 
   const card = {
-    background: '#fff',
-    border: '0.5px solid rgba(0,0,0,0.07)',
+    background: 'var(--family-surface)',
+    border: '0.5px solid var(--family-border)',
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
   };
 
   if (loading) {
@@ -106,7 +106,7 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
       <div style={card}>
         <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-3"
           style={{ color: '#a09d99' }}>Müllabfuhr</h3>
-        <p className="text-sm font-sans" style={{ color: '#a09d99' }}>Keine Termine verfügbar</p>
+        <p className="text-sm font-sans py-4 text-center" style={{ color: '#a09d99' }}>Keine Termine verfügbar</p>
       </div>
     );
   }
@@ -128,7 +128,25 @@ export default function WasteWidget({ data, fetched_at, loading }: WasteWidgetPr
     <div className="flex items-center justify-between mb-3">
       <h3 className="text-[10px] font-sans font-semibold uppercase tracking-wider"
         style={{ color: '#a09d99' }}>Müllabfuhr</h3>
-      {stale && <span className="text-xs" style={{ color: '#f0a500' }}>⚠ veraltet</span>}
+      <div className="flex items-center gap-1.5">
+        {(fetched_at ?? data?.fetched_at) && (
+          <>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: stale ? '#e0a020' : '#3a9a6e',
+                flexShrink: 0,
+                display: 'inline-block',
+              }}
+            />
+            <span className="text-[10px] font-sans" style={{ color: '#a09d99' }}>
+              {stale ? 'veraltet' : 'aktuell'}
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 

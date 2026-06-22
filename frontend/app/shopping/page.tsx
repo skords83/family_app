@@ -346,7 +346,7 @@ export default function ShoppingPage() {
         </div>
 
         {/* Norish-Toggle */}
-        <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
+        <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '0.5px solid var(--family-border)' }}>
           <button
             onClick={() => setSendToNoriish(v => !v)}
             className="w-8 h-4 rounded-full relative transition-all flex-shrink-0"
@@ -417,7 +417,7 @@ export default function ShoppingPage() {
                       key={item.id}
                       className="flex items-center gap-3 px-5 py-3.5 transition-all"
                       style={{
-                        borderBottom: idx < catItems.length - 1 ? '0.5px solid rgba(0,0,0,0.05)' : 'none',
+                        borderBottom: idx < catItems.length - 1 ? '0.5px solid var(--family-border)' : 'none',
                         opacity: item.done ? 0.55 : 1,
                       }}
                     >

@@ -153,7 +153,7 @@ export default function WeatherWidget({ data, fetched_at, loading, variant = 'ca
               <div
                 key={idx}
                 className="flex flex-col items-center rounded-lg"
-                style={{ background: '#f5f2ee', padding: '4px 7px', minWidth: 40 }}
+                style={{ background: 'var(--family-surface2)', padding: '4px 7px', minWidth: 40 }}
               >
                 <span className="font-sans" style={{ fontSize: 10, color: '#a09d99', lineHeight: 1.3 }}>
                   {formatTime(h.time)}
@@ -298,7 +298,7 @@ export default function WeatherWidget({ data, fetched_at, loading, variant = 'ca
               <div
                 key={idx}
                 className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5"
-                style={{ background: '#f5f2ee', minWidth: 0 }}
+                style={{ background: 'var(--family-surface2)', minWidth: 0 }}
               >
                 <span className="text-[10px] font-sans truncate w-full text-center" style={{ color: '#a09d99' }}>
                   {formatTime(h.time)}
