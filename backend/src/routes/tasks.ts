@@ -304,7 +304,7 @@ tasksRouter.post('/verify-parent-pin', async (req: Request, res: Response) => {
       return res.json({ valid: false });
     }
     const token = generateParentToken(result.userId);
-    res.json({ valid: true, token, userId: result.userId ?? null });
+    res.json({ valid: true, ...(token ? { token } : {}), userId: result.userId ?? null });
   } catch (err) {
     console.error('Error verifying PIN:', err);
     res.status(500).json({ valid: false });

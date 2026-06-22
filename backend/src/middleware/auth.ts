@@ -15,9 +15,9 @@ interface JwtPayload {
   role: string;
 }
 
-export function generateParentToken(userId?: string): string {
+export function generateParentToken(userId?: string): string | null {
   const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET nicht konfiguriert');
+  if (!secret) return null;
   const expiresIn = (process.env.JWT_EXPIRES_IN ?? '4h') as string;
   return jwt.sign({ userId, role: 'parent' }, secret, { expiresIn } as jwt.SignOptions);
 }

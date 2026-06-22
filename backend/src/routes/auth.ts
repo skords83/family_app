@@ -56,7 +56,7 @@ authRouter.post('/verify-pin', async (req: Request, res: Response) => {
     }
 
     const token = generateParentToken(result.userId);
-    res.json({ valid: true, token, userId: result.userId ?? null });
+    res.json({ valid: true, ...(token ? { token } : {}), userId: result.userId ?? null });
   } catch (err) {
     console.error('Error in POST /api/auth/verify-pin:', err);
     res.status(500).json({ valid: false, error: 'Internal server error' });
