@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { emitSSE } from '../sse';
+import { requireParentAuth } from '../middleware/auth';
 
 // Router for /api/points routes
 export const pointsRouter = Router();
@@ -8,15 +9,7 @@ export const pointsRouter = Router();
 // Router for routes nested under /api/users/:id
 export const userPointsRouter = Router({ mergeParams: true });
 
-async function verifyParentPin(pin: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
-    [pin]
-  );
-  // Also check ADMIN_PIN env var
-  if (pin === process.env.ADMIN_PIN) return true;
-  return result.rows.length > 0;
-}
+
 
 // GET /api/users/:id/points - point history for user
 // This is mounted on userPointsRouter at '/' and that router at /api/users/:id/points
@@ -60,17 +53,12 @@ userPointsRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/points/manual - manual point adjustment (parent only)
-pointsRouter.post('/manual', async (req: Request, res: Response) => {
+pointsRouter.post('/manual', requireParentAuth, async (req: Request, res: Response) => {
   try {
-    const { user_id, points, reason, pin } = req.body;
+    const { user_id, points, reason } = req.body;
 
-    if (!user_id || points === undefined || !pin) {
-      return res.status(400).json({ error: 'user_id, points, and pin are required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
+    if (!user_id || points === undefined) {
+      return res.status(400).json({ error: 'user_id and points are required' });
     }
 
     // Verify target user exists

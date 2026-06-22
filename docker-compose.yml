@@ -41,6 +41,9 @@ services:
       WEATHER_LAT: ${WEATHER_LAT}
       WEATHER_LON: ${WEATHER_LON}
       ADMIN_PIN: ${ADMIN_PIN}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-4h}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     ports:
       - "3001:3001"
     depends_on:

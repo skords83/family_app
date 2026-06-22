@@ -77,34 +77,60 @@ function nowHHMM(): string {
 }
 
 /** WeekStreak — 7 Kreise Mo–So, gefüllt wenn Aufgaben erledigt */
-function WeekStreak({ color, tasksDone, tasksTotal }: { color: string; tasksDone: number; tasksTotal: number }) {
+function WeekStreak({
+  color,
+  tasksDone,
+  tasksTotal,
+  weekData,
+}: {
+  color: string;
+  tasksDone: number;
+  tasksTotal: number;
+  weekData: Record<string, { done: number; total: number }>;
+}) {
   const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const today = new Date().getDay(); // 0=So, 1=Mo ...
-  const todayIdx = today === 0 ? 6 : today - 1;
+  const today = new Date();
+  const todayDay = today.getDay(); // 0=So, 1=Mo ...
+  const todayIdx = todayDay === 0 ? 6 : todayDay - 1;
   const allDone = tasksTotal > 0 && tasksDone >= tasksTotal;
+
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - todayIdx);
+  monday.setHours(0, 0, 0, 0);
 
   return (
     <div className="flex gap-1.5 justify-between">
       {days.map((d, i) => {
+        const dayDate = new Date(monday);
+        dayDate.setDate(monday.getDate() + i);
+        const dateKey = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, '0')}-${String(dayDate.getDate()).padStart(2, '0')}`;
+
         const isPast = i < todayIdx;
         const isToday = i === todayIdx;
+        const data = weekData[dateKey];
+        const pastAllDone = isPast && !!data && data.total > 0 && data.done >= data.total;
+        const pastPartial = isPast && !!data && data.total > 0 && data.done > 0 && data.done < data.total;
+
         return (
           <div key={d} className="flex flex-col items-center gap-1 flex-1">
             <div
               className="w-full rounded-lg flex items-center justify-center text-[10px] font-bold"
               style={{
                 height: 28,
-                background: isToday && allDone ? color
+                background:
+                  (isToday && allDone) || pastAllDone ? color
                   : isToday ? `${color}30`
+                  : pastPartial ? `${color}60`
                   : isPast ? '#e8e4de'
                   : '#f0ede8',
-                color: isToday && allDone ? '#fff'
+                color:
+                  (isToday && allDone) || pastAllDone || pastPartial ? '#fff'
                   : isToday ? color
                   : '#a09d99',
                 border: isToday ? `1.5px solid ${color}` : 'none',
               }}
             >
-              {isToday && allDone ? '✓' : d}
+              {(isToday && allDone) || pastAllDone ? '✓' : d}
             </div>
           </div>
         );
@@ -120,6 +146,7 @@ export default function UserPage() {
 
   const [user, setUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
+  const [weekData, setWeekData] = useState<Record<string, { done: number; total: number }>>({});
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [claims, setClaims] = useState<UserClaim[]>([]);
@@ -162,12 +189,24 @@ export default function UserPage() {
   const fetchData = useCallback(async () => {
     if (!userId) return;
     try {
-      const [ur, tr, cr, rr, clr] = await Promise.allSettled([
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const todayIdx = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - todayIdx);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const from = `${mon.getFullYear()}-${pad(mon.getMonth() + 1)}-${pad(mon.getDate())}`;
+      const to = `${sun.getFullYear()}-${pad(sun.getMonth() + 1)}-${pad(sun.getDate())}`;
+
+      const [ur, tr, cr, rr, clr, wr] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users/${userId}`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/rewards?user_id=${userId}`).then(r => r.json()),
         fetch(`${API_BASE}/api/rewards/claims?user_id=${userId}`).then(r => r.json()),
+        fetch(`${API_BASE}/api/tasks/instances?user_id=${userId}&from=${from}&to=${to}`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && ur.value.id) setUser(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value))
@@ -178,6 +217,13 @@ export default function UserPage() {
         setRewards(rr.value);
       if (clr.status === 'fulfilled' && Array.isArray(clr.value))
         setClaims(clr.value);
+      if (wr.status === 'fulfilled' && Array.isArray(wr.value)) {
+        const map: Record<string, { done: number; total: number }> = {};
+        for (const row of wr.value as Array<{ date: string; done: number; total: number }>) {
+          map[row.date] = { done: row.done, total: row.total };
+        }
+        setWeekData(map);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [userId]);
@@ -584,7 +630,7 @@ export default function UserPage() {
               <i className="ti ti-flame" style={{ fontSize: 13, verticalAlign: -1, marginRight: 4 }} />
               Diese Woche
             </p>
-            <WeekStreak color={user.color} tasksDone={doneTasks.length} tasksTotal={tasks.length} />
+            <WeekStreak color={user.color} tasksDone={doneTasks.length} tasksTotal={tasks.length} weekData={weekData} />
           </div>
 
           {/* Belohnungen */}

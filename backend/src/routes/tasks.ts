@@ -8,6 +8,8 @@ import {
   recurrenceMatchesDate,
 } from '../jobs/generateDailyTasks';
 import { getTodayInAppTz, pgDateToStr } from '../utils/date';
+import { verifyParentAuth } from '../lib/auth';
+import { requireParentAuth, generateParentToken } from '../middleware/auth';
 
 export const tasksRouter = Router();
 
@@ -41,14 +43,6 @@ function normaliseAssignedTo(value: unknown): string[] | null {
 function extractUserId(value: unknown): string {
   if (Array.isArray(value)) return String(value[0]);
   return String(value);
-}
-
-async function verifyParentPin(pin: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
-    [pin]
-  );
-  return result.rows.length > 0;
 }
 
 /**
@@ -267,15 +261,50 @@ tasksRouter.get('/instances/completed-today', async (_req: Request, res: Respons
   }
 });
 
+// GET /api/tasks/instances?user_id=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD
+// Per-day completion summary for WeekStreak and history views.
+tasksRouter.get('/instances', async (req: Request, res: Response) => {
+  try {
+    const { user_id, from, to } = req.query as { user_id?: string; from?: string; to?: string };
+
+    if (!user_id || !from || !to) {
+      return res.status(400).json({ error: 'user_id, from, and to are required' });
+    }
+
+    const result = await pool.query<{ date: string; total: number; done: number }>(`
+      SELECT
+        ti.date::text AS date,
+        COUNT(ti.id)::integer AS total,
+        COUNT(ti.completed_at)::integer AS done
+      FROM task_instances ti
+      WHERE ti.assigned_to = $1
+        AND ti.date >= $2::date
+        AND ti.date <= $3::date
+      GROUP BY ti.date
+      ORDER BY ti.date
+    `, [user_id, from, to]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching task instances summary:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tasks/verify-parent-pin - check if a parent PIN is valid (used by admin login)
+// Also returns a JWT token on success so the frontend can avoid re-sending PINs.
 tasksRouter.post('/verify-parent-pin', async (req: Request, res: Response) => {
   try {
     const { pin } = req.body;
     if (!pin) {
       return res.status(400).json({ valid: false });
     }
-    const valid = await verifyParentPin(pin);
-    res.json({ valid });
+    const result = await verifyParentAuth(pin);
+    if (!result.valid) {
+      return res.json({ valid: false });
+    }
+    const token = generateParentToken(result.userId);
+    res.json({ valid: true, token, userId: result.userId ?? null });
   } catch (err) {
     console.error('Error verifying PIN:', err);
     res.status(500).json({ valid: false });
@@ -308,6 +337,11 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
     // assigned_to is a scalar UUID on task_instances, but extract safely
     const assignedTo = extractUserId(task.assigned_to);
 
+    // Only the assigned user (or any user when unassigned) may complete this task
+    if (task.assigned_to !== null && task.assigned_to !== user_id) {
+      return res.status(403).json({ error: 'Nicht berechtigt, diesen Task abzuhaken' });
+    }
+
     if (task.completed_at) {
       return res.status(400).json({ error: 'Task already completed' });
     }
@@ -339,26 +373,10 @@ tasksRouter.post('/:id/complete', async (req: Request, res: Response) => {
 });
 
 // POST /api/tasks/:id/approve - parent approves a pending task (grants points)
-tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
+tasksRouter.post('/:id/approve', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
-
-    // Get parent id for approved_by
-    const parentResult = await pool.query(
-      `SELECT id FROM users WHERE role = 'parent' AND pin = $1 LIMIT 1`,
-      [pin]
-    );
-    const parentId = parentResult.rows[0]?.id;
+    const parentId = req.parentAuth?.userId ?? null;
 
     const taskResult = await pool.query(`
       SELECT ti.*, tt.points, tt.title, tt.requires_approval
@@ -404,19 +422,9 @@ tasksRouter.post('/:id/approve', async (req: Request, res: Response) => {
 });
 
 // POST /api/tasks/:id/reject - parent rejects a pending task (resets to open)
-tasksRouter.post('/:id/reject', async (req: Request, res: Response) => {
+tasksRouter.post('/:id/reject', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
 
     const taskResult = await pool.query(`
       SELECT ti.*, tt.requires_approval

@@ -2,22 +2,11 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { emitSSE } from '../sse';
 import { ageFactorFromBirthdate, effectiveRewardCost } from '../lib/age-factor';
+import { requireParentAuth } from '../middleware/auth';
 
 export const rewardsRouter = Router();
 
-async function verifyParentPin(pin: string): Promise<boolean> {
-  // Accept the global admin PIN if set
-  const adminPin = process.env.ADMIN_PIN;
-  if (adminPin && pin === adminPin) {
-    return true;
-  }
-  // Also accept any parent user's personal PIN from the DB
-  const result = await pool.query(
-    `SELECT id FROM users WHERE role = 'parent' AND pin = $1`,
-    [pin]
-  );
-  return result.rows.length > 0;
-}
+
 
 /** Look up a user's birthdate (or null). Returns null if user not found. */
 async function getUserBirthdate(userId: string): Promise<Date | null> {
@@ -124,17 +113,12 @@ rewardsRouter.get('/claims', async (req: Request, res: Response) => {
 });
 
 // POST /api/rewards - create reward (admin)
-rewardsRouter.post('/', async (req: Request, res: Response) => {
+rewardsRouter.post('/', requireParentAuth, async (req: Request, res: Response) => {
   try {
-    const { title, points_cost, available_to, active, pin } = req.body;
+    const { title, points_cost, available_to, active } = req.body;
 
-    if (!title || points_cost === undefined || !pin) {
-      return res.status(400).json({ error: 'title, points_cost, and pin are required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
+    if (!title || points_cost === undefined) {
+      return res.status(400).json({ error: 'title and points_cost are required' });
     }
 
     // Normalize: null/undefined → null, [] → null, array → UUID[]
@@ -235,19 +219,9 @@ rewardsRouter.post('/:id/claim', async (req: Request, res: Response) => {
 
 // POST /api/rewards/:id/approve - approve a reward claim (parent only)
 // NOTE: :id here is the claim id
-rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
+rewardsRouter.post('/:id/approve', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
 
     const result = await pool.query(`
       UPDATE reward_claims
@@ -272,19 +246,10 @@ rewardsRouter.post('/:id/approve', async (req: Request, res: Response) => {
 // POST /api/rewards/:id/reject - reject a reward claim + refund points (parent only)
 // NOTE: :id here is the claim id. Refunds the actual amount spent (points_spent),
 // falling back to the reward's base points_cost for legacy claims (pre-age-factor).
-rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
+rewardsRouter.post('/:id/reject', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { pin, reason } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
+    const { reason } = req.body;
 
     // Fetch the claim — refund uses points_spent if present, else falls back to base cost
     const claimResult = await pool.query(`
@@ -328,19 +293,10 @@ rewardsRouter.post('/:id/reject', async (req: Request, res: Response) => {
 });
 
 // PATCH /api/rewards/:id - update reward (admin)
-rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
+rewardsRouter.patch('/:id', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { title, points_cost, available_to, active, pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
+    const { title, points_cost, available_to, active } = req.body;
 
     const existing = await pool.query(`SELECT * FROM rewards WHERE id = $1`, [id]);
     if (existing.rows.length === 0) {
@@ -379,19 +335,9 @@ rewardsRouter.patch('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/rewards/:id - delete reward (admin)
-rewardsRouter.delete('/:id', async (req: Request, res: Response) => {
+rewardsRouter.delete('/:id', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { pin } = req.body;
-
-    if (!pin) {
-      return res.status(400).json({ error: 'pin is required' });
-    }
-
-    const isParent = await verifyParentPin(pin);
-    if (!isParent) {
-      return res.status(401).json({ error: 'Invalid parent PIN' });
-    }
 
     const existing = await pool.query(`SELECT id FROM rewards WHERE id = $1`, [id]);
     if (existing.rows.length === 0) {

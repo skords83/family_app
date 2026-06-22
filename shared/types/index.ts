@@ -14,6 +14,8 @@ export interface User {
   role: 'child' | 'parent';
   /** ISO-Datum YYYY-MM-DD oder null. Bestimmt den Alters-Multiplikator für Belohnungen. */
   birthdate: string | null;
+  /** NFC-Chip UID für kontaktlose Anmeldung. */
+  nfc_uid?: string | null;
 }
 
 export interface TaskTemplate {
@@ -33,6 +35,11 @@ export interface TaskInstance {
   date: string;
   completed_at: string | null;
   completed_by: string | null;
+  approved_at: string | null;
+  approved_by: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
+  requires_approval: boolean;
   title: string;
   points: number;
 }
@@ -64,8 +71,10 @@ export interface RewardClaim {
   user_id: string;
   claimed_at: string;
   approved_at: string | null;
+  rejected_at: string | null;
+  reject_reason: string | null;
   /** Tatsächlich abgebuchte Punkte (Audit-Trail; kann von points_cost abweichen). */
-  points_spent: number | null;
+  points_spent: number;
   reward_title?: string;
 }
 

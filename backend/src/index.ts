@@ -11,6 +11,7 @@ import { timetableRouter } from './routes/timetable';
 import { pointsRouter, userPointsRouter } from './routes/points';
 import { rewardsRouter } from './routes/rewards';
 import { configRouter } from './routes/config';
+import { authRouter } from './routes/auth';
 import { weatherRouter } from './widgets/weather';
 import { caldavRouter } from './widgets/caldav';
 import { norishRouter } from './widgets/norish';
@@ -23,7 +24,8 @@ import { sseHandler } from './sse';
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
-app.use(cors({ origin: '*' }));
+const corsOrigin = process.env.CORS_ORIGIN ?? '*';
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '10mb' }));
 
 // SSE — vor compression und anderen Middlewares registrieren
@@ -36,6 +38,7 @@ app.use('/api/timetable', timetableRouter);
 app.use('/api/points', pointsRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/config', configRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/widgets/weather', weatherRouter);
 app.use('/api/widgets/calendar', caldavRouter);
 app.use('/api/widgets/meals', norishRouter);

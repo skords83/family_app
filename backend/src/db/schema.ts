@@ -312,4 +312,34 @@ CREATE TABLE IF NOT EXISTS timetable_subject_colors (
   bg         TEXT NOT NULL,
   fg         TEXT NOT NULL
 );
+-- NFC UID für User (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='users' AND column_name='nfc_uid'
+  ) THEN
+    ALTER TABLE users ADD COLUMN nfc_uid TEXT UNIQUE;
+  END IF;
+END $$;
+-- Add requires_approval / rejected_at / reject_reason to task_instances (safe migration)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_instances' AND column_name='requires_approval'
+  ) THEN
+    ALTER TABLE task_instances ADD COLUMN requires_approval BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_instances' AND column_name='rejected_at'
+  ) THEN
+    ALTER TABLE task_instances ADD COLUMN rejected_at TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='task_instances' AND column_name='reject_reason'
+  ) THEN
+    ALTER TABLE task_instances ADD COLUMN reject_reason TEXT;
+  END IF;
+END $$;
 `;

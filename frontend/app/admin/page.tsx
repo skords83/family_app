@@ -185,6 +185,7 @@ export default function AdminPage() {
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [editRewardForm, setEditRewardForm] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
+  const [newUser, setNewUser] = useState({ name: '', avatar: '👤', color: '#6366f1', role: 'child' as 'child' | 'parent', pin: '', birthdate: '' });
 
   const showNotification = (text: string) => {
     setNotification(text);
@@ -464,6 +465,31 @@ export default function AdminPage() {
       setNewReward({ title: '', points_cost: 50, available_to: [] });
       showNotification('Belohnung erstellt!');
       fetchData();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch(`${API_BASE}/api/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newUser.name,
+        avatar: newUser.avatar || '👤',
+        color: newUser.color,
+        role: newUser.role,
+        pin: newUser.pin || undefined,
+        birthdate: newUser.birthdate || undefined,
+        admin_pin: adminPin,
+      }),
+    });
+    if (res.ok) {
+      setNewUser({ name: '', avatar: '👤', color: '#6366f1', role: 'child', pin: '', birthdate: '' });
+      showNotification('Benutzer erstellt!');
+      fetchUsers();
     } else {
       const err = await res.json().catch(() => ({}));
       showNotification(`Fehler: ${err.error ?? res.status}`);
@@ -1076,7 +1102,7 @@ export default function AdminPage() {
                       ))}
                     </div>
                     <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
-                      Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                      Aufgabe ist sichtbar, aber erst ab dieser Uhrzeit abhakbar.
                     </p>
                   </div>
 
@@ -1594,6 +1620,109 @@ export default function AdminPage() {
               ))}
             </div>
 
+            {/* Neuen Benutzer anlegen */}
+            <div
+              className="rounded-2xl border p-4"
+              style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
+            >
+              <h3 className="font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--family-text)' }}>
+                <Icon name="plus" className="text-[var(--family-accent)]" />
+                Neues Mitglied anlegen
+              </h3>
+              <form onSubmit={handleCreateUser} className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  className={inputCls}
+                  style={inputStyle}
+                  required
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Avatar (Emoji)</label>
+                    <input
+                      type="text"
+                      value={newUser.avatar}
+                      onChange={(e) => setNewUser({ ...newUser, avatar: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                      maxLength={2}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Rolle</label>
+                    <select
+                      value={newUser.role}
+                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'child' | 'parent' })}
+                      className={inputCls}
+                      style={inputStyle}
+                    >
+                      <option value="child">Kind</option>
+                      <option value="parent">Elternteil</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs mb-2 block" style={{ color: 'var(--family-text2)' }}>Farbe</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#06b6d4'].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setNewUser({ ...newUser, color: c })}
+                        className="w-8 h-8 rounded-full transition-transform active:scale-90"
+                        style={{
+                          background: c,
+                          outline: newUser.color === c ? `3px solid ${c}` : 'none',
+                          outlineOffset: 2,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>
+                      PIN {newUser.role === 'parent' ? '(erforderlich)' : '(optional)'}
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="PIN"
+                      value={newUser.pin}
+                      onChange={(e) => setNewUser({ ...newUser, pin: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                      required={newUser.role === 'parent'}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-1 block" style={{ color: 'var(--family-text2)' }}>Geburtstag (optional)</label>
+                    <input
+                      type="date"
+                      value={newUser.birthdate}
+                      onChange={(e) => setNewUser({ ...newUser, birthdate: e.target.value })}
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 font-semibold rounded-xl transition-colors active:scale-95 text-white flex items-center justify-center gap-2"
+                  style={{ background: newUser.color }}
+                >
+                  <Icon name="plus" />
+                  Mitglied erstellen
+                </button>
+              </form>
+            </div>
+
           </div>
         )}
 
@@ -2015,7 +2144,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                   <p className="text-[10px] mt-1" style={{ color: 'var(--family-text3)' }}>
-                    Aufgabe wird vor dieser Uhrzeit nicht angezeigt.
+                    Aufgabe ist sichtbar, aber erst ab dieser Uhrzeit abhakbar.
                   </p>
                 </div>
 

@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { verifyParentAuth, hashPin } from '../lib/auth';
+import { requireParentAuth } from '../middleware/auth';
 
 export const usersRouter = Router();
 
-// GET /api/users – all users with points + today's task progress
+// GET /api/users — all users with points + today's task progress
 usersRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -43,7 +45,7 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/users/:id – single user with points + task progress
+// GET /api/users/:id — single user with points + task progress
 usersRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -88,7 +90,7 @@ usersRouter.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/users/:id/photo – upload base64 photo
+// POST /api/users/:id/photo — upload base64 photo
 usersRouter.post('/:id/photo', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -110,7 +112,7 @@ usersRouter.post('/:id/photo', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/users/:id – update name / avatar / color / pin / birthdate
+// PUT /api/users/:id — update name / avatar / color / pin / birthdate
 usersRouter.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -121,6 +123,20 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
       pin?: string;
       birthdate?: string | null;
     };
+
+    // PIN changes require admin_pin verification
+    let hashedPin: string | undefined;
+    if (pin !== undefined) {
+      const adminPinInput = req.body.admin_pin as string | undefined;
+      if (!adminPinInput) {
+        return res.status(400).json({ error: 'admin_pin ist für PIN-Änderungen erforderlich' });
+      }
+      const auth = await verifyParentAuth(adminPinInput);
+      if (!auth.valid) {
+        return res.status(401).json({ error: 'Ungültiger Admin-PIN' });
+      }
+      hashedPin = await hashPin(pin);
+    }
 
     // birthdate explicitly nullable — treat null as "clear", undefined as "leave alone"
     const birthdateSql = birthdate === undefined ? null : birthdate;
@@ -136,7 +152,7 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
         birthdate = CASE WHEN $6::boolean THEN $5::date ELSE birthdate END
       WHERE id = $7
       RETURNING id, name, avatar, photo, color, role, birthdate
-    `, [name, avatar, color, pin, birthdateSql, birthdateChanged, id]);
+    `, [name, avatar, color, hashedPin ?? null, birthdateSql, birthdateChanged, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -148,19 +164,26 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/users – create new user (admin)
+// POST /api/users — create new user (admin)
 usersRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, avatar, color, pin, role, birthdate } = req.body as {
+    const { name, avatar, color, pin, role, birthdate, admin_pin } = req.body as {
       name: string;
       avatar?: string;
       color?: string;
       pin?: string;
       role?: string;
       birthdate?: string | null;
+      admin_pin?: string;
     };
 
     if (!name) return res.status(400).json({ error: 'name is required' });
+
+    if (!admin_pin) return res.status(400).json({ error: 'admin_pin ist erforderlich' });
+    const adminAuth = await verifyParentAuth(admin_pin);
+    if (!adminAuth.valid) return res.status(401).json({ error: 'Ungültiger Admin-PIN' });
+
+    const pinToStore = pin ? await hashPin(pin) : null;
 
     const result = await pool.query(`
       INSERT INTO users (name, avatar, color, pin, role, birthdate)
@@ -170,7 +193,7 @@ usersRouter.post('/', async (req: Request, res: Response) => {
       name,
       avatar ?? '👤',
       color ?? '#6366f1',
-      pin ?? null,
+      pinToStore,
       role ?? 'child',
       birthdate ?? null,
     ]);
@@ -182,10 +205,11 @@ usersRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/users/:id
-usersRouter.delete('/:id', async (req: Request, res: Response) => {
+// DELETE /api/users/:id — requires parent auth (JWT or PIN)
+usersRouter.delete('/:id', requireParentAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ ok: true });
   } catch (err) {
