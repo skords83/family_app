@@ -41,10 +41,6 @@ export default function Sidebar() {
       style={{
         width: 64,
         background: '#1e1b18',
-        minHeight: '100vh',
-        position: 'sticky',
-        top: 0,
-        alignSelf: 'flex-start',
         paddingTop: 10,
         paddingBottom: 16,
       }}
