@@ -18,6 +18,7 @@ usersRouter.get('/', async (_req: Request, res: Response) => {
         u.color,
         u.role,
         u.birthdate,
+        u.nfc_uid,
         COALESCE(pe.total_points, 0)::integer AS points,
         COALESCE(ti.tasks_total, 0)::integer AS tasks_total,
         COALESCE(ti.tasks_done, 0)::integer AS tasks_done
@@ -116,12 +117,13 @@ usersRouter.post('/:id/photo', async (req: Request, res: Response) => {
 usersRouter.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, avatar, color, pin, birthdate } = req.body as {
+    const { name, avatar, color, pin, birthdate, nfc_uid } = req.body as {
       name?: string;
       avatar?: string;
       color?: string;
       pin?: string;
       birthdate?: string | null;
+      nfc_uid?: string | null;
     };
 
     // PIN changes require admin_pin verification
@@ -138,9 +140,11 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
       hashedPin = await hashPin(pin);
     }
 
-    // birthdate explicitly nullable — treat null as "clear", undefined as "leave alone"
+    // birthdate and nfc_uid explicitly nullable — treat null as "clear", undefined as "leave alone"
     const birthdateSql = birthdate === undefined ? null : birthdate;
     const birthdateChanged = birthdate !== undefined;
+    const nfcUidSql = nfc_uid === undefined ? null : nfc_uid;
+    const nfcUidChanged = nfc_uid !== undefined;
 
     const result = await pool.query(`
       UPDATE users
@@ -149,10 +153,11 @@ usersRouter.put('/:id', async (req: Request, res: Response) => {
         avatar    = COALESCE($2, avatar),
         color     = COALESCE($3, color),
         pin       = COALESCE($4, pin),
-        birthdate = CASE WHEN $6::boolean THEN $5::date ELSE birthdate END
+        birthdate = CASE WHEN $6::boolean THEN $5::date ELSE birthdate END,
+        nfc_uid   = CASE WHEN $9::boolean THEN $8 ELSE nfc_uid END
       WHERE id = $7
-      RETURNING id, name, avatar, photo, color, role, birthdate
-    `, [name, avatar, color, hashedPin ?? null, birthdateSql, birthdateChanged, id]);
+      RETURNING id, name, avatar, photo, color, role, birthdate, nfc_uid
+    `, [name, avatar, color, hashedPin ?? null, birthdateSql, birthdateChanged, id, nfcUidSql, nfcUidChanged]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });

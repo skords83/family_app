@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSSE } from '@/hooks/useSSE';
+import type { SSEEvent } from '@/hooks/useSSE';
 import CalendarWidget from '@/components/widgets/CalendarWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
 import WasteWidget from '@/components/widgets/WasteWidget';
@@ -84,6 +86,7 @@ function nowHHMM(): string {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
@@ -134,11 +137,17 @@ export default function HomePage() {
 
   const handleConfigUpdated = useCallback(() => window.location.reload(), []);
 
+  const handleNfcScan = useCallback((event: SSEEvent) => {
+    const userId = (event.data?.user as { id?: string })?.id;
+    if (userId) router.push(`/user/${userId}`);
+  }, [router]);
+
   useSSE({
     task_updated: fetchTasks,
     points_updated: fetchUsers,
     reward_claimed: fetchUsers,
     config_updated: handleConfigUpdated,
+    nfc_scan: handleNfcScan,
   });
 
   return (

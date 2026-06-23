@@ -10,6 +10,7 @@ export type SSEEventType =
   | 'reward_claimed'
   | 'shopping_updated'
   | 'config_updated'
+  | 'nfc_scan'
   | 'ping';
 
 export interface SSEEvent {

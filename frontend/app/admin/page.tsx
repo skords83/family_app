@@ -30,6 +30,7 @@ interface User {
   color: string;
   points: number;
   role: string;
+  nfc_uid?: string | null;
 }
 
 interface TaskTemplate {
@@ -186,6 +187,8 @@ export default function AdminPage() {
   const [editRewardForm, setEditRewardForm] = useState({ title: '', points_cost: 50, available_to: [] as string[] });
   const [manualPoints, setManualPoints] = useState({ user_id: '', points: 0, reason: '' });
   const [newUser, setNewUser] = useState({ name: '', avatar: '👤', color: '#6366f1', role: 'child' as 'child' | 'parent', pin: '', birthdate: '' });
+  const [nfcEditingUserId, setNfcEditingUserId] = useState<string | null>(null);
+  const [nfcUidInput, setNfcUidInput] = useState('');
 
   const showNotification = (text: string) => {
     setNotification(text);
@@ -618,6 +621,23 @@ export default function AdminPage() {
       showNotification('Aufgabe zurückgesetzt. Kind wird benachrichtigt.');
       fetchCompletedToday();
       fetchPendingApprovals();
+      fetchUsers();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
+  const handleSaveNfcUid = async (userId: string, uid: string | null) => {
+    const res = await fetch(`${API_BASE}/api/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nfc_uid: uid }),
+    });
+    if (res.ok) {
+      setNfcEditingUserId(null);
+      setNfcUidInput('');
+      showNotification(uid ? 'NFC-Tag gespeichert!' : 'NFC-Tag entfernt.');
       fetchUsers();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -1601,25 +1621,92 @@ export default function AdminPage() {
               {users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  className="rounded-xl border overflow-hidden"
                   style={{ background: 'var(--family-surface)', borderColor: '#d8d4cf' }}
                 >
-                  <UserAvatar user={user} size={44} />
-                  <div className="flex-1">
-                    <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
-                    <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
-                      {user.role === 'parent'
-                        ? <><Icon name="crown" />&nbsp;Elternteil</>
-                        : <><Icon name="user" />&nbsp;Kind</>
-                      }
-                    </p>
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <UserAvatar user={user} size={44} />
+                    <div className="flex-1">
+                      <p className="font-bold" style={{ color: user.color }}>{user.name}</p>
+                      <p className="text-xs flex items-center gap-1" style={{ color: 'var(--family-text3)' }}>
+                        {user.role === 'parent'
+                          ? <><Icon name="crown" />&nbsp;Elternteil</>
+                          : <><Icon name="user" />&nbsp;Kind</>
+                        }
+                      </p>
+                      {user.nfc_uid && nfcEditingUserId !== user.id && (
+                        <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: '#6366f1' }}>
+                          <Icon name="nfc" />&nbsp;<span className="font-mono">{user.nfc_uid}</span>
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="text-right">
+                        <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
+                          <Icon name="star" />{user.points}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (nfcEditingUserId === user.id) {
+                            setNfcEditingUserId(null);
+                            setNfcUidInput('');
+                          } else {
+                            setNfcEditingUserId(user.id);
+                            setNfcUidInput(user.nfc_uid ?? '');
+                          }
+                        }}
+                        className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                        style={
+                          nfcEditingUserId === user.id
+                            ? { background: '#e0e7ff', color: '#4338ca', border: '1px solid #a5b4fc' }
+                            : { background: user.nfc_uid ? '#e0e7ff' : 'var(--family-surface2)', color: user.nfc_uid ? '#4338ca' : 'var(--family-text2)', border: '1px solid #d8d4cf' }
+                        }
+                        title="NFC-Tag verwalten"
+                      >
+                        <Icon name="nfc" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold flex items-center gap-1 justify-end" style={{ color: user.color }}>
-                      <Icon name="star" />{user.points}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
-                  </div>
+
+                  {nfcEditingUserId === user.id && (
+                    <div className="px-4 pb-3 border-t" style={{ borderColor: '#e8e4de', background: '#f5f3ff' }}>
+                      <p className="text-xs font-semibold mt-2 mb-1.5 flex items-center gap-1" style={{ color: '#4338ca' }}>
+                        <Icon name="nfc" />&nbsp;NFC-Tag UID
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="z.B. A1B2C3D4 (vom ESP32)"
+                          value={nfcUidInput}
+                          onChange={(e) => setNfcUidInput(e.target.value.toUpperCase())}
+                          className="flex-1 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 border"
+                          style={{ background: '#fff', borderColor: '#a5b4fc', color: 'var(--family-text)' }}
+                        />
+                        <button
+                          onClick={() => handleSaveNfcUid(user.id, nfcUidInput.trim() || null)}
+                          className="px-3 py-2 rounded-xl text-sm font-semibold text-white transition-colors active:scale-95"
+                          style={{ background: '#4338ca' }}
+                        >
+                          <Icon name="check" />
+                        </button>
+                        {user.nfc_uid && (
+                          <button
+                            onClick={() => handleSaveNfcUid(user.id, null)}
+                            className="px-3 py-2 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                            style={{ background: '#fee2e2', color: '#dc2626' }}
+                            title="NFC-Tag entfernen"
+                          >
+                            <Icon name="trash" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[10px] mt-1.5" style={{ color: '#6366f1' }}>
+                        UID wird vom ESP32 gemeldet oder steht auf dem Tag. Leer lassen zum Entfernen.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
 import { verifyParentAuth } from '../lib/auth';
 import { generateParentToken } from '../middleware/auth';
+import { emitSSE } from '../sse';
 
 export const authRouter = Router();
 
@@ -30,7 +31,9 @@ authRouter.post('/nfc', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Kein Benutzer für diese NFC-UID gefunden' });
     }
 
-    res.json({ user: result.rows[0] });
+    const user = result.rows[0];
+    emitSSE({ type: 'nfc_scan', data: { user } });
+    res.json({ user });
   } catch (err) {
     console.error('Error in POST /api/auth/nfc:', err);
     res.status(500).json({ error: 'Internal server error' });

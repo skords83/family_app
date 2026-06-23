@@ -11,6 +11,7 @@ export type SSEEventType =
   | 'reward_claimed'      // Belohnung eingelöst / genehmigt
   | 'shopping_updated'    // Einkaufsliste geändert
   | 'config_updated'      // Widget-Konfiguration geändert
+  | 'nfc_scan'            // NFC-Tag erkannt — Frontend navigiert zu User-Seite
   | 'ping';               // Heartbeat (kein Reload nötig)
 
 export interface SSEEvent {
