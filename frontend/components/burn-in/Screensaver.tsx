@@ -74,10 +74,10 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
         <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'A' ? 1 : 0, transition: 'opacity 3s ease' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.45)', transform: 'scale(1.08)' }} />
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       )}
       {/* Slot B */}
@@ -85,10 +85,10 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
         <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'B' ? 1 : 0, transition: 'opacity 3s ease' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.45)', transform: 'scale(1.08)' }} />
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       )}
 
