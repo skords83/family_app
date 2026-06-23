@@ -4,11 +4,11 @@ import { useEffect, useState, useRef } from "react";
 
 interface ScreensaverProps {
   onDismiss: () => void;
+  apiBase?: string;
 }
 
-interface ClockPos {
-  x: number; // 0–100 (vw)
-  y: number; // 0–100 (vh)
+interface SlideshowPhoto {
+  id: string;
 }
 
 function formatTime(date: Date) {
@@ -16,54 +16,39 @@ function formatTime(date: Date) {
 }
 
 function formatDate(date: Date) {
-  return date.toLocaleDateString("de-DE", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
+  return date.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
 }
 
-/** Sanfter Bounce innerhalb des sicheren Bereichs */
-function useBouncingPosition(padding = 15) {
-  const [pos, setPos] = useState<ClockPos>({ x: 50, y: 50 });
-  const vel = useRef({ x: 0.04, y: 0.03 }); // % pro Frame
-
-  useEffect(() => {
-    let frame: number;
-    let current = { x: 50, y: 50 };
-
-    const tick = () => {
-      current.x += vel.current.x;
-      current.y += vel.current.y;
-
-      if (current.x <= padding || current.x >= 100 - padding) {
-        vel.current.x *= -1;
-        current.x = Math.max(padding, Math.min(100 - padding, current.x));
-      }
-      if (current.y <= padding || current.y >= 100 - padding) {
-        vel.current.y *= -1;
-        current.y = Math.max(padding, Math.min(100 - padding, current.y));
-      }
-
-      setPos({ x: current.x, y: current.y });
-      frame = requestAnimationFrame(tick);
-    };
-
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [padding]);
-
-  return pos;
-}
-
-export function Screensaver({ onDismiss }: ScreensaverProps) {
+export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
   const [now, setNow] = useState(new Date());
-  const pos = useBouncingPosition(18);
+  const [photos, setPhotos] = useState<SlideshowPhoto[]>([]);
+  const [pair, setPair] = useState({ a: 0, b: 1, front: 'A' as 'A' | 'B' });
+  const counterRef = useRef(2);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/widgets/immich/slideshow`)
+      .then(r => r.json())
+      .then((d: { photos?: SlideshowPhoto[] }) => setPhotos(d.photos ?? []))
+      .catch(() => {});
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (photos.length < 2) return;
+    const t = setInterval(() => {
+      const next = counterRef.current % photos.length;
+      counterRef.current++;
+      setPair(prev => prev.front === 'A'
+        ? { a: prev.a, b: next, front: 'B' }
+        : { a: next, b: prev.b, front: 'A' }
+      );
+    }, 45_000);
+    return () => clearInterval(t);
+  }, [photos.length]);
 
   function handleDismiss(e: React.MouseEvent | React.TouchEvent) {
     e.stopPropagation();
@@ -71,64 +56,55 @@ export function Screensaver({ onDismiss }: ScreensaverProps) {
     onDismiss();
   }
 
+  const photoA = photos[pair.a];
+  const photoB = photos[pair.b];
+  const hasPhotos = photos.length > 0;
+  const clockColor = hasPhotos ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.18)';
+  const dateColor = hasPhotos ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.10)';
+
   return (
     <div
-      className="screensaver"
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', cursor: 'none', animation: 'ss-fade-in 1.5s ease forwards' }}
       onClick={handleDismiss}
       onTouchStart={handleDismiss}
       aria-label="Tippen zum Fortfahren"
     >
-      <div
-        className="screensaver-clock"
-        style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-      >
-        <span className="screensaver-time">{formatTime(now)}</span>
-        <span className="screensaver-date">{formatDate(now)}</span>
+      {/* Slot A */}
+      {photoA && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`}
+          alt="" aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: pair.front === 'A' ? 0.7 : 0, transition: 'opacity 3s ease' }}
+        />
+      )}
+      {/* Slot B */}
+      {photoB && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`}
+          alt="" aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: pair.front === 'B' ? 0.7 : 0, transition: 'opacity 3s ease' }}
+        />
+      )}
+
+      {hasPhotos && (
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.0) 40%, rgba(0,0,0,0.55) 100%)' }} />
+      )}
+
+      <div style={{ position: 'absolute', bottom: '10%', left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+        <span style={{ display: 'block', fontSize: 'clamp(3rem, 8vw, 7rem)', fontWeight: 100, letterSpacing: '0.05em', color: clockColor, fontVariantNumeric: 'tabular-nums', fontFamily: 'ui-monospace, "SF Mono", monospace', lineHeight: 1 }}>
+          {formatTime(now)}
+        </span>
+        <span style={{ display: 'block', marginTop: '0.5rem', fontSize: 'clamp(0.75rem, 1.8vw, 1.1rem)', fontWeight: 300, letterSpacing: '0.12em', textTransform: 'uppercase', color: dateColor, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+          {formatDate(now)}
+        </span>
       </div>
 
       <style>{`
-        .screensaver {
-          position: fixed;
-          inset: 0;
-          z-index: 9999;
-          background: #000;
-          cursor: none;
-          animation: screensaver-fade-in 1.5s ease forwards;
-        }
-
-        @keyframes screensaver-fade-in {
+        @keyframes ss-fade-in {
           from { opacity: 0; }
           to   { opacity: 1; }
-        }
-
-        .screensaver-clock {
-          position: absolute;
-          transform: translate(-50%, -50%);
-          text-align: center;
-          pointer-events: none;
-          /* Keine transition — der Bounce soll smooth via rAF laufen */
-        }
-
-        .screensaver-time {
-          display: block;
-          font-size: clamp(3rem, 8vw, 7rem);
-          font-weight: 100;
-          letter-spacing: 0.05em;
-          color: rgba(255, 255, 255, 0.18);
-          font-variant-numeric: tabular-nums;
-          font-family: ui-monospace, "SF Mono", monospace;
-          line-height: 1;
-        }
-
-        .screensaver-date {
-          display: block;
-          margin-top: 0.5rem;
-          font-size: clamp(0.75rem, 1.8vw, 1.1rem);
-          font-weight: 300;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.10);
-          font-family: ui-sans-serif, system-ui, sans-serif;
         }
       `}</style>
     </div>

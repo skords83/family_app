@@ -9,7 +9,6 @@ const NAV = [
   { href: '/timetable', icon: 'ti-school',             label: 'Stundenpläne'  },
   { href: '/meals',     icon: 'ti-bowl',               label: 'Essensplan'    },
   { href: '/shopping',  icon: 'ti-shopping-cart',      label: 'Einkaufsliste' },
-  { href: '/photos',    icon: 'ti-photo',              label: 'Fotos'         },
 ];
 const BOTTOM_NAV = [
   { href: '/members',  icon: 'ti-users',    label: 'Mitglieder'    },

@@ -126,6 +126,49 @@ immichRouter.get('/refresh', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/widgets/immich/slideshow - fetch shuffled batch from configured album
+immichRouter.get('/slideshow', async (_req: Request, res: Response) => {
+  const albumId = process.env.IMMICH_SLIDESHOW_ALBUM_ID;
+  const immichUrl = process.env.IMMICH_URL;
+  const apiKey = process.env.IMMICH_API_KEY;
+
+  if (!albumId) return res.status(503).json({ error: 'No slideshow album configured' });
+  if (!immichUrl || !apiKey) return res.status(503).json({ error: 'Immich configuration missing' });
+
+  const baseUrl = immichUrl.replace(/\/$/, '');
+  const apiBase = `${baseUrl}/api`;
+
+  try {
+    const response = await fetch(`${apiBase}/albums/${albumId}`, {
+      headers: { 'x-api-key': apiKey, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ error: `Immich album fetch failed: ${response.status}` });
+    }
+
+    const album = await response.json() as { assets?: unknown[] };
+    const rawAssets = album.assets ?? [];
+
+    const images = rawAssets
+      .map(a => { try { return ImmichAssetSchema.parse(a); } catch { return null; } })
+      .filter((a): a is NonNullable<typeof a> => a !== null && a.type === 'IMAGE');
+
+    // Fisher-Yates shuffle
+    for (let i = images.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [images[i], images[j]] = [images[j], images[i]];
+    }
+
+    const photos = images.slice(0, 20).map(a => ({ id: a.id }));
+    return res.json({ photos });
+  } catch (err) {
+    console.error('Error fetching slideshow album:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/widgets/immich/proxy/:id - proxy image with auth header
 immichRouter.get('/proxy/:id', async (req: Request, res: Response) => {
   try {
