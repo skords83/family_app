@@ -1,6 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { HaClimateEntitySchema, HaClimateResponseSchema, type HaClimateEntity } from '@family/shared';
+import {
+  HaClimateEntitySchema,
+  HaSensorEntitySchema,
+  HaClimateResponseSchema,
+  type HaClimateEntity,
+  type HaSensorEntity,
+} from '@family/shared';
 
 export const homeassistantRouter = Router();
 
@@ -14,11 +20,13 @@ interface HaStateRaw {
     current_temperature?: number | null;
     temperature?: number | null;
     friendly_name?: string;
+    device_class?: string;
+    unit_of_measurement?: string;
     [key: string]: unknown;
   };
 }
 
-async function fetchClimateEntities(): Promise<HaClimateEntity[]> {
+async function fetchAllStates(): Promise<HaStateRaw[]> {
   const haUrl = process.env.HA_URL;
   const haToken = process.env.HA_TOKEN;
 
@@ -33,9 +41,10 @@ async function fetchClimateEntities(): Promise<HaClimateEntity[]> {
   });
 
   if (!response.ok) throw new Error(`HA API returned ${response.status}`);
+  return response.json() as Promise<HaStateRaw[]>;
+}
 
-  const states = await response.json() as HaStateRaw[];
-
+function parseClimateEntities(states: HaStateRaw[]): HaClimateEntity[] {
   return states
     .filter(s => s.entity_id.startsWith('climate.'))
     .map(s => HaClimateEntitySchema.parse({
@@ -48,7 +57,30 @@ async function fetchClimateEntities(): Promise<HaClimateEntity[]> {
     }));
 }
 
-async function getCached(): Promise<{ entities: HaClimateEntity[]; fetched_at: string } | null> {
+function parseSensorEntities(states: HaStateRaw[]): HaSensorEntity[] {
+  return states
+    .filter(s =>
+      s.entity_id.startsWith('sensor.') &&
+      (s.attributes.device_class === 'temperature' || s.attributes.device_class === 'humidity'),
+    )
+    .flatMap(s => {
+      const raw = parseFloat(s.state);
+      if (isNaN(raw)) return [];
+      const dc = s.attributes.device_class as 'temperature' | 'humidity';
+      return [HaSensorEntitySchema.parse({
+        entity_id: s.entity_id,
+        name: s.attributes.friendly_name
+          ?? s.entity_id.replace('sensor.', '').replace(/_/g, ' '),
+        value: raw,
+        unit: s.attributes.unit_of_measurement ?? (dc === 'temperature' ? '°C' : '%'),
+        device_class: dc,
+      })];
+    });
+}
+
+interface CachePayload { entities: HaClimateEntity[]; sensors: HaSensorEntity[] }
+
+async function getCached(): Promise<(CachePayload & { fetched_at: string }) | null> {
   const result = await pool.query(
     `SELECT data, fetched_at FROM widget_cache WHERE widget_type = $1`,
     [CACHE_TYPE],
@@ -56,17 +88,17 @@ async function getCached(): Promise<{ entities: HaClimateEntity[]; fetched_at: s
   if (!result.rows.length) return null;
   const age = Date.now() - new Date(result.rows[0].fetched_at).getTime();
   if (age > CACHE_MAX_AGE_MS) return null;
-  return { entities: result.rows[0].data, fetched_at: result.rows[0].fetched_at };
+  return { ...result.rows[0].data, fetched_at: result.rows[0].fetched_at };
 }
 
-async function updateCache(entities: HaClimateEntity[]): Promise<string> {
+async function updateCache(payload: CachePayload): Promise<string> {
   const result = await pool.query(
     `INSERT INTO widget_cache (widget_type, data, fetched_at)
      VALUES ($1, $2, NOW())
      ON CONFLICT (widget_type)
      DO UPDATE SET data = $2, fetched_at = NOW()
      RETURNING fetched_at`,
-    [CACHE_TYPE, JSON.stringify(entities)],
+    [CACHE_TYPE, JSON.stringify(payload)],
   );
   return result.rows[0].fetched_at;
 }
@@ -78,23 +110,28 @@ homeassistantRouter.get('/climate', async (_req: Request, res: Response) => {
     if (cached) {
       return res.json(HaClimateResponseSchema.parse({
         entities: cached.entities,
+        sensors: cached.sensors,
         fetched_at: new Date(cached.fetched_at).toISOString(),
       }));
     }
 
-    let entities: HaClimateEntity[];
+    let payload: CachePayload;
     let fetched_at: string;
 
     try {
-      entities = await fetchClimateEntities();
-      fetched_at = await updateCache(entities);
+      const states = await fetchAllStates();
+      payload = {
+        entities: parseClimateEntities(states),
+        sensors: parseSensorEntities(states),
+      };
+      fetched_at = await updateCache(payload);
     } catch (fetchErr) {
-      console.error('[ha] Climate fetch failed:', fetchErr);
+      console.error('[ha] Fetch failed:', fetchErr);
       return res.status(503).json({ error: 'Home Assistant not reachable' });
     }
 
     return res.json(HaClimateResponseSchema.parse({
-      entities,
+      ...payload,
       fetched_at: new Date(fetched_at).toISOString(),
     }));
   } catch (err) {
