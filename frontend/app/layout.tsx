@@ -38,8 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
         }}
       >
+        <Sidebar />
         <BurnInProvider>
-          <Sidebar />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100dvh', minWidth: 0 }}>
             <OfflineBanner />
             <main style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
