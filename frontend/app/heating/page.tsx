@@ -29,11 +29,20 @@ interface RoomData {
   humidity?: HaSensorEntity;
 }
 
+// Explizite Zuordnung für Sensoren deren Entity-ID nicht zum Raumnamen passt.
+// Schlüssel: entity_id des Sensors, Wert: room key des Ziels.
+const SENSOR_ROOM_OVERRIDES: Record<string, string> = {
+  'sensor.wohnzimmer_sensor_temperatur':    'kuche',
+  'sensor.wohnzimmer_sensor_luftfeuchtigkeit': 'kuche',
+};
+
 /** Extract a lowercase room key, cutting at the first generic segment.
- *  "climate.schlafzimmer_thermostat"          → "schlafzimmer"
+ *  "climate.schlafzimmer_thermostat"             → "schlafzimmer"
  *  "sensor.schlafzimmer_sensor_luftfeuchtigkeit" → "schlafzimmer"
+ *  "sensor.buro_sensor_temperatur_2"             → "buro"
  */
 function roomKey(entityId: string): string {
+  if (SENSOR_ROOM_OVERRIDES[entityId]) return SENSOR_ROOM_OVERRIDES[entityId];
   const withoutDomain = entityId.replace(/^[^.]+\./, '');
   return withoutDomain
     .replace(/_(thermostat|sensor|temperatur|temperature|temp|luftfeuchtigkeit|humidity|hum|heizung).*$/, '')
