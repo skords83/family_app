@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -66,21 +66,93 @@ function buildRooms(
   return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'de'));
 }
 
+const STEP = 0.5;
+const MIN_TEMP = 5;
+const MAX_TEMP = 30;
+
 function formatTemp(t: number | null): string {
   return t !== null ? `${t.toFixed(1)}°` : '–';
+}
+
+function TempControl({ entityId, initialTarget }: { entityId: string; initialTarget: number }) {
+  const [target, setTarget] = useState(initialTarget);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sendTarget = useCallback(async (temp: number) => {
+    setSaving(true);
+    setError(false);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/widgets/homeassistant/climate/${encodeURIComponent(entityId)}/temperature`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ temperature: temp }) },
+      );
+      if (!res.ok) throw new Error();
+    } catch {
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  }, [entityId]);
+
+  const adjust = (delta: number) => {
+    const next = Math.round((target + delta) / STEP) * STEP;
+    if (next < MIN_TEMP || next > MAX_TEMP) return;
+    setTarget(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => sendTarget(next), 800);
+  };
+
+  const btnStyle = (disabled: boolean) => ({
+    width: 36, height: 36, borderRadius: 10, border: '0.5px solid var(--family-border)',
+    background: disabled ? '#f0ece6' : 'var(--family-surface)',
+    color: disabled ? '#c0bcb8' : '#1a1814',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: disabled ? 'default' : 'pointer', fontSize: 18, fontWeight: 500,
+    opacity: saving ? 0.6 : 1,
+  });
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        style={btnStyle(target <= MIN_TEMP)}
+        disabled={target <= MIN_TEMP || saving}
+        onClick={() => adjust(-STEP)}
+        aria-label="Temperatur senken"
+      >
+        −
+      </button>
+      <div style={{ minWidth: 52, textAlign: 'center' }}>
+        <span
+          className="font-sans font-semibold"
+          style={{ fontSize: 16, color: error ? '#e85d3a' : '#1a1814' }}
+        >
+          {target.toFixed(1)}°
+        </span>
+        {saving && (
+          <i className="ti ti-loader-2 animate-spin" style={{ fontSize: 11, color: '#a09d99', marginLeft: 4 }} aria-hidden="true" />
+        )}
+      </div>
+      <button
+        style={btnStyle(target >= MAX_TEMP)}
+        disabled={target >= MAX_TEMP || saving}
+        onClick={() => adjust(STEP)}
+        aria-label="Temperatur erhöhen"
+      >
+        +
+      </button>
+    </div>
+  );
 }
 
 function RoomCard({ room }: { room: RoomData }) {
   const isHeating = room.climate?.hvac_mode === 'heat';
   const hasClimate = !!room.climate;
 
-  // Current temp: prefer external sensor, fall back to thermostat
   const currentTemp = room.temperature?.value ?? room.climate?.current_temperature ?? null;
   const targetTemp = room.climate?.target_temperature ?? null;
   const humidity = room.humidity?.value ?? null;
-
-  const diff =
-    currentTemp !== null && targetTemp !== null ? targetTemp - currentTemp : null;
 
   return (
     <div
@@ -114,53 +186,33 @@ function RoomCard({ room }: { room: RoomData }) {
         )}
       </div>
 
-      {/* Temperaturen */}
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="font-sans" style={{ fontSize: 11, color: '#a09d99', marginBottom: 2 }}>
-            {room.temperature ? 'Sensor' : 'Aktuell'}
-          </p>
-          <p style={{
-            fontSize: 36, fontWeight: 700, color: '#1a1814',
-            fontFamily: 'Georgia, serif', lineHeight: 1,
-          }}>
+      {/* Ist-Temperatur */}
+      <div>
+        <p className="font-sans" style={{ fontSize: 11, color: '#a09d99', marginBottom: 2 }}>
+          {room.temperature ? 'Sensor' : 'Aktuell'}
+        </p>
+        <div className="flex items-end gap-3">
+          <p style={{ fontSize: 36, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
             {formatTemp(currentTemp)}
           </p>
+          {humidity !== null && (
+            <span className="flex items-center gap-1 font-sans" style={{ fontSize: 13, color: '#378ADD', paddingBottom: 3 }}>
+              <i className="ti ti-droplet" style={{ fontSize: 13, color: '#378ADD' }} aria-hidden="true" />
+              {humidity.toFixed(0)} %
+            </span>
+          )}
         </div>
-
-        {targetTemp !== null && (
-          <>
-            <i className="ti ti-arrow-right" style={{ fontSize: 14, color: '#c0bcb8', paddingBottom: 6 }} aria-hidden="true" />
-            <div style={{ textAlign: 'right' }}>
-              <p className="font-sans" style={{ fontSize: 11, color: '#a09d99', marginBottom: 2 }}>Ziel</p>
-              <p style={{
-                fontSize: 36, fontWeight: 700, fontFamily: 'Georgia, serif', lineHeight: 1,
-                color: isHeating ? '#e85d3a' : '#a09d99',
-              }}>
-                {formatTemp(targetTemp)}
-              </p>
-            </div>
-          </>
-        )}
       </div>
 
-      {/* Luftfeuchtigkeit + Differenz-Hinweis */}
-      <div className="flex items-center justify-between" style={{ minHeight: 16 }}>
-        {humidity !== null ? (
-          <span className="flex items-center gap-1 font-sans" style={{ fontSize: 12, color: '#6b6760' }}>
-            <i className="ti ti-droplet" style={{ fontSize: 12, color: '#378ADD' }} aria-hidden="true" />
-            {humidity.toFixed(0)} %
-          </span>
-        ) : <span />}
-
-        {diff !== null && Math.abs(diff) >= 0.5 && (
-          <span className="font-sans" style={{ fontSize: 11, color: '#a09d99' }}>
-            {diff > 0
-              ? `noch ${diff.toFixed(1)}° bis Ziel`
-              : `${Math.abs(diff).toFixed(1)}° über Ziel`}
-          </span>
-        )}
-      </div>
+      {/* Ziel-Temperatur mit Steuerung */}
+      {hasClimate && targetTemp !== null && (
+        <div>
+          <p className="font-sans" style={{ fontSize: 11, color: '#a09d99', marginBottom: 6 }}>
+            Zieltemperatur
+          </p>
+          <TempControl entityId={room.climate!.entity_id} initialTarget={targetTemp} />
+        </div>
+      )}
     </div>
   );
 }

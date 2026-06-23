@@ -103,6 +103,23 @@ async function updateCache(payload: CachePayload): Promise<string> {
   return result.rows[0].fetched_at;
 }
 
+async function callHaService(service: string, data: Record<string, unknown>): Promise<void> {
+  const haUrl = process.env.HA_URL;
+  const haToken = process.env.HA_TOKEN;
+  if (!haUrl || !haToken) throw new Error('HA_URL or HA_TOKEN not configured');
+
+  const response = await fetch(`${haUrl.replace(/\/$/, '')}/api/services/${service}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${haToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`HA service call returned ${response.status}`);
+}
+
 // GET /api/widgets/homeassistant/climate
 homeassistantRouter.get('/climate', async (_req: Request, res: Response) => {
   try {
@@ -137,5 +154,31 @@ homeassistantRouter.get('/climate', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('[ha] Error in climate handler:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/widgets/homeassistant/climate/:entityId/temperature
+homeassistantRouter.post('/climate/:entityId/temperature', async (req: Request, res: Response) => {
+  const { entityId } = req.params;
+  const { temperature } = req.body as { temperature: unknown };
+
+  if (typeof temperature !== 'number' || temperature < 5 || temperature > 30) {
+    return res.status(400).json({ error: 'temperature must be a number between 5 and 30' });
+  }
+  if (!entityId.startsWith('climate.')) {
+    return res.status(400).json({ error: 'Invalid entity_id' });
+  }
+
+  try {
+    await callHaService('climate/set_temperature', {
+      entity_id: entityId,
+      temperature,
+    });
+    // Invalidate cache so next GET fetches fresh data from HA
+    await pool.query(`DELETE FROM widget_cache WHERE widget_type = $1`, [CACHE_TYPE]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[ha] set_temperature failed:', err);
+    res.status(503).json({ error: 'Home Assistant not reachable' });
   }
 });
