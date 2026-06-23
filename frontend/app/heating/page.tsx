@@ -29,12 +29,14 @@ interface RoomData {
   humidity?: HaSensorEntity;
 }
 
-/** Extract a lowercase room key from an entity_id, e.g. "sensor.buero_temp" → "buero" */
+/** Extract a lowercase room key, cutting at the first generic segment.
+ *  "climate.schlafzimmer_thermostat"          → "schlafzimmer"
+ *  "sensor.schlafzimmer_sensor_luftfeuchtigkeit" → "schlafzimmer"
+ */
 function roomKey(entityId: string): string {
   const withoutDomain = entityId.replace(/^[^.]+\./, '');
-  // strip common suffixes
   return withoutDomain
-    .replace(/_(temperatur|temperature|temp|luftfeuchtigkeit|humidity|hum|heizung|thermostat)(_.*)?$/, '')
+    .replace(/_(thermostat|sensor|temperatur|temperature|temp|luftfeuchtigkeit|humidity|hum|heizung).*$/, '')
     .toLowerCase();
 }
 
