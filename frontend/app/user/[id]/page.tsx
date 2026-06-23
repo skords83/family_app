@@ -238,7 +238,13 @@ export default function UserPage() {
     if (!userId) return;
     const res = await fetch(`${API_BASE}/api/tasks/today`).then(r => r.json());
     if (Array.isArray(res)) {
-      setTasks(res.filter((t: TaskInstance) => t.assigned_to === userId));
+      const serverTasks = res.filter((t: TaskInstance) => t.assigned_to === userId);
+      // Merge: bewahre lokalen completed_at wenn Server noch veraltet ist
+      setTasks(prev => serverTasks.map((serverTask: TaskInstance) => {
+        const local = prev.find(t => t.id === serverTask.id);
+        if (local?.completed_at && !serverTask.completed_at) return local;
+        return serverTask;
+      }));
     }
   }, [userId]);
 
@@ -276,6 +282,10 @@ export default function UserPage() {
   });
 
   const handleComplete = async (taskId: string) => {
+    // Sofortiger optimistischer Update – vor dem Netzwerk-Request
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
+    ));
     const res = await fetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -284,17 +294,15 @@ export default function UserPage() {
     if (res.ok) {
       const data = await res.json();
       if (data.pending_approval) {
-        // Optimistisch: mark as completed but not approved
-        setTasks(prev => prev.map(t =>
-          t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
-        ));
         showNotification('Erledigt! Wartet auf Bestätigung.');
       } else {
-        setTasks(prev => prev.map(t =>
-          t.id === taskId ? { ...t, completed_at: new Date().toISOString() } : t
-        ));
         showNotification(`+${data.points_earned} Punkte verdient!`);
       }
+    } else {
+      // Fehler: optimistischen Update rückgängig machen
+      setTasks(prev => prev.map(t =>
+        t.id === taskId ? { ...t, completed_at: null } : t
+      ));
     }
   };
 

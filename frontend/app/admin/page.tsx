@@ -575,6 +575,8 @@ export default function AdminPage() {
   };
 
   const handleApproveTask = async (instanceId: string) => {
+    // Optimistisch aus der Pending-Liste entfernen
+    setPendingApprovals(prev => prev.filter(t => t.id !== instanceId));
     const res = await fetch(`${API_BASE}/api/tasks/${instanceId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -583,10 +585,12 @@ export default function AdminPage() {
     if (res.ok) {
       showNotification('Aufgabe bestätigt! Punkte gutgeschrieben.');
       fetchPendingApprovals();
+      fetchCompletedToday();
       fetchUsers();
     } else {
       const err = await res.json().catch(() => ({}));
       showNotification(`Fehler: ${err.error ?? res.status}`);
+      fetchPendingApprovals(); // Rückgängig bei Fehler
     }
   };
 
