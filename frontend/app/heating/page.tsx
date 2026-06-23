@@ -74,8 +74,8 @@ function formatTemp(t: number | null): string {
   return t !== null ? `${t.toFixed(1)}°` : '–';
 }
 
-function TempControl({ entityId, initialTarget }: { entityId: string; initialTarget: number }) {
-  const [target, setTarget] = useState(initialTarget);
+function TempControl({ entityId, initialTarget }: { entityId: string; initialTarget: number | null }) {
+  const [target, setTarget] = useState(initialTarget ?? 20);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -205,10 +205,10 @@ function RoomCard({ room }: { room: RoomData }) {
       </div>
 
       {/* Ziel-Temperatur mit Steuerung */}
-      {hasClimate && targetTemp !== null && (
+      {hasClimate && (
         <div>
           <p className="font-sans" style={{ fontSize: 11, color: '#a09d99', marginBottom: 6 }}>
-            Zieltemperatur
+            Zieltemperatur{!isHeating && <span style={{ marginLeft: 6, color: '#c0bcb8' }}>(Sommermodus)</span>}
           </p>
           <TempControl entityId={room.climate!.entity_id} initialTarget={targetTemp} />
         </div>
