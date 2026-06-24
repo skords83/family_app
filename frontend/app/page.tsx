@@ -204,9 +204,10 @@ export default function HomePage() {
                 const active = pending.filter(t => !t.due_time || currentTime <= t.due_time);
                 const unlocked = active.filter(t => !t.available_from || currentTime >= t.available_from);
                 const locked = active.filter(t => !!t.available_from && currentTime < t.available_from);
-                // Show unlocked first, then locked, then expired
-                const sortedPending = [...unlocked, ...locked, ...expired];
-                const pct = userTasks.length ? Math.round(done.length / userTasks.length * 100) : 0;
+                // Expired tasks are hidden — only show what's still doable
+                const sortedPending = [...unlocked, ...locked];
+                const visibleTotal = active.length + done.length;
+                const pct = visibleTotal ? Math.round(done.length / visibleTotal * 100) : 0;
                 const bg = PASTELS[user.color] ?? `${user.color}18`;
                 const allDone = userTasks.length > 0 && active.length === 0;
                 const hint = allDone || userTasks.length === 0 ? 'Aufgaben ansehen' : 'Aufgaben abhaken';
@@ -229,7 +230,7 @@ export default function HomePage() {
                           {user.name}
                         </div>
                         <div className="font-sans" style={{ fontSize: 12, color: '#a09d99' }}>
-                          {userTasks.length > 0 && `${done.length}/${userTasks.length} · `}{user.points} Pkt.
+                          {visibleTotal > 0 && `${done.length}/${visibleTotal} · `}{user.points} Pkt.
                         </div>
                       </div>
                     </div>
