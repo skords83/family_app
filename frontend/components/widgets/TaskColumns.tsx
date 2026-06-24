@@ -10,8 +10,23 @@ interface User {
 interface TaskInstance {
   id: string; title: string; points: number;
   assigned_to: string; completed_at: string | null; due_time?: string | null;
-  available_from?: string | null;
+  available_from?: string | null; date?: string | null;
   requires_approval?: boolean; approved_at?: string | null;
+}
+
+function nowBerlin(): { time: string; date: string } {
+  const now = new Date();
+  return {
+    time: now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin', hour12: false }),
+    date: now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }),
+  };
+}
+
+function isExpiredTask(t: TaskInstance, now: { time: string; date: string }): boolean {
+  if (t.completed_at) return false;
+  if (t.date && t.date < now.date) return true;
+  if (t.due_time && now.time > t.due_time) return true;
+  return false;
 }
 interface TaskColumnsProps {
   users: User[]; tasks: TaskInstance[];
@@ -38,12 +53,14 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
   return (
     <div className={`grid gap-4 ${cols}`}>
       {users.map(user => {
+        const now = nowBerlin();
         const userTasks = tasks.filter(t => t.assigned_to === user.id);
-        const openTasks = userTasks.filter(t => !t.completed_at);
+        const openTasks = userTasks.filter(t => !t.completed_at && !isExpiredTask(t, now));
         const pendingApprovalTasks = userTasks.filter(t => t.completed_at && t.requires_approval && !t.approved_at);
         const doneTasks = userTasks.filter(t => t.completed_at && (!t.requires_approval || t.approved_at));
         const completedCount = pendingApprovalTasks.length + doneTasks.length;
-        const pct = userTasks.length ? Math.round(completedCount / userTasks.length * 100) : 0;
+        const visibleTotal = openTasks.length + completedCount;
+        const pct = visibleTotal ? Math.round(completedCount / visibleTotal * 100) : 0;
         const bg = pastel(user.color);
 
         return (
@@ -67,7 +84,7 @@ export default function TaskColumns({ users, tasks, onComplete, compact = false 
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold font-sans text-sm truncate" style={{ color: user.color }}>{user.name}</p>
-                  <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedCount}/{userTasks.length} erledigt</p>
+                  <p className="text-xs font-sans" style={{ color: '#a09d99' }}>{completedCount}/{visibleTotal} erledigt</p>
                 </div>
               </Link>
               <span className="text-xs font-sans font-bold px-2 py-0.5 rounded-full flex-shrink-0 flex items-center gap-1" style={{ color: user.color, background: `${user.color}18` }}>

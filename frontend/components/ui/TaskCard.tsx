@@ -6,7 +6,7 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 interface TaskCardTask {
   id: string; title: string; points: number;
   completed_at: string | null; due_time?: string | null;
-  available_from?: string | null;
+  available_from?: string | null; date?: string | null;
   requires_approval?: boolean; approved_at?: string | null;
 }
 interface TaskCardProps {
@@ -17,14 +17,12 @@ interface TaskCardProps {
   compact?: boolean;
 }
 
-/** Current Berlin time as "HH:MM" string. Recalculated each render. */
-function nowHHMM(): string {
-  return new Date().toLocaleTimeString('de-DE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Berlin',
-    hour12: false,
-  });
+function nowBerlin(): { time: string; date: string } {
+  const now = new Date();
+  return {
+    time: now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin', hour12: false }),
+    date: now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }),
+  };
 }
 
 export default function TaskCard({ task, onComplete, onUncomplete, userColor = '#6366f1', compact = false }: TaskCardProps) {
@@ -35,15 +33,16 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
   const isPendingApproval = isCompleted && task.requires_approval && !task.approved_at;
 
   // Re-check availability every 30s so tasks unlock/expire without a page reload
-  const [currentTime, setCurrentTime] = useState(nowHHMM);
+  const [now, setNow] = useState(nowBerlin);
   useEffect(() => {
     if ((!task.available_from && !task.due_time) || isCompleted) return;
-    const iv = setInterval(() => setCurrentTime(nowHHMM()), 30_000);
+    const iv = setInterval(() => setNow(nowBerlin()), 30_000);
     return () => clearInterval(iv);
   }, [task.available_from, task.due_time, isCompleted]);
 
-  const isLocked = !isCompleted && !!task.available_from && currentTime < task.available_from;
-  const isExpired = !isCompleted && !!task.due_time && currentTime > task.due_time;
+  const isFromPastDay = !!task.date && task.date < now.date;
+  const isExpired = !isCompleted && (isFromPastDay || (!!task.due_time && now.time > task.due_time));
+  const isLocked = !isCompleted && !isExpired && !!task.available_from && now.time < task.available_from;
 
   const handleClick = async () => {
     if (loading || !isOnline || isLocked || isExpired) return;
@@ -130,22 +129,24 @@ export default function TaskCard({ task, onComplete, onUncomplete, userColor = '
     );
   }
 
-  // ── Expired State (nach due_time — sichtbar aber nicht mehr abhakbar) ──
+  // ── Expired State (nach due_time / vom Vortag — sichtbar aber nicht mehr abhakbar) ──
   if (isExpired) {
     return (
       <div
         className={`flex items-center gap-3 rounded-xl px-3 ${compact ? 'py-2' : 'py-2.5'}`}
-        style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', opacity: 0.4 }}
+        style={{ background: '#fef2f2', border: '1px solid #fecaca' }}
       >
         <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.06)', border: '2px solid rgba(0,0,0,0.15)' }}>
-          <i className="ti ti-clock-off" style={{ fontSize: 9, color: '#6b6760' }} />
+          style={{ background: '#fee2e2', border: '2px solid #fca5a5' }}>
+          <i className="ti ti-clock-off" style={{ fontSize: 9, color: '#ef4444' }} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-sans font-medium truncate" style={{ color: '#6b6760' }}>{task.title}</p>
-          <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Abgelaufen · bis {task.due_time} Uhr</p>
+          <p className="text-sm font-sans font-medium truncate line-through" style={{ color: '#9ca3af' }}>{task.title}</p>
+          <p className="text-[10px] font-sans" style={{ color: '#f87171' }}>
+            Verpasst{task.due_time ? ` · bis ${task.due_time} Uhr` : ''}
+          </p>
         </div>
-        <span className="text-xs font-sans flex-shrink-0" style={{ color: '#a09d99' }}>+{task.points}⭐</span>
+        <span className="text-xs font-sans flex-shrink-0" style={{ color: '#fca5a5' }}>+{task.points}⭐</span>
       </div>
     );
   }
