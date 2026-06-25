@@ -139,7 +139,10 @@ export default function HomePage() {
 
   const handleNfcScan = useCallback((event: SSEEvent) => {
     const userId = (event.data?.user as { id?: string })?.id;
-    if (userId) router.push(`/user/${userId}`);
+    if (userId) {
+      sessionStorage.setItem('nfc_unlocked_for', String(userId));
+      router.push(`/user/${userId}`);
+    }
   }, [router]);
 
   useSSE({

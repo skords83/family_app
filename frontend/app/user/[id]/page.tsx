@@ -144,6 +144,16 @@ export default function UserPage() {
   const params = useParams();
   const userId = params?.id as string;
 
+  const [isNfcUnlocked, setIsNfcUnlocked] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (sessionStorage.getItem('nfc_unlocked_for') === userId) {
+      setIsNfcUnlocked(true);
+      sessionStorage.removeItem('nfc_unlocked_for');
+    }
+  }, [userId]);
+
   const [user, setUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<TaskInstance[]>([]);
   const [weekData, setWeekData] = useState<Record<string, { done: number; total: number }>>({});
@@ -543,7 +553,8 @@ export default function UserPage() {
 
                 return (
                   <button key={t.id} onClick={() => handleComplete(t.id)}
-                    className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                    disabled={!isNfcUnlocked}
+                    className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: '#f7f4f0', border: '0.5px solid rgba(0,0,0,0.07)' }}>
                     <div className="w-6 h-6 rounded-full border-2 flex-shrink-0" style={{ borderColor: user.color }} />
                     <div className="flex-1 min-w-0">
@@ -713,7 +724,8 @@ export default function UserPage() {
               {/* Affordable rewards */}
               {affordable.map(r => (
                 <button key={r.id} onClick={() => handleClaim(r.id)}
-                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                  disabled={!isNfcUnlocked}
+                  className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ background: '#f2fbf2', border: '0.5px solid #5cb85c30' }}>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#dcfce7' }}>
                     <i className="ti ti-gift" style={{ fontSize: 20, color: '#16a34a' }} />
