@@ -138,9 +138,11 @@ export default function HomePage() {
   const handleConfigUpdated = useCallback(() => window.location.reload(), []);
 
   const handleNfcScan = useCallback((event: SSEEvent) => {
-    const userId = (event.data?.user as { id?: string })?.id;
+    const scannedUser = event.data?.user as { id?: string; role?: string } | undefined;
+    const userId = scannedUser?.id;
     if (userId) {
-      sessionStorage.setItem('nfc_unlocked_for', String(userId));
+      const key = scannedUser?.role === 'parent' ? 'parent' : String(userId);
+      sessionStorage.setItem('nfc_unlocked_for', key);
       router.push(`/user/${userId}`);
     }
   }, [router]);

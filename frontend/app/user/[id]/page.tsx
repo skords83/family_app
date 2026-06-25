@@ -148,9 +148,10 @@ export default function UserPage() {
 
   useEffect(() => {
     if (!userId) return;
-    if (sessionStorage.getItem('nfc_unlocked_for') === userId) {
+    const key = sessionStorage.getItem('nfc_unlocked_for');
+    if (key === userId || key === 'parent') {
       setIsNfcUnlocked(true);
-      sessionStorage.removeItem('nfc_unlocked_for');
+      if (key !== 'parent') sessionStorage.removeItem('nfc_unlocked_for');
     }
   }, [userId]);
 
