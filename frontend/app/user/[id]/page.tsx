@@ -145,13 +145,18 @@ export default function UserPage() {
   const userId = params?.id as string;
 
   const [isNfcUnlocked, setIsNfcUnlocked] = useState(false);
+  const [isParentNfcUnlocked, setIsParentNfcUnlocked] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
     const key = sessionStorage.getItem('nfc_unlocked_for');
     if (key === userId || key === 'parent') {
       setIsNfcUnlocked(true);
-      if (key !== 'parent') sessionStorage.removeItem('nfc_unlocked_for');
+      if (key === 'parent') {
+        setIsParentNfcUnlocked(true);
+      } else {
+        sessionStorage.removeItem('nfc_unlocked_for');
+      }
     }
   }, [userId]);
 
@@ -189,7 +194,12 @@ export default function UserPage() {
   // Navigate home when idle timer fires (25s quiet → 5s countdown → home)
   useIdleTimer(() => {
     startCountdown();
-    setTimeout(() => router.push('/'), 5000);
+    setTimeout(() => {
+      sessionStorage.removeItem('nfc_unlocked_for');
+      setIsNfcUnlocked(false);
+      setIsParentNfcUnlocked(false);
+      router.push('/');
+    }, 5000);
   }, 25_000);
 
   const showNotification = (text: string, ok = true) => {
@@ -437,7 +447,7 @@ export default function UserPage() {
       )}
 
       {/* Back */}
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm font-sans mb-3 transition-opacity hover:opacity-70" style={{ color: '#a09d99' }}>
+      <button onClick={() => { sessionStorage.removeItem('nfc_unlocked_for'); router.back(); }} className="flex items-center gap-2 text-sm font-sans mb-3 transition-opacity hover:opacity-70" style={{ color: '#a09d99' }}>
         <i className="ti ti-arrow-left" style={{ fontSize: 16 }} /> Zurück
       </button>
 
@@ -508,6 +518,24 @@ export default function UserPage() {
                 const deadlineLabel = t.due_time ? `bis ${t.due_time}` : null;
 
                 if (expired) {
+                  if (isParentNfcUnlocked) {
+                    return (
+                      <button key={t.id} onClick={() => handleComplete(t.id)}
+                        className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-all active:scale-[0.98]"
+                        style={{ background: '#fff7ed', border: '0.5px solid #fb923c40' }}>
+                        <div className="w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center" style={{ borderColor: '#f97316' }}>
+                          <i className="ti ti-clock-off" style={{ fontSize: 11, color: '#f97316' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-sans font-medium line-clamp-2" style={{ color: '#1a1814' }}>{t.title}</p>
+                          <p className="text-[10px] font-sans" style={{ color: '#f97316' }}>Abgelaufen · bis {t.due_time} Uhr · als Elternteil bestätigen</p>
+                        </div>
+                        <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#f97316' }}>
+                          <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                        </span>
+                      </button>
+                    );
+                  }
                   return (
                     <div key={t.id}
                       className="flex items-center gap-3 rounded-xl px-4 py-3"
