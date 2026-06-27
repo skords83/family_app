@@ -64,6 +64,17 @@ function getWeatherDesc(code: number): string {
   return 'Unbekannt';
 }
 
+function getWeatherBg(code: number): string {
+  if (code === 0) return 'linear-gradient(160deg, #fffbeb 0%, #fef3c7 100%)';
+  if (code <= 3) return 'linear-gradient(160deg, #eff6ff 0%, #dbeafe 100%)';
+  if (code <= 48) return 'linear-gradient(160deg, #f3f4f6 0%, #e9eaec 100%)';
+  if (code <= 67) return 'linear-gradient(160deg, #eff6ff 0%, #dbeafe 100%)';
+  if (code <= 77) return 'linear-gradient(160deg, #f0f9ff 0%, #e0f2fe 100%)';
+  if (code <= 82) return 'linear-gradient(160deg, #eff6ff 0%, #dbeafe 100%)';
+  if (code <= 99) return 'linear-gradient(160deg, #f5f3ff 0%, #ede9fe 100%)';
+  return 'linear-gradient(160deg, #f7f5f2 0%, #f0ece8 100%)';
+}
+
 function formatHHMM(isoStr: string): string {
   const d = new Date(isoStr);
   return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
@@ -99,6 +110,14 @@ function uvColor(uv: number): string {
   return '#8b00a0';
 }
 
+function tempBarColor(max: number): string {
+  if (max <= 5) return '#93c5fd';
+  if (max <= 15) return '#60a5fa';
+  if (max <= 22) return '#34d399';
+  if (max <= 28) return '#f59e0b';
+  return '#f97316';
+}
+
 const card: CSSProperties = {
   background: '#fff',
   border: '0.5px solid rgba(0,0,0,0.07)',
@@ -106,16 +125,16 @@ const card: CSSProperties = {
   padding: 20,
 };
 
-function StatCell({ icon, label, value }: { icon: string; label: string; value: string }) {
+function StatCell({ icon, label, value, valueColor }: { icon: string; label: string; value: string; valueColor?: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        <i className={`ti ${icon}`} style={{ fontSize: 14, color: '#a09d99' }} aria-hidden="true" />
-        <span className="font-sans" style={{ fontSize: 11, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <i className={`ti ${icon}`} style={{ fontSize: 13, color: '#a09d99' }} aria-hidden="true" />
+        <span className="font-sans" style={{ fontSize: 10, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           {label}
         </span>
       </div>
-      <span className="font-sans" style={{ fontSize: 18, fontWeight: 600, color: '#1a1814' }}>
+      <span className="font-sans" style={{ fontSize: 17, fontWeight: 600, color: valueColor ?? '#1a1814' }}>
         {value}
       </span>
     </div>
@@ -124,32 +143,40 @@ function StatCell({ icon, label, value }: { icon: string; label: string; value: 
 
 function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: WeatherDaily }) {
   const uv = data.uvIndex ?? todayDaily?.uvIndexMax;
+  const bg = getWeatherBg(data.weathercode);
+
   return (
-    <div style={card}>
-      {/* Kompakte Kopfzeile: Emoji + Temp + Beschreibung + Min/Max in einer Linie */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <span style={{ fontSize: 40, lineHeight: 1, flexShrink: 0 }}>{getWeatherEmoji(data.weathercode)}</span>
-        <span style={{ fontSize: 36, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1, flexShrink: 0 }}>
+    <div style={{ ...card, background: bg, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+      {/* Dekoratives Emoji im Hintergrund */}
+      <span style={{
+        position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
+        fontSize: 96, lineHeight: 1, opacity: 0.15, pointerEvents: 'none', userSelect: 'none',
+      }}>
+        {getWeatherEmoji(data.weathercode)}
+      </span>
+
+      {/* Temperatur + Beschreibung */}
+      <div style={{ marginBottom: 4 }}>
+        <span style={{ fontSize: 54, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
           {Math.round(data.temperature)}°
         </span>
-        <span className="font-sans" style={{ fontSize: 15, color: '#6b6760', flexShrink: 0 }}>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 14 }}>
+        <span className="font-sans" style={{ fontSize: 16, color: '#6b6760' }}>
           {getWeatherDesc(data.weathercode)}
         </span>
         {todayDaily && (
-          <>
-            <div style={{ flex: 1 }} />
-            <span className="font-sans" style={{ fontSize: 13, color: '#a09d99', whiteSpace: 'nowrap' }}>
-              <span style={{ fontWeight: 600, color: '#1a1814' }}>{Math.round(todayDaily.temperatureMax)}°</span>
-              {' / '}
-              <span>{Math.round(todayDaily.temperatureMin)}°</span>
-              <span style={{ marginLeft: 4 }}>heute</span>
-            </span>
-          </>
+          <span className="font-sans" style={{ fontSize: 13, color: '#a09d99' }}>
+            {Math.round(todayDaily.temperatureMax)}° / {Math.round(todayDaily.temperatureMin)}° heute
+          </span>
         )}
       </div>
 
-      {/* Stats – alle in einer Zeile */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 14, borderTop: '0.5px solid rgba(0,0,0,0.07)' }}>
+      {/* Stats-Zeile */}
+      <div style={{
+        display: 'flex', gap: 20, flexWrap: 'wrap',
+        paddingTop: 14, borderTop: '0.5px solid rgba(0,0,0,0.09)',
+      }}>
         <StatCell icon="ti-temperature" label="Gefühlt" value={`${Math.round(data.apparentTemperature)}°`} />
         <StatCell icon="ti-droplet" label="Regen" value={`${Math.round(data.precipitationProbability)}%`} />
         <StatCell icon="ti-wind" label="Wind" value={`${Math.round(data.windspeed)} km/h`} />
@@ -160,22 +187,12 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
           <StatCell icon="ti-gauge" label="Luftdruck" value={`${Math.round(data.pressure)} hPa`} />
         )}
         {uv !== undefined && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <i className="ti ti-sun" style={{ fontSize: 14, color: '#a09d99' }} aria-hidden="true" />
-              <span className="font-sans" style={{ fontSize: 11, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                UV-Index
-              </span>
-            </div>
-            <span className="font-sans" style={{ fontSize: 18, fontWeight: 600, color: uvColor(uv) }}>
-              {Math.round(uv)} <span style={{ fontSize: 12, fontWeight: 400 }}>{uvLabel(uv)}</span>
-            </span>
-          </div>
+          <StatCell icon="ti-sun" label="UV-Index" value={`${Math.round(uv)} ${uvLabel(uv)}`} valueColor={uvColor(uv)} />
         )}
         {todayDaily && (
           <>
-            <StatCell icon="ti-sunrise" label="Sonnenaufgang" value={formatHHMM(todayDaily.sunrise)} />
-            <StatCell icon="ti-sunset" label="Sonnenuntergang" value={formatHHMM(todayDaily.sunset)} />
+            <StatCell icon="ti-sunrise" label="Aufgang" value={formatHHMM(todayDaily.sunrise)} />
+            <StatCell icon="ti-sunset" label="Untergang" value={formatHHMM(todayDaily.sunset)} />
           </>
         )}
       </div>
@@ -185,8 +202,8 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
 
 function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
   const [now] = useState(() => Date.now());
-
   const today = todayBerlin();
+
   const items = hourly
     .filter(h => new Date(h.time).getTime() >= now - 30 * 60 * 1000)
     .slice(0, 12);
@@ -197,52 +214,36 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
 
   return (
     <div style={card}>
-      <h2 className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
-        Nächste 24 Stunden
+      <h2 className="font-sans" style={{ fontSize: 10, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+        Nächste 12 Stunden
       </h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 5 }}>
         {items.map((h, i) => {
           const dateStr = h.time.slice(0, 10);
-          const isNewDay = dateStr !== lastDate && dateStr !== today;
-          const showDayLabel = isNewDay && dateStr !== lastDate;
+          const isNewDay = dateStr !== today && dateStr !== lastDate;
           if (dateStr !== lastDate) lastDate = dateStr;
 
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-              {showDayLabel && (
-                <span className="font-sans" style={{ fontSize: 9, color: '#378ADD', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
-                  {formatDayName(dateStr).slice(0, 2)}
-                </span>
-              )}
-              {!showDayLabel && <span style={{ fontSize: 9, lineHeight: '1.3' }}>&nbsp;</span>}
-              <div
-                style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                  background: showDayLabel ? 'rgba(55,138,221,0.08)' : 'var(--family-surface2)',
-                  borderRadius: 12, padding: '8px 10px', minWidth: 56,
-                  border: showDayLabel ? '0.5px solid rgba(55,138,221,0.25)' : 'none',
-                }}
-              >
-                <span className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>
-                  {h.time.slice(11, 16)}
-                </span>
-                <span style={{ fontSize: 20, lineHeight: 1 }}>{getWeatherEmoji(h.weathercode)}</span>
-                <span className="font-sans" style={{ fontSize: 14, fontWeight: 600, color: '#1a1814' }}>
-                  {Math.round(h.temperature)}°
-                </span>
-                {h.precipitationProbability > 0 ? (
-                  <span className="font-sans" style={{ fontSize: 10, color: '#378ADD', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <i className="ti ti-droplet" style={{ fontSize: 9 }} aria-hidden="true" />
-                    {Math.round(h.precipitationProbability)}%
-                  </span>
-                ) : (
-                  <span style={{ fontSize: 10 }}>&nbsp;</span>
-                )}
-                {h.humidity !== undefined && (
-                  <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>
-                    {Math.round(h.humidity)}%
-                  </span>
-                )}
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+              {isNewDay
+                ? <span className="font-sans" style={{ fontSize: 9, color: '#378ADD', fontWeight: 700, marginBottom: 1 }}>{formatDayName(dateStr).slice(0, 2)}</span>
+                : <span style={{ fontSize: 9 }}>&nbsp;</span>
+              }
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                background: isNewDay ? 'rgba(55,138,221,0.07)' : 'var(--family-surface2)',
+                border: isNewDay ? '0.5px solid rgba(55,138,221,0.2)' : 'none',
+                borderRadius: 10, padding: '6px 4px', width: '100%',
+              }}>
+                <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>{h.time.slice(11, 16)}</span>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>{getWeatherEmoji(h.weathercode)}</span>
+                <span className="font-sans" style={{ fontSize: 13, fontWeight: 600, color: '#1a1814' }}>{Math.round(h.temperature)}°</span>
+                {h.precipitationProbability > 0
+                  ? <span className="font-sans" style={{ fontSize: 9, color: '#378ADD' }}>
+                      <i className="ti ti-droplet" style={{ fontSize: 8 }} aria-hidden="true" /> {Math.round(h.precipitationProbability)}%
+                    </span>
+                  : <span style={{ fontSize: 9 }}>&nbsp;</span>
+                }
               </div>
             </div>
           );
@@ -252,66 +253,83 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
   );
 }
 
-function DailyRow({ day, isFirst }: { day: WeatherDaily; isFirst: boolean }) {
-  const label = isFirst ? 'Heute' : formatDayName(day.date);
-  const shortDate = formatShortDate(day.date);
+function TempBar({ min, max, globalMin, globalMax }: { min: number; max: number; globalMin: number; globalMax: number }) {
+  const range = globalMax - globalMin || 1;
+  const leftPct = ((min - globalMin) / range) * 100;
+  const widthPct = Math.max(((max - min) / range) * 100, 8);
+  const color = tempBarColor(max);
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '100px 40px 1fr auto auto auto',
-        alignItems: 'center',
-        gap: 12,
-        padding: '12px 0',
-        borderBottom: '0.5px solid rgba(0,0,0,0.05)',
-      }}
-    >
-      <div>
-        <div className="font-sans" style={{ fontSize: 14, fontWeight: isFirst ? 600 : 400, color: '#1a1814' }}>
-          {label}
-        </div>
-        <div className="font-sans" style={{ fontSize: 11, color: '#a09d99' }}>{shortDate}</div>
-      </div>
-
-      <span style={{ fontSize: 26, textAlign: 'center' }}>{getWeatherEmoji(day.weathercode)}</span>
-
-      <div className="font-sans" style={{ fontSize: 12, color: '#6b6760' }}>
-        {getWeatherDesc(day.weathercode)}
-      </div>
-
-      {/* Temp range */}
-      <div className="font-sans" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: '#1a1814' }}>{Math.round(day.temperatureMax)}°</span>
-        <span style={{ fontSize: 13, color: '#a09d99', marginLeft: 4 }}>{Math.round(day.temperatureMin)}°</span>
-      </div>
-
-      {/* Rain */}
-      <div className="font-sans" style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 48, justifyContent: 'flex-end' }}>
-        <i className="ti ti-droplet" style={{ fontSize: 12, color: day.precipitationProbabilityMax > 40 ? '#378ADD' : '#c0bcb8' }} aria-hidden="true" />
-        <span style={{ fontSize: 12, color: day.precipitationProbabilityMax > 40 ? '#378ADD' : '#a09d99' }}>
-          {Math.round(day.precipitationProbabilityMax)}%
-        </span>
-      </div>
-
-      {/* Wind */}
-      <div className="font-sans" style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 60, justifyContent: 'flex-end' }}>
-        <i className="ti ti-wind" style={{ fontSize: 12, color: '#a09d99' }} aria-hidden="true" />
-        <span style={{ fontSize: 12, color: '#6b6760' }}>{Math.round(day.windspeedMax)} km/h</span>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '0 10px' }}>
+      <div style={{ width: '100%', height: 5, background: 'rgba(0,0,0,0.07)', borderRadius: 3, position: 'relative' }}>
+        <div style={{
+          position: 'absolute',
+          left: `${leftPct}%`,
+          width: `${widthPct}%`,
+          height: '100%',
+          background: `linear-gradient(90deg, #93c5fd, ${color})`,
+          borderRadius: 3,
+        }} />
       </div>
     </div>
   );
 }
 
 function WeekForecast({ daily }: { daily: WeatherDaily[] }) {
+  const globalMin = Math.min(...daily.map(d => d.temperatureMin));
+  const globalMax = Math.max(...daily.map(d => d.temperatureMax));
+  const today = todayBerlin();
+
   return (
-    <div style={card}>
-      <h2 className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+    <div style={{ ...card, display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
+      <h2 className="font-sans" style={{ fontSize: 10, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, flexShrink: 0 }}>
         7-Tage-Vorschau
       </h2>
-      {daily.map((day, i) => (
-        <DailyRow key={day.date} day={day} isFirst={i === 0} />
-      ))}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        {daily.map((day, i) => {
+          const isToday = day.date === today;
+          return (
+            <div
+              key={day.date}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '80px 32px 90px 1fr 50px 36px',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 0',
+                borderBottom: i < daily.length - 1 ? '0.5px solid rgba(0,0,0,0.05)' : 'none',
+              }}
+            >
+              <div>
+                <div className="font-sans" style={{ fontSize: 13, fontWeight: isToday ? 600 : 400, color: '#1a1814' }}>
+                  {isToday ? 'Heute' : formatDayName(day.date).slice(0, 2)}
+                </div>
+                <div className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>{formatShortDate(day.date)}</div>
+              </div>
+
+              <span style={{ fontSize: 22, textAlign: 'center' }}>{getWeatherEmoji(day.weathercode)}</span>
+
+              <div className="font-sans" style={{ fontSize: 11, color: '#6b6760', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {getWeatherDesc(day.weathercode)}
+              </div>
+
+              <TempBar min={day.temperatureMin} max={day.temperatureMax} globalMin={globalMin} globalMax={globalMax} />
+
+              <div className="font-sans" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1814' }}>{Math.round(day.temperatureMax)}°</span>
+                <span style={{ fontSize: 11, color: '#a09d99', marginLeft: 3 }}>{Math.round(day.temperatureMin)}°</span>
+              </div>
+
+              <div className="font-sans" style={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                <i className="ti ti-droplet" style={{ fontSize: 10, color: day.precipitationProbabilityMax > 40 ? '#378ADD' : '#c0bcb8' }} aria-hidden="true" />
+                <span style={{ fontSize: 11, color: day.precipitationProbabilityMax > 40 ? '#378ADD' : '#a09d99' }}>
+                  {Math.round(day.precipitationProbabilityMax)}%
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -340,43 +358,53 @@ export default function WeatherPage() {
 
   const todayStr = todayBerlin();
   const todayDaily = data?.daily?.find(d => d.date === todayStr);
-
   const staleIndicator = fetchedAt && Date.now() - new Date(fetchedAt).getTime() > 60 * 60 * 1000;
 
   return (
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <PageHeader title="Wetter" variant="page" />
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 24px 24px' }}>
+      <div style={{
+        flex: 1, minHeight: 0,
+        display: 'grid',
+        gridTemplateColumns: '1fr 380px',
+        gap: 12,
+        padding: '0 24px 24px',
+        overflow: 'hidden',
+      }}>
         {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[180, 140, 320].map((h, i) => (
-              <div key={i} className="animate-pulse" style={{ ...card, height: h, background: '#e8e4de' }} />
-            ))}
-          </div>
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="animate-pulse" style={{ ...card, height: 180, background: '#e8e4de' }} />
+              <div className="animate-pulse" style={{ ...card, flex: 1, background: '#e8e4de' }} />
+            </div>
+            <div className="animate-pulse" style={{ ...card, background: '#e8e4de' }} />
+          </>
         ) : !data ? (
-          <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
+          <div style={{ gridColumn: '1 / -1', ...card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <p className="font-sans" style={{ color: '#a09d99' }}>Wetterdaten nicht verfügbar</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {staleIndicator && (
-              <div className="font-sans" style={{ fontSize: 11, color: '#e0a020', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#e0a020', display: 'inline-block' }} />
-                Daten veraltet – aktualisiere…
-              </div>
-            )}
+          <>
+            {/* Links: Heute + Timeline */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'hidden' }}>
+              {staleIndicator && (
+                <div className="font-sans" style={{ fontSize: 11, color: '#e0a020', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#e0a020', display: 'inline-block' }} />
+                  Daten veraltet
+                </div>
+              )}
+              <TodayBlock data={data} todayDaily={todayDaily} />
+              {data.hourly && data.hourly.length > 0 && (
+                <HourlyTimeline hourly={data.hourly} />
+              )}
+            </div>
 
-            <TodayBlock data={data} todayDaily={todayDaily} />
-
-            {data.hourly && data.hourly.length > 0 && (
-              <HourlyTimeline hourly={data.hourly} />
-            )}
-
+            {/* Rechts: 7-Tage */}
             {data.daily && data.daily.length > 0 && (
               <WeekForecast daily={data.daily} />
             )}
-          </div>
+          </>
         )}
       </div>
     </div>
