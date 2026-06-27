@@ -61,7 +61,7 @@ async function fetchWeather(): Promise<WeatherData> {
         weathercode: hourly.weathercode[i],
         humidity: hourly.relative_humidity_2m?.[i] ?? undefined,
         pressure: hourly.pressure_msl?.[i] ?? undefined,
-        uvIndex: hourly.uv_index?.[i] != null ? hourly.uv_index[i] : undefined,
+        uvIndex: hourly.uv_index?.[i] ?? undefined,
       });
     }
   }
@@ -78,7 +78,7 @@ async function fetchWeather(): Promise<WeatherData> {
         weathercode: daily.weathercode_wmo[i],
         sunrise: daily.sunrise[i],
         sunset: daily.sunset[i],
-        uvIndexMax: daily.uv_index_max?.[i] != null ? daily.uv_index_max[i] : undefined,
+        uvIndexMax: daily.uv_index_max?.[i] ?? undefined,
       });
     }
   }
