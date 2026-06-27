@@ -37,12 +37,12 @@ async function fetchWeather(): Promise<WeatherData> {
       time: string[];
       temperature_2m_max: number[];
       temperature_2m_min: number[];
-      precipitation_probability_max: number[];
-      windspeed_10m_max: number[];
+      precipitation_probability_max: (number | null)[];
+      windspeed_10m_max: (number | null)[];
       weathercode_wmo: number[];
       sunrise: string[];
       sunset: string[];
-      uv_index_max: number[];
+      uv_index_max: (number | null)[];
     };
   };
 
@@ -57,11 +57,11 @@ async function fetchWeather(): Promise<WeatherData> {
         time: hourly.time[i],
         temperature: hourly.temperature_2m[i],
         apparentTemperature: hourly.apparent_temperature[i],
-        precipitationProbability: hourly.precipitation_probability[i],
+        precipitationProbability: hourly.precipitation_probability[i] ?? 0,
         weathercode: hourly.weathercode[i],
-        humidity: hourly.relative_humidity_2m?.[i],
-        pressure: hourly.pressure_msl?.[i],
-        uvIndex: hourly.uv_index?.[i],
+        humidity: hourly.relative_humidity_2m?.[i] ?? undefined,
+        pressure: hourly.pressure_msl?.[i] ?? undefined,
+        uvIndex: hourly.uv_index?.[i] != null ? hourly.uv_index[i] : undefined,
       });
     }
   }
@@ -73,12 +73,12 @@ async function fetchWeather(): Promise<WeatherData> {
         date: daily.time[i],
         temperatureMin: daily.temperature_2m_min[i],
         temperatureMax: daily.temperature_2m_max[i],
-        precipitationProbabilityMax: daily.precipitation_probability_max[i],
-        windspeedMax: daily.windspeed_10m_max[i],
+        precipitationProbabilityMax: daily.precipitation_probability_max[i] ?? 0,
+        windspeedMax: daily.windspeed_10m_max[i] ?? 0,
         weathercode: daily.weathercode_wmo[i],
         sunrise: daily.sunrise[i],
         sunset: daily.sunset[i],
-        uvIndexMax: daily.uv_index_max?.[i],
+        uvIndexMax: daily.uv_index_max?.[i] != null ? daily.uv_index_max[i] : undefined,
       });
     }
   }
@@ -132,7 +132,7 @@ weatherRouter.get('/', async (_req: Request, res: Response) => {
       data = await fetchWeather();
       fetched_at = await updateWeatherCache(data);
     } catch (fetchErr) {
-      console.error('Weather fetch failed, trying cache:', fetchErr);
+      console.error('Weather fetch failed, trying cache:', fetchErr instanceof Error ? fetchErr.message : fetchErr);
       const cached = await getCachedWeather();
       if (!cached) {
         return res.status(503).json({ error: 'Weather data unavailable' });

@@ -111,19 +111,7 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
             <Clock />
           </>
         ) : (
-          <div className="flex items-center gap-2">
-            <Link
-              href="/weather"
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 36, height: 36, borderRadius: '50%',
-                background: 'var(--family-surface2)', textDecoration: 'none',
-                flexShrink: 0,
-              }}
-              title="Wetter"
-            >
-              <i className="ti ti-cloud" style={{ fontSize: 18, color: '#6b6760' }} aria-hidden="true" />
-            </Link>
+          <div className="flex items-center gap-1.5">
             {users.map(user => (
               <AvatarButton
                 key={user.id}
