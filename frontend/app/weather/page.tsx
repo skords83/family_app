@@ -126,30 +126,30 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
   const uv = data.uvIndex ?? todayDaily?.uvIndexMax;
   return (
     <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ fontSize: 64, lineHeight: 1 }}>{getWeatherEmoji(data.weathercode)}</span>
-          <div>
-            <p style={{ fontSize: 52, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
-              {Math.round(data.temperature)}°
-            </p>
-            <p className="font-sans" style={{ fontSize: 16, color: '#6b6760', marginTop: 2 }}>
-              {getWeatherDesc(data.weathercode)}
-            </p>
-          </div>
-        </div>
+      {/* Kompakte Kopfzeile: Emoji + Temp + Beschreibung + Min/Max in einer Linie */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <span style={{ fontSize: 40, lineHeight: 1, flexShrink: 0 }}>{getWeatherEmoji(data.weathercode)}</span>
+        <span style={{ fontSize: 36, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1, flexShrink: 0 }}>
+          {Math.round(data.temperature)}°
+        </span>
+        <span className="font-sans" style={{ fontSize: 15, color: '#6b6760', flexShrink: 0 }}>
+          {getWeatherDesc(data.weathercode)}
+        </span>
         {todayDaily && (
-          <div className="font-sans" style={{ textAlign: 'right', fontSize: 13, color: '#6b6760', lineHeight: 1.8 }}>
-            <div style={{ fontWeight: 600, color: '#1a1814' }}>
-              {Math.round(todayDaily.temperatureMax)}° / {Math.round(todayDaily.temperatureMin)}°
-            </div>
-            <div>Min / Max heute</div>
-          </div>
+          <>
+            <div style={{ flex: 1 }} />
+            <span className="font-sans" style={{ fontSize: 13, color: '#a09d99', whiteSpace: 'nowrap' }}>
+              <span style={{ fontWeight: 600, color: '#1a1814' }}>{Math.round(todayDaily.temperatureMax)}°</span>
+              {' / '}
+              <span>{Math.round(todayDaily.temperatureMin)}°</span>
+              <span style={{ marginLeft: 4 }}>heute</span>
+            </span>
+          </>
         )}
       </div>
 
-      {/* Stats grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.07)' }}>
+      {/* Stats – alle in einer Zeile */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingTop: 14, borderTop: '0.5px solid rgba(0,0,0,0.07)' }}>
         <StatCell icon="ti-temperature" label="Gefühlt" value={`${Math.round(data.apparentTemperature)}°`} />
         <StatCell icon="ti-droplet" label="Regen" value={`${Math.round(data.precipitationProbability)}%`} />
         <StatCell icon="ti-wind" label="Wind" value={`${Math.round(data.windspeed)} km/h`} />
@@ -189,7 +189,7 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
   const today = todayBerlin();
   const items = hourly
     .filter(h => new Date(h.time).getTime() >= now - 30 * 60 * 1000)
-    .slice(0, 24);
+    .slice(0, 12);
 
   if (items.length === 0) return null;
 
@@ -200,7 +200,7 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
       <h2 className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
         Nächste 24 Stunden
       </h2>
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 6 }}>
         {items.map((h, i) => {
           const dateStr = h.time.slice(0, 10);
           const isNewDay = dateStr !== lastDate && dateStr !== today;
