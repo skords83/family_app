@@ -10,6 +10,7 @@ const NAV = [
   { href: '/meals',     icon: 'ti-bowl',               label: 'Essensplan'    },
   { href: '/shopping',  icon: 'ti-shopping-cart',      label: 'Einkaufsliste' },
   { href: '/heating',   icon: 'ti-thermometer',        label: 'Heizung'       },
+  { href: '/weather',   icon: 'ti-cloud',              label: 'Wetter'        },
 ];
 const BOTTOM_NAV = [
   { href: '/members',  icon: 'ti-users',    label: 'Mitglieder'    },
