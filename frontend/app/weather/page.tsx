@@ -3,7 +3,42 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
-import type { WeatherData, WeatherDaily, WeatherHourly } from '@family/shared';
+
+interface WeatherHourly {
+  time: string;
+  temperature: number;
+  apparentTemperature: number;
+  precipitationProbability: number;
+  weathercode: number;
+  humidity?: number;
+  pressure?: number;
+  uvIndex?: number;
+}
+
+interface WeatherDaily {
+  date: string;
+  temperatureMin: number;
+  temperatureMax: number;
+  precipitationProbabilityMax: number;
+  windspeedMax: number;
+  weathercode: number;
+  sunrise: string;
+  sunset: string;
+  uvIndexMax?: number;
+}
+
+interface WeatherData {
+  temperature: number;
+  apparentTemperature: number;
+  precipitationProbability: number;
+  weathercode: number;
+  windspeed: number;
+  humidity?: number;
+  pressure?: number;
+  uvIndex?: number;
+  hourly?: WeatherHourly[];
+  daily?: WeatherDaily[];
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
