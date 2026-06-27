@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useClientDate } from '@/hooks/useClientDate';
 import AvatarButton from './AvatarButton';
 import WeatherWidget from '@/components/widgets/WeatherWidget';
+import Link from 'next/link';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 interface User {
   id: string; name: string; avatar: string; photo?: string;
@@ -99,16 +100,30 @@ export default function PageHeader({ title, variant = 'page' }: PageHeaderProps)
       <div className="flex items-center" style={{ gap: 48 }}>
         {variant === 'home' ? (
           <>
-            <WeatherWidget
-              variant="header"
-              data={weather.data}
-              fetched_at={weather.fetched_at}
-              loading={weatherLoading}
-            />
+            <Link href="/weather" style={{ textDecoration: 'none' }}>
+              <WeatherWidget
+                variant="header"
+                data={weather.data}
+                fetched_at={weather.fetched_at}
+                loading={weatherLoading}
+              />
+            </Link>
             <Clock />
           </>
         ) : (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/weather"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 36, height: 36, borderRadius: '50%',
+                background: 'var(--family-surface2)', textDecoration: 'none',
+                flexShrink: 0,
+              }}
+              title="Wetter"
+            >
+              <i className="ti ti-cloud" style={{ fontSize: 18, color: '#6b6760' }} aria-hidden="true" />
+            </Link>
             {users.map(user => (
               <AvatarButton
                 key={user.id}

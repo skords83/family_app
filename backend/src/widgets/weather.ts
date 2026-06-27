@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/pool';
-import { WeatherDataSchema, WeatherResponseSchema, type WeatherData, type WeatherHourly } from '@family/shared';
+import { WeatherDataSchema, WeatherResponseSchema, type WeatherData, type WeatherHourly, type WeatherDaily } from '@family/shared';
 
 export const weatherRouter = Router();
 
@@ -10,8 +10,9 @@ async function fetchWeather(): Promise<WeatherData> {
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&current_weather=true`
-    + `&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode`
-    + `&forecast_days=2`
+    + `&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,relative_humidity_2m,pressure_msl,uv_index`
+    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode_wmo,sunrise,sunset,uv_index_max`
+    + `&forecast_days=7`
     + `&timezone=Europe%2FBerlin`;
 
   const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
@@ -28,11 +29,26 @@ async function fetchWeather(): Promise<WeatherData> {
       apparent_temperature: number[];
       precipitation_probability: number[];
       weathercode: number[];
+      relative_humidity_2m: number[];
+      pressure_msl: number[];
+      uv_index: number[];
+    };
+    daily: {
+      time: string[];
+      temperature_2m_max: number[];
+      temperature_2m_min: number[];
+      precipitation_probability_max: number[];
+      windspeed_10m_max: number[];
+      weathercode_wmo: number[];
+      sunrise: string[];
+      sunset: string[];
+      uv_index_max: number[];
     };
   };
 
   const current = json.current_weather;
   const hourly = json.hourly;
+  const daily = json.daily;
 
   const hourlyData: WeatherHourly[] = [];
   if (hourly?.time) {
@@ -43,11 +59,31 @@ async function fetchWeather(): Promise<WeatherData> {
         apparentTemperature: hourly.apparent_temperature[i],
         precipitationProbability: hourly.precipitation_probability[i],
         weathercode: hourly.weathercode[i],
+        humidity: hourly.relative_humidity_2m?.[i],
+        pressure: hourly.pressure_msl?.[i],
+        uvIndex: hourly.uv_index?.[i],
       });
     }
   }
 
-  // Find the current hour's entry for apparent temp + precipitation
+  const dailyData: WeatherDaily[] = [];
+  if (daily?.time) {
+    for (let i = 0; i < daily.time.length; i++) {
+      dailyData.push({
+        date: daily.time[i],
+        temperatureMin: daily.temperature_2m_min[i],
+        temperatureMax: daily.temperature_2m_max[i],
+        precipitationProbabilityMax: daily.precipitation_probability_max[i],
+        windspeedMax: daily.windspeed_10m_max[i],
+        weathercode: daily.weathercode_wmo[i],
+        sunrise: daily.sunrise[i],
+        sunset: daily.sunset[i],
+        uvIndexMax: daily.uv_index_max?.[i],
+      });
+    }
+  }
+
+  // Find the current hour's entry for apparent temp, precipitation, humidity, pressure, UV
   const now = new Date();
   const currentHourStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
   const currentEntry = hourlyData.find(h => h.time === currentHourStr);
@@ -58,7 +94,11 @@ async function fetchWeather(): Promise<WeatherData> {
     precipitationProbability: currentEntry?.precipitationProbability ?? 0,
     weathercode: current.weathercode,
     windspeed: current.windspeed,
+    humidity: currentEntry?.humidity,
+    pressure: currentEntry?.pressure,
+    uvIndex: currentEntry?.uvIndex,
     hourly: hourlyData,
+    daily: dailyData,
   });
 }
 
