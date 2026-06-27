@@ -11,7 +11,7 @@ async function fetchWeather(): Promise<WeatherData> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
     + `&current_weather=true`
     + `&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,relative_humidity_2m,pressure_msl,uv_index`
-    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode_wmo,sunrise,sunset,uv_index_max`
+    + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,weathercode,sunrise,sunset,uv_index_max`
     + `&forecast_days=7`
     + `&timezone=Europe%2FBerlin`;
 
@@ -39,7 +39,7 @@ async function fetchWeather(): Promise<WeatherData> {
       temperature_2m_min: number[];
       precipitation_probability_max: (number | null)[];
       windspeed_10m_max: (number | null)[];
-      weathercode_wmo: number[];
+      weathercode: number[];
       sunrise: string[];
       sunset: string[];
       uv_index_max: (number | null)[];
@@ -75,7 +75,7 @@ async function fetchWeather(): Promise<WeatherData> {
         temperatureMax: daily.temperature_2m_max[i],
         precipitationProbabilityMax: daily.precipitation_probability_max[i] ?? 0,
         windspeedMax: daily.windspeed_10m_max[i] ?? 0,
-        weathercode: daily.weathercode_wmo[i],
+        weathercode: daily.weathercode[i],
         sunrise: daily.sunrise[i],
         sunset: daily.sunset[i],
         uvIndexMax: daily.uv_index_max?.[i] ?? undefined,
