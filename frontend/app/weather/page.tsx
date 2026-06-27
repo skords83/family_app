@@ -189,48 +189,64 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
   const today = todayBerlin();
   const items = hourly
     .filter(h => new Date(h.time).getTime() >= now - 30 * 60 * 1000)
-    .filter(h => h.time.startsWith(today))
-    .slice(0, 16);
+    .slice(0, 24);
 
   if (items.length === 0) return null;
+
+  let lastDate = '';
 
   return (
     <div style={card}>
       <h2 className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
-        Heute stündlich
+        Nächste 24 Stunden
       </h2>
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-        {items.map((h, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-              background: 'var(--family-surface2)', borderRadius: 12,
-              padding: '8px 10px', minWidth: 56, flexShrink: 0,
-            }}
-          >
-            <span className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>
-              {h.time.slice(11, 16)}
-            </span>
-            <span style={{ fontSize: 20, lineHeight: 1 }}>{getWeatherEmoji(h.weathercode)}</span>
-            <span className="font-sans" style={{ fontSize: 14, fontWeight: 600, color: '#1a1814' }}>
-              {Math.round(h.temperature)}°
-            </span>
-            {h.precipitationProbability > 0 ? (
-              <span className="font-sans" style={{ fontSize: 10, color: '#378ADD', display: 'flex', alignItems: 'center', gap: 2 }}>
-                <i className="ti ti-droplet" style={{ fontSize: 9 }} aria-hidden="true" />
-                {Math.round(h.precipitationProbability)}%
-              </span>
-            ) : (
-              <span style={{ fontSize: 10 }}>&nbsp;</span>
-            )}
-            {h.humidity !== undefined && (
-              <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>
-                {Math.round(h.humidity)}%
-              </span>
-            )}
-          </div>
-        ))}
+        {items.map((h, i) => {
+          const dateStr = h.time.slice(0, 10);
+          const isNewDay = dateStr !== lastDate && dateStr !== today;
+          const showDayLabel = isNewDay && dateStr !== lastDate;
+          if (dateStr !== lastDate) lastDate = dateStr;
+
+          return (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              {showDayLabel && (
+                <span className="font-sans" style={{ fontSize: 9, color: '#378ADD', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+                  {formatDayName(dateStr).slice(0, 2)}
+                </span>
+              )}
+              {!showDayLabel && <span style={{ fontSize: 9, lineHeight: '1.3' }}>&nbsp;</span>}
+              <div
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                  background: showDayLabel ? 'rgba(55,138,221,0.08)' : 'var(--family-surface2)',
+                  borderRadius: 12, padding: '8px 10px', minWidth: 56,
+                  border: showDayLabel ? '0.5px solid rgba(55,138,221,0.25)' : 'none',
+                }}
+              >
+                <span className="font-sans" style={{ fontSize: 10, color: '#a09d99' }}>
+                  {h.time.slice(11, 16)}
+                </span>
+                <span style={{ fontSize: 20, lineHeight: 1 }}>{getWeatherEmoji(h.weathercode)}</span>
+                <span className="font-sans" style={{ fontSize: 14, fontWeight: 600, color: '#1a1814' }}>
+                  {Math.round(h.temperature)}°
+                </span>
+                {h.precipitationProbability > 0 ? (
+                  <span className="font-sans" style={{ fontSize: 10, color: '#378ADD', display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <i className="ti ti-droplet" style={{ fontSize: 9 }} aria-hidden="true" />
+                    {Math.round(h.precipitationProbability)}%
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10 }}>&nbsp;</span>
+                )}
+                {h.humidity !== undefined && (
+                  <span className="font-sans" style={{ fontSize: 9, color: '#a09d99' }}>
+                    {Math.round(h.humidity)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
