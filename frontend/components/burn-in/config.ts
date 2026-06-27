@@ -1,7 +1,7 @@
 export interface BurnInConfig {
-  /** Stunde (0–23), ab der Nacht-Dimm startet */
+  /** Minuten seit Mitternacht (0–1439), ab denen Nacht-Dimm startet */
   nightStart: number;
-  /** Stunde (0–23), ab der Nacht-Dimm endet */
+  /** Minuten seit Mitternacht (0–1439), ab denen Nacht-Dimm endet */
   nightEnd: number;
   /** Helligkeit im Nacht-Modus (0.0 – 1.0) */
   nightBrightness: number;
@@ -14,8 +14,8 @@ export interface BurnInConfig {
 }
 
 export const DEFAULT_CONFIG: BurnInConfig = {
-  nightStart: 23,
-  nightEnd: 7,
+  nightStart: 22 * 60 + 30, // 22:30
+  nightEnd: 6 * 60,         // 06:00
   nightBrightness: 0.30,
   screensaverTimeout: 15 * 60 * 1000,  // 15 Minuten
   pixelShiftInterval: 3 * 60 * 1000,   // 3 Minuten

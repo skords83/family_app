@@ -13,12 +13,13 @@ interface BurnInState {
   showScreensaver: boolean;
 }
 
-function isNightHour(hour: number, nightStart: number, nightEnd: number): boolean {
+function isNightTime(now: Date, nightStart: number, nightEnd: number): boolean {
+  const minutes = now.getHours() * 60 + now.getMinutes();
   if (nightStart > nightEnd) {
-    // Über Mitternacht: z.B. 22–7
-    return hour >= nightStart || hour < nightEnd;
+    // Über Mitternacht: z.B. 22:30–06:00
+    return minutes >= nightStart || minutes < nightEnd;
   }
-  return hour >= nightStart && hour < nightEnd;
+  return minutes >= nightStart && minutes < nightEnd;
 }
 
 function randomShift(max: number): number {
@@ -39,8 +40,7 @@ export function useBurnInProtection(config: BurnInConfig = DEFAULT_CONFIG) {
 
   // Prüft ob Nacht-Modus aktiv sein soll
   const checkNight = useCallback(() => {
-    const hour = new Date().getHours();
-    const night = isNightHour(hour, config.nightStart, config.nightEnd);
+    const night = isNightTime(new Date(), config.nightStart, config.nightEnd);
     setState((prev) => ({
       ...prev,
       isNight: night,
