@@ -262,16 +262,12 @@ export default function HeatingPage() {
 
   return (
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <PageHeader variant="home" />
+      <PageHeader title="Heizung & Klima" variant="page" />
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 24px 24px' }}>
-        {/* Seitentitel */}
+        {/* Status-Leiste */}
         <div className="flex items-center justify-between" style={{ marginBottom: 20, paddingTop: 4 }}>
           <div className="flex items-center gap-3">
-            <i className="ti ti-thermometer" style={{ fontSize: 22, color: '#1a1814' }} aria-hidden="true" />
-            <h1 className="font-sans font-semibold" style={{ fontSize: 20, color: '#1a1814' }}>
-              Heizung & Klima
-            </h1>
             {!loading && rooms.length > 0 && (
               <span className="font-sans" style={{ fontSize: 13, color: '#a09d99' }}>
                 {heatingRooms > 0 ? `${heatingCount} Raum${heatingCount !== 1 ? 'räume' : ''} heizt` : 'Keine Heizung aktiv'}
