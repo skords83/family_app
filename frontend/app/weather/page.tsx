@@ -180,9 +180,6 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
         <StatCell icon="ti-temperature" label="Gefühlt" value={`${Math.round(data.apparentTemperature)}°`} />
         <StatCell icon="ti-droplet" label="Regen" value={`${Math.round(data.precipitationProbability)}%`} />
         <StatCell icon="ti-wind" label="Wind" value={`${Math.round(data.windspeed)} km/h`} />
-        {data.humidity !== undefined && (
-          <StatCell icon="ti-droplets" label="Luftfeuchte" value={`${Math.round(data.humidity)}%`} />
-        )}
         {data.pressure !== undefined && (
           <StatCell icon="ti-gauge" label="Luftdruck" value={`${Math.round(data.pressure)} hPa`} />
         )}
@@ -190,10 +187,7 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
           <StatCell icon="ti-sun" label="UV-Index" value={`${Math.round(uv)} ${uvLabel(uv)}`} valueColor={uvColor(uv)} />
         )}
         {todayDaily && (
-          <>
-            <StatCell icon="ti-sunrise" label="Aufgang" value={formatHHMM(todayDaily.sunrise)} />
-            <StatCell icon="ti-sunset" label="Untergang" value={formatHHMM(todayDaily.sunset)} />
-          </>
+          <StatCell icon="ti-sunrise" label="Sonne" value={`${formatHHMM(todayDaily.sunrise)} – ${formatHHMM(todayDaily.sunset)}`} />
         )}
       </div>
     </div>
