@@ -146,11 +146,11 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
   const bg = getWeatherBg(data.weathercode);
 
   return (
-    <div style={{ ...card, background: bg, position: 'relative', overflow: 'hidden', flexShrink: 0, padding: '28px 36px' }}>
+    <div style={{ ...card, position: 'relative', overflow: 'hidden', flexShrink: 0, padding: '28px 36px' }}>
       {/* Dekoratives Emoji im Hintergrund */}
       <span style={{
         position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)',
-        fontSize: 112, lineHeight: 1, opacity: 0.15, pointerEvents: 'none', userSelect: 'none',
+        fontSize: 112, lineHeight: 1, opacity: 0.06, pointerEvents: 'none', userSelect: 'none',
       }}>
         {getWeatherEmoji(data.weathercode)}
       </span>
@@ -172,9 +172,9 @@ function TodayBlock({ data, todayDaily }: { data: WeatherData; todayDaily?: Weat
         )}
       </div>
 
-      {/* Stats-Zeile */}
+      {/* Stats – 2 Zeilen à 3 Werte */}
       <div style={{
-        display: 'flex', gap: 28, flexWrap: 'wrap',
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 0',
         paddingTop: 18, borderTop: '0.5px solid rgba(0,0,0,0.09)',
       }}>
         <StatCell icon="ti-temperature" label="Gefühlt" value={`${Math.round(data.apparentTemperature)}°`} />
@@ -207,11 +207,11 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
   let lastDate = '';
 
   return (
-    <div style={{ ...card, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ ...card, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <h2 className="font-sans" style={{ fontSize: 10, fontWeight: 600, color: '#a09d99', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, flexShrink: 0 }}>
         Nächste 12 Stunden
       </h2>
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 5, alignItems: 'stretch' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 5 }}>
         {items.map((h, i) => {
           const dateStr = h.time.slice(0, 10);
           const isNewDay = dateStr !== today && dateStr !== lastDate;
@@ -224,8 +224,7 @@ function HourlyTimeline({ hourly }: { hourly: WeatherHourly[] }) {
                 : <span style={{ fontSize: 9, flexShrink: 0 }}>&nbsp;</span>
               }
               <div style={{
-                flex: 1,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-around',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 background: isNewDay ? 'rgba(55,138,221,0.07)' : 'var(--family-surface2)',
                 border: isNewDay ? '0.5px solid rgba(55,138,221,0.2)' : 'none',
                 borderRadius: 10, padding: '8px 4px', width: '100%',
@@ -292,10 +291,8 @@ function WeekForecast({ daily }: { daily: WeatherDaily[] }) {
                 gridTemplateColumns: '88px 28px 110px 1fr 54px 44px',
                 alignItems: 'center',
                 gap: 8,
-                padding: isToday ? '9px 8px' : '8px 8px',
-                marginLeft: -8,
-                marginRight: -8,
-                borderRadius: isToday ? 10 : 0,
+                padding: '8px 0',
+                borderRadius: isToday ? 8 : 0,
                 background: isToday ? 'rgba(0,0,0,0.04)' : 'transparent',
               }}
             >
