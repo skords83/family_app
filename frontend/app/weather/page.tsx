@@ -360,6 +360,33 @@ export default function WeatherPage() {
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <PageHeader title="Wetter" variant="page" />
 
+      {/* Status-Leiste */}
+      <div className="flex items-center justify-between" style={{ padding: '4px 24px 8px', flexShrink: 0 }}>
+        <div>
+          {staleIndicator && (
+            <div className="font-sans flex items-center gap-1" style={{ fontSize: 11, color: '#e0a020', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#e0a020', display: 'inline-block' }} />
+              Daten veraltet
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {fetchedAt && (
+            <span className="font-sans" style={{ fontSize: 11, color: '#a09d99' }}>
+              {new Date(fetchedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+            </span>
+          )}
+          <button
+            onClick={fetchWeather}
+            className="flex items-center justify-center rounded-xl"
+            style={{ width: 36, height: 36, background: 'var(--family-surface)', border: '0.5px solid var(--family-border)' }}
+            aria-label="Aktualisieren"
+          >
+            <i className="ti ti-refresh" style={{ fontSize: 16, color: '#6b6760' }} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
       <div style={{
         flex: 1, minHeight: 0,
         display: 'grid',
@@ -384,12 +411,6 @@ export default function WeatherPage() {
           <>
             {/* Links: Heute + Timeline */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'hidden' }}>
-              {staleIndicator && (
-                <div className="font-sans" style={{ fontSize: 11, color: '#e0a020', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#e0a020', display: 'inline-block' }} />
-                  Daten veraltet
-                </div>
-              )}
               <TodayBlock data={data} todayDaily={todayDaily} />
               {data.hourly && data.hourly.length > 0 && (
                 <HourlyTimeline hourly={data.hourly} />
