@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 interface ScreensaverProps {
   onDismiss: () => void;
@@ -30,7 +30,7 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => {
+  const fetchPhotos = useCallback(() => {
     fetch(`${apiBase}/api/widgets/immich/slideshow`)
       .then(r => r.json())
       .then((d: { photos?: SlideshowPhoto[] }) => setPhotos(d.photos ?? []))
@@ -38,17 +38,33 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
   }, [apiBase]);
 
   useEffect(() => {
+    fetchPhotos();
+  }, [fetchPhotos]);
+
+  // Reset pair and counter whenever a new batch arrives
+  useEffect(() => {
+    if (photos.length >= 2) {
+      setPair({ a: 0, b: 1, front: 'A' });
+      counterRef.current = 2;
+    }
+  }, [photos]);
+
+  useEffect(() => {
     if (photos.length < 2) return;
     const t = setInterval(() => {
       const next = counterRef.current % photos.length;
       counterRef.current++;
+      // Fetch new batch when the last photo in the current set is queued
+      if (counterRef.current === photos.length + 1) {
+        fetchPhotos();
+      }
       setPair(prev => prev.front === 'A'
         ? { a: prev.a, b: next, front: 'B' }
         : { a: next, b: prev.b, front: 'A' }
       );
     }, 45_000);
     return () => clearInterval(t);
-  }, [photos.length]);
+  }, [photos.length, fetchPhotos]);
 
   function handleDismiss(e: React.MouseEvent | React.TouchEvent) {
     e.stopPropagation();
@@ -71,24 +87,28 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
     >
       {/* Slot A */}
       {photoA && (
-        <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'A' ? 1 : 0, transition: 'opacity 3s ease' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'A' ? 1 : 0, transition: 'opacity 3s ease', overflow: 'hidden' }}>
+          <div key={pair.a} style={{ position: 'absolute', inset: 0, animation: `kb-${pair.a % 4} 45s ease-in-out forwards` }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`${apiBase}/api/widgets/immich/proxy/${photoA.id}?size=preview`} alt="" aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
         </div>
       )}
       {/* Slot B */}
       {photoB && (
-        <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'B' ? 1 : 0, transition: 'opacity 3s ease' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div style={{ position: 'absolute', inset: 0, opacity: pair.front === 'B' ? 1 : 0, transition: 'opacity 3s ease', overflow: 'hidden' }}>
+          <div key={pair.b} style={{ position: 'absolute', inset: 0, animation: `kb-${pair.b % 4} 45s ease-in-out forwards` }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(28px) brightness(0.7)', transform: 'scale(1.08)' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`${apiBase}/api/widgets/immich/proxy/${photoB.id}?size=preview`} alt="" aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
         </div>
       )}
 
@@ -109,6 +129,22 @@ export function Screensaver({ onDismiss, apiBase = '' }: ScreensaverProps) {
         @keyframes ss-fade-in {
           from { opacity: 0; }
           to   { opacity: 1; }
+        }
+        @keyframes kb-0 {
+          from { transform: scale(1)    translate(0%,   0%);   }
+          to   { transform: scale(1.10) translate(-2%, -1%);   }
+        }
+        @keyframes kb-1 {
+          from { transform: scale(1.10) translate(2%,   1%);   }
+          to   { transform: scale(1)    translate(-1%,  0%);   }
+        }
+        @keyframes kb-2 {
+          from { transform: scale(1)    translate(1%,   1%);   }
+          to   { transform: scale(1.10) translate(-1%, -2%);   }
+        }
+        @keyframes kb-3 {
+          from { transform: scale(1.10) translate(-2%,  0%);   }
+          to   { transform: scale(1)    translate(1%,   1%);   }
         }
       `}</style>
     </div>

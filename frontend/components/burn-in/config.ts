@@ -17,7 +17,7 @@ export const DEFAULT_CONFIG: BurnInConfig = {
   nightStart: 22 * 60 + 30, // 22:30
   nightEnd: 6 * 60,         // 06:00
   nightBrightness: 0.30,
-  screensaverTimeout: 15 * 60 * 1000,  // 15 Minuten
+  screensaverTimeout: 8 * 60 * 1000,   // 8 Minuten
   pixelShiftInterval: 3 * 60 * 1000,   // 3 Minuten
   pixelShiftMax: 3,
 };
