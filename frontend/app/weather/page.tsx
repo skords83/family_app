@@ -288,9 +288,9 @@ function WeekForecast({ daily }: { daily: WeatherDaily[] }) {
               key={day.date}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '88px 28px 110px 1fr 54px 44px',
+                gridTemplateColumns: '70px 26px 85px 1fr 50px 38px',
                 alignItems: 'center',
-                gap: 8,
+                gap: 6,
                 padding: '8px 0',
                 borderRadius: isToday ? 8 : 0,
                 background: isToday ? 'rgba(0,0,0,0.04)' : 'transparent',
