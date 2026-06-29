@@ -18,6 +18,7 @@ import { norishRouter } from './widgets/norish';
 import { immichRouter } from './widgets/immich';
 import { wasteRouter, fetchAndStoreWasteEvents } from './widgets/waste';
 import { homeassistantRouter } from './widgets/homeassistant';
+import { appliancesRouter } from './widgets/appliances';
 import { startDailyTaskCron, ensureTodayTasksGenerated } from './jobs/generateDailyTasks';
 import { startWasteCron } from './jobs/refreshWaste';
 import { sseHandler } from './sse';
@@ -46,6 +47,7 @@ app.use('/api/widgets/meals', norishRouter);
 app.use('/api/widgets/immich', immichRouter);
 app.use('/api/widgets/waste', wasteRouter);
 app.use('/api/widgets/homeassistant', homeassistantRouter);
+app.use('/api/widgets/appliances', appliancesRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

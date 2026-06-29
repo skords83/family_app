@@ -12,6 +12,7 @@ export type SSEEventType =
   | 'shopping_updated'    // Einkaufsliste geändert
   | 'config_updated'      // Widget-Konfiguration geändert
   | 'nfc_scan'            // NFC-Tag erkannt — Frontend navigiert zu User-Seite
+  | 'appliance_done'      // Waschmaschine / Trockner fertig (Shelly via HA)
   | 'ping';               // Heartbeat (kein Reload nötig)
 
 export interface SSEEvent {

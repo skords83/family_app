@@ -11,6 +11,7 @@ export type SSEEventType =
   | 'shopping_updated'
   | 'config_updated'
   | 'nfc_scan'
+  | 'appliance_done'
   | 'ping';
 
 export interface SSEEvent {

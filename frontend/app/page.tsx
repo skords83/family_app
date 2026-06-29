@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSSE } from '@/hooks/useSSE';
 import type { SSEEvent } from '@/hooks/useSSE';
@@ -8,6 +8,7 @@ import CalendarWidget from '@/components/widgets/CalendarWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
 import WasteWidget from '@/components/widgets/WasteWidget';
 import PageHeader from '@/components/ui/PageHeader';
+import { ApplianceToastContainer, type ApplianceNotification } from '@/components/ui/ApplianceToast';
 import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -94,6 +95,8 @@ export default function HomePage() {
   const [waste, setWaste] = useState<WasteTodayData | undefined>();
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(nowHHMM);
+  const [applianceToasts, setApplianceToasts] = useState<ApplianceNotification[]>([]);
+  const toastIdRef = useRef(0);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -137,6 +140,17 @@ export default function HomePage() {
 
   const handleConfigUpdated = useCallback(() => window.location.reload(), []);
 
+  const handleApplianceDone = useCallback((event: SSEEvent) => {
+    const appliance = event.data?.appliance as 'washer' | 'dryer' | undefined;
+    if (appliance !== 'washer' && appliance !== 'dryer') return;
+    const id = ++toastIdRef.current;
+    setApplianceToasts(prev => [...prev, { id, appliance }]);
+  }, []);
+
+  const dismissApplianceToast = useCallback((id: number) => {
+    setApplianceToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   const handleNfcScan = useCallback((event: SSEEvent) => {
     const scannedUser = event.data?.user as { id?: string; role?: string } | undefined;
     const userId = scannedUser?.id;
@@ -153,10 +167,12 @@ export default function HomePage() {
     reward_claimed: fetchUsers,
     config_updated: handleConfigUpdated,
     nfc_scan: handleNfcScan,
+    appliance_done: handleApplianceDone,
   });
 
   return (
     <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <ApplianceToastContainer notifications={applianceToasts} onDismiss={dismissApplianceToast} />
       <PageHeader variant="home" />
 
       <div
