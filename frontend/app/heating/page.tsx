@@ -36,16 +36,41 @@ const SENSOR_ROOM_OVERRIDES: Record<string, string> = {
   'sensor.wohnzimmer_sensor_luftfeuchtigkeit': 'kuche',
 };
 
-/** Extract a lowercase room key, cutting at the first generic segment.
- *  "climate.schlafzimmer_thermostat"             → "schlafzimmer"
- *  "sensor.schlafzimmer_sensor_luftfeuchtigkeit" → "schlafzimmer"
- *  "sensor.buro_sensor_temperatur_2"             → "buro"
+// Entities, die Diagnose-/Zusatzwerte liefern (Komfort-/Eco-Sollwert, nächste
+// geplante Temperatur, fremde Hardware-Sensoren wie CPU-Temperatur) und
+// niemals eine eigene Karte erzeugen oder eine Raum-Karte befüllen sollen.
+const EXCLUDED_MARKERS = /(_komfort_|_eco_|_nachste_geplante_|_cpu_)/;
+
+/** Ermittelt zu welcher Raum-Karte eine Entity gehört, oder null, wenn sie
+ *  ignoriert werden soll (Diagnose-/Zusatzsensoren, fremde Hardware).
+ *
+ *  "climate.buro"                                  → "buro"
+ *  "climate.wohnzimmer_thermostat_essecke"         → "essecke"
+ *  "climate.wohnzimmer_thermostat_bucherecke"      → "bucherecke"
+ *  "climate.sophine_thermostat"                    → "sophine"
+ *  "sensor.buro_sensor_temperatur_2"               → "buro"
+ *  "sensor.buro_komfort_temperatur"                → null (ausgeschlossen)
+ *  "sensor.asgard_cpu_temperatur"                  → null (ausgeschlossen)
  */
-function roomKey(entityId: string): string {
+function roomKey(entityId: string): string | null {
   if (SENSOR_ROOM_OVERRIDES[entityId]) return SENSOR_ROOM_OVERRIDES[entityId];
-  const withoutDomain = entityId.replace(/^[^.]+\./, '');
-  return withoutDomain
+
+  const id = entityId.replace(/^[^.]+\./, '');
+  if (EXCLUDED_MARKERS.test(id)) return null;
+
+  // "wohnzimmer_thermostat_essecke[_temperatur]" -> "essecke"
+  let m = id.match(/^wohnzimmer_thermostat_([a-z0-9]+)/);
+  if (m) return m[1];
+
+  // "sophine_thermostat[_temperatur]" -> "sophine"
+  m = id.match(/^([a-z0-9]+)_thermostat/);
+  if (m) return m[1];
+
+  // Fallback: generische Suffixe und einen abschließenden Index entfernen,
+  // z.B. "buro_sensor_temperatur_2" -> "buro"
+  return id
     .replace(/_(thermostat|sensor|temperatur|temperature|temp|luftfeuchtigkeit|humidity|hum|heizung).*$/, '')
+    .replace(/_\d+$/, '')
     .toLowerCase();
 }
 
@@ -57,11 +82,13 @@ function buildRooms(
 
   for (const e of entities) {
     const key = roomKey(e.entity_id);
+    if (!key) continue;
     map.set(key, { key, label: e.name, climate: e });
   }
 
   for (const s of sensors) {
     const key = roomKey(s.entity_id);
+    if (!key) continue;
     if (!map.has(key)) {
       // derive label: strip device_class suffix from friendly name
       const label = s.name
