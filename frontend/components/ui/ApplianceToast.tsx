@@ -7,9 +7,9 @@ export interface ApplianceNotification {
   appliance: 'washer' | 'dryer';
 }
 
-const LABELS: Record<ApplianceNotification['appliance'], { icon: string; text: string }> = {
-  washer: { icon: 'ti-wash', text: 'Waschmaschine fertig!' },
-  dryer:  { icon: 'ti-wind', text: 'Trockner fertig!' },
+const LABELS: Record<ApplianceNotification['appliance'], { icon: string; text: string; color: string; bg: string }> = {
+  washer: { icon: 'ti-wash', text: 'Waschmaschine fertig!', color: '#4a9eed', bg: '#f0f7ff' },
+  dryer:  { icon: 'ti-wind', text: 'Trockner fertig!', color: '#e85d3a', bg: '#fff5f3' },
 };
 
 const AUTO_DISMISS_MS = 30_000;
@@ -19,7 +19,7 @@ function Toast({ notification, onDismiss }: {
   onDismiss: (id: number) => void;
 }) {
   const [visible, setVisible] = useState(false);
-  const { icon, text } = LABELS[notification.appliance];
+  const { icon, text, color, bg } = LABELS[notification.appliance];
 
   useEffect(() => {
     // Slight delay so CSS transition plays on mount
@@ -40,12 +40,12 @@ function Toast({ notification, onDismiss }: {
         gap: 12,
         padding: '14px 18px',
         borderRadius: 16,
-        background: '#fff',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.13)',
-        border: '1px solid rgba(0,0,0,0.07)',
+        background: 'var(--family-surface)',
+        boxShadow: '0 4px 24px rgba(26,24,20,0.12)',
+        border: '1px solid var(--family-border)',
         cursor: 'pointer',
         userSelect: 'none',
-        transition: 'opacity 0.3s, transform 0.3s',
+        transition: 'opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(16px)',
         minWidth: 240,
@@ -56,20 +56,20 @@ function Toast({ notification, onDismiss }: {
           width: 40,
           height: 40,
           borderRadius: 12,
-          background: '#eff6ff',
+          background: bg,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
         }}
       >
-        <i className={`ti ${icon}`} style={{ fontSize: 22, color: '#3b82f6' }} aria-hidden="true" />
+        <i className={`ti ${icon}`} style={{ fontSize: 22, color }} aria-hidden="true" />
       </div>
       <div>
-        <div style={{ fontWeight: 600, fontSize: 15, color: '#1a1814', lineHeight: 1.2 }}>
+        <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--family-text)', lineHeight: 1.2 }}>
           {text}
         </div>
-        <div style={{ fontSize: 12, color: '#a09d99', marginTop: 2 }}>
+        <div style={{ fontSize: 12, color: 'var(--family-text2)', marginTop: 2 }}>
           Zum Schließen tippen
         </div>
       </div>

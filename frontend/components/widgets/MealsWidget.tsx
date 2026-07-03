@@ -23,8 +23,11 @@ const SLOT_LABELS: Record<Slot, string> = {
   Dinner: 'Abend',
   Snack: 'Snack',
 };
-const SLOT_ICONS: Record<Slot, string> = {
-  Breakfast: '🌅', Lunch: '🍽️', Dinner: '🌙', Snack: '🍎',
+const SLOT_ICONS: Record<Slot, { icon: string; color: string }> = {
+  Breakfast: { icon: 'ti-sunrise', color: '#e0a020' },
+  Lunch: { icon: 'ti-tools-kitchen-2', color: '#378ADD' },
+  Dinner: { icon: 'ti-moon-stars', color: '#6366f1' },
+  Snack: { icon: 'ti-cookie', color: '#e85d3a' },
 };
 const SLOT_ORDER: Slot[] = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -105,7 +108,7 @@ export default function MealsWidget({ byDate = {}, fetched_at, loading }: MealsW
         <div className="space-y-1">
           {presentSlots.map(slot => (
             <div key={slot} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: 'var(--family-surface2)' }}>
-              <span className="text-sm flex-shrink-0">{SLOT_ICONS[slot]}</span>
+              <i className={`ti ${SLOT_ICONS[slot].icon} flex-shrink-0`} aria-hidden="true" style={{ fontSize: 15, color: SLOT_ICONS[slot].color }} />
               <div>
                 <p className="text-[10px] font-sans font-medium" style={{ color: '#6b6760' }}>{SLOT_LABELS[slot]}</p>
                 <p className="text-xs font-sans" style={{ color: '#1a1814' }}>

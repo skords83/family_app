@@ -26,15 +26,15 @@ interface WeatherWidgetProps {
   variant?: 'card' | 'header';
 }
 
-function getWeatherEmoji(code: number): string {
-  if (code === 0) return '☀️';
-  if (code <= 3) return '🌤️';
-  if (code <= 48) return '🌫️';
-  if (code <= 67) return '🌧️';
-  if (code <= 77) return '❄️';
-  if (code <= 82) return '🌦️';
-  if (code <= 99) return '⛈️';
-  return '🌡️';
+function getWeatherIcon(code: number): { icon: string; color: string } {
+  if (code === 0) return { icon: 'ti-sun', color: '#e0a020' };
+  if (code <= 3) return { icon: 'ti-cloud', color: '#6b6760' };
+  if (code <= 48) return { icon: 'ti-cloud-fog', color: '#a09d99' };
+  if (code <= 67) return { icon: 'ti-cloud-rain', color: '#378ADD' };
+  if (code <= 77) return { icon: 'ti-snowflake', color: '#93c5fd' };
+  if (code <= 82) return { icon: 'ti-cloud-rain', color: '#378ADD' };
+  if (code <= 99) return { icon: 'ti-cloud-storm', color: '#378ADD' };
+  return { icon: 'ti-temperature', color: '#a09d99' };
 }
 
 function getWeatherDesc(code: number): string {
@@ -103,7 +103,7 @@ export default function WeatherWidget({ data, fetched_at, loading, variant = 'ca
       <div className="flex items-center" style={{ gap: 18 }}>
         {/* Aktuell: Symbol + Temperatur + Zustand */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span style={{ fontSize: 32, lineHeight: 1 }}>{getWeatherEmoji(data.weathercode)}</span>
+          <i className={`ti ${getWeatherIcon(data.weathercode).icon}`} aria-hidden="true" style={{ fontSize: 32, lineHeight: 1, color: getWeatherIcon(data.weathercode).color }} />
           <div>
             <p style={{ fontSize: 26, fontWeight: 700, color: '#1a1814', fontFamily: 'Georgia, serif', lineHeight: 1 }}>
               {Math.round(data.temperature)}°
@@ -234,7 +234,7 @@ export default function WeatherWidget({ data, fetched_at, loading, variant = 'ca
 
       {/* Main temperature */}
       <div className="flex items-center gap-4 mb-3">
-        <span className="text-5xl">{getWeatherEmoji(data.weathercode)}</span>
+        <i className={`ti ${getWeatherIcon(data.weathercode).icon} text-5xl`} aria-hidden="true" style={{ color: getWeatherIcon(data.weathercode).color }} />
         <div>
           <p
             className="text-4xl font-bold"

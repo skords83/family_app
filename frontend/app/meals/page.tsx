@@ -41,11 +41,11 @@ const THUMB_FALLBACK_BG: Record<Slot, string> = {
   Dinner:    '#eef2fb',
   Snack:     '#eef7ee',
 };
-const THUMB_FALLBACK_ICON: Record<Slot, string> = {
-  Breakfast: '🌅',
-  Lunch:     '🍽️',
-  Dinner:    '🌙',
-  Snack:     '🍎',
+const THUMB_FALLBACK_ICON: Record<Slot, { icon: string; color: string }> = {
+  Breakfast: { icon: 'ti-sunrise', color: '#e0a020' },
+  Lunch:     { icon: 'ti-tools-kitchen-2', color: '#378ADD' },
+  Dinner:    { icon: 'ti-moon-stars', color: '#6366f1' },
+  Snack:     { icon: 'ti-cookie', color: '#e85d3a' },
 };
 
 function toLocalDateStr(d: Date): string {
@@ -83,7 +83,7 @@ function MealThumb({ imageUrl, slot }: { imageUrl: string | null; slot: Slot }) 
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       ) : (
-        THUMB_FALLBACK_ICON[slot]
+        <i className={`ti ${THUMB_FALLBACK_ICON[slot].icon}`} aria-hidden="true" style={{ color: THUMB_FALLBACK_ICON[slot].color }} />
       )}
     </div>
   );
@@ -108,7 +108,7 @@ function TodayCard({ daySlots, dateStr }: {
       gridRow: '1 / 3',
       borderRadius: 16,
       border: '1.5px solid #e85d3a',
-      background: 'var(--color-background-primary)',
+      background: 'var(--family-surface)',
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
@@ -127,7 +127,7 @@ function TodayCard({ daySlots, dateStr }: {
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : (
-          <span style={{ fontSize: 52 }}>🍽️</span>
+          <i className="ti ti-tools-kitchen-2" aria-hidden="true" style={{ fontSize: 52, color: 'rgba(255,255,255,0.35)' }} />
         )}
         <div style={{
           position: 'absolute', inset: 0, zIndex: 1,
@@ -147,7 +147,7 @@ function TodayCard({ daySlots, dateStr }: {
       </div>
 
       {/* Alle Slots */}
-      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 9, borderTop: '0.5px solid var(--color-border-tertiary)', flexShrink: 0 }}>
+      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 9, borderTop: '0.5px solid var(--family-border)', flexShrink: 0 }}>
         {presentSlots.map(slot => {
           const recipe = daySlots[slot]![0];
           const pill   = SLOT_PILL_STYLE[slot];
@@ -161,10 +161,10 @@ function TodayCard({ daySlots, dateStr }: {
                 {SLOT_LABELS[slot]}
               </div>
               <div>
-                <div style={{ fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.35 }}>
+                <div style={{ fontSize: 12, color: 'var(--family-text)', lineHeight: 1.35 }}>
                   {recipe.recipeName ?? '–'}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 1 }}>
+                <div style={{ fontSize: 10, color: 'var(--family-text2)', marginTop: 1 }}>
                   {[
                     recipe.servings ? `${recipe.servings} Port.` : null,
                     recipe.calories ? `${recipe.calories} kcal` : null,
@@ -175,7 +175,7 @@ function TodayCard({ daySlots, dateStr }: {
           );
         })}
         {presentSlots.length === 0 && (
-          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>
+          <p style={{ fontSize: 11, color: 'var(--family-text2)', opacity: 0.5, fontStyle: 'italic' }}>
             Keine Einträge für heute
           </p>
         )}
@@ -195,8 +195,8 @@ function DayCard({ dateStr, daySlots, style }: {
   return (
     <div style={{
       borderRadius: 16,
-      border: '1px solid #d4cfc9',
-      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--family-border)',
+      background: 'var(--family-surface)',
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
@@ -208,13 +208,13 @@ function DayCard({ dateStr, daySlots, style }: {
       <div style={{
         display: 'flex', alignItems: 'baseline', gap: 7,
         padding: '12px 14px 10px',
-        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        borderBottom: '0.5px solid var(--family-border)',
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)' }}>
+        <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--family-text2)' }}>
           {shortDay(dateStr)}
         </span>
-        <span style={{ fontSize: 15, fontWeight: 400, color: 'var(--color-text-primary)', fontFamily: 'Georgia, serif' }}>
+        <span style={{ fontSize: 15, fontWeight: 400, color: 'var(--family-text)', fontFamily: 'Georgia, serif' }}>
           {shortDate(dateStr)}
         </span>
       </div>
@@ -227,13 +227,13 @@ function DayCard({ dateStr, daySlots, style }: {
             <div key={slot} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <MealThumb imageUrl={recipe.imageUrl} slot={slot} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)', marginBottom: 3 }}>
+                <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--family-text2)', marginBottom: 3 }}>
                   {SLOT_LABELS[slot]}
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', lineHeight: 1.35, fontFamily: 'Georgia, serif', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--family-text)', lineHeight: 1.35, fontFamily: 'Georgia, serif', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {recipe.recipeName ?? '–'}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                <div style={{ fontSize: 10, color: 'var(--family-text2)', marginTop: 2 }}>
                   {[
                     recipe.servings ? `${recipe.servings} Port.` : null,
                     recipe.calories ? `${recipe.calories} kcal` : null,
@@ -246,7 +246,7 @@ function DayCard({ dateStr, daySlots, style }: {
         {presentSlots.length === 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 48, height: 48, borderRadius: 8, background: '#f0ede8', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, opacity: 0.4 }}>—</div>
-            <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', opacity: 0.4, fontStyle: 'italic' }}>Nicht geplant</p>
+            <p style={{ fontSize: 11, color: 'var(--family-text2)', opacity: 0.4, fontStyle: 'italic' }}>Nicht geplant</p>
           </div>
         )}
         {/* Leere Slots auffüllen damit Kacheln nicht halb leer wirken */}
@@ -254,8 +254,8 @@ function DayCard({ dateStr, daySlots, style }: {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: 0.3 }}>
             <div style={{ width: 48, height: 48, borderRadius: 8, background: '#f0ede8', flexShrink: 0, border: '1.5px dashed #c8c4be' }} />
             <div>
-              <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)', marginBottom: 4 }}>Weiterer Slot</div>
-              <div style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--color-text-secondary)' }}>Nicht geplant</div>
+              <div style={{ fontSize: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--family-text2)', marginBottom: 4 }}>Weiterer Slot</div>
+              <div style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--family-text2)' }}>Nicht geplant</div>
             </div>
           </div>
         )}
@@ -302,10 +302,10 @@ export default function MealsPage() {
             onClick={load}
             style={{
               width: 34, height: 34, borderRadius: 10,
-              border: '0.5px solid var(--color-border-tertiary)',
+              border: '0.5px solid var(--family-border)',
               background: 'transparent', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--color-text-secondary)',
+              color: 'var(--family-text2)',
             }}
             title="Aktualisieren"
           >
@@ -322,9 +322,9 @@ export default function MealsPage() {
             alignItems: 'stretch',
             gap: 8, height: 460,
           }}>
-            <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: 'var(--color-background-secondary)' }} />
+            <div style={{ gridColumn: 1, gridRow: '1 / 3', borderRadius: 16, background: 'var(--family-surface2)' }} />
             {[0,1,2,3,4,5].map(i => (
-              <div key={i} style={{ borderRadius: 16, background: 'var(--color-background-secondary)' }} />
+              <div key={i} style={{ borderRadius: 16, background: 'var(--family-surface2)' }} />
             ))}
           </div>
         )}
@@ -333,14 +333,14 @@ export default function MealsPage() {
         {!loading && (error || sortedDates.length === 0) && (
           <div style={{
             borderRadius: 16, padding: 40, textAlign: 'center',
-            background: 'var(--color-background-primary)',
-            border: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--family-surface)',
+            border: '0.5px solid var(--family-border)',
           }}>
             <i className="ti ti-bowl" style={{ fontSize: 32, color: '#d8d4cf', display: 'block', marginBottom: 12 }} />
-            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>
+            <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--family-text)', marginBottom: 6 }}>
               Kein Essensplan verfügbar
             </p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            <p style={{ fontSize: 12, color: 'var(--family-text2)' }}>
               Norish liefert noch keine Daten für diese Woche.
             </p>
           </div>
@@ -365,11 +365,11 @@ export default function MealsPage() {
               <div style={{
                 gridColumn: 1, gridRow: '1 / 3',
                 borderRadius: 16,
-                border: '0.5px solid var(--color-border-tertiary)',
-                background: 'var(--color-background-secondary)',
+                border: '0.5px solid var(--family-border)',
+                background: 'var(--family-surface2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', opacity: 0.5, fontStyle: 'italic' }}>
+                <p style={{ fontSize: 12, color: 'var(--family-text2)', opacity: 0.5, fontStyle: 'italic' }}>
                   Kein Eintrag für heute
                 </p>
               </div>

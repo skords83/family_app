@@ -153,7 +153,7 @@ export default function MembersPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl px-3 py-2.5 text-center" style={{ background: '#f5f2ee' }}>
                     <div className="text-lg font-sans font-semibold flex items-center justify-center gap-1" style={{ color: u.color }}>
-                      <i className="ti ti-star-filled" style={{ fontSize: 13, color: '#c9a020' }} aria-hidden="true" /> {u.points}
+                      <i className="ti ti-star" style={{ fontSize: 13, color: '#c9a020' }} aria-hidden="true" /> {u.points}
                     </div>
                     <div className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Punkte</div>
                   </div>

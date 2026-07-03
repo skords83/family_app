@@ -127,10 +127,10 @@ export default function AvatarButton({
         {/* Admin star badge */}
         {(user as any).role === 'parent' && (
           <div
-            className="absolute bottom-0 right-0 w-[15px] h-[15px] rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-white"
+            className="absolute bottom-0 right-0 w-[15px] h-[15px] rounded-full flex items-center justify-center text-white border-2 border-white"
             style={{ background: '#e85d3a' }}
           >
-            ★
+            <i className="ti ti-star" aria-hidden="true" style={{ fontSize: 9 }} />
           </div>
         )}
       </div>
@@ -146,7 +146,7 @@ export default function AvatarButton({
           </div>
           {showPoints && user.points !== undefined && (
             <div className="text-[11px] font-sans flex items-center gap-0.5 justify-center" style={{ color: user.color, opacity: 0.75 }}>
-              <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {user.points}
+              <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {user.points}
             </div>
           )}
         </div>

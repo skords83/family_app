@@ -130,7 +130,9 @@ function WeekStreak({
                 border: isToday ? `1.5px solid ${color}` : 'none',
               }}
             >
-              {(isToday && allDone) || pastAllDone ? '✓' : d}
+              {(isToday && allDone) || pastAllDone
+                ? <i className="ti ti-check" aria-hidden="true" style={{ fontSize: 13 }} />
+                : d}
             </div>
           </div>
         );
@@ -476,7 +478,7 @@ export default function UserPage() {
           </span>
           <div className="flex items-center gap-3 mt-3">
             <div className="rounded-xl px-3 py-1.5 text-sm font-sans font-semibold flex items-center gap-1.5" style={{ background: `${user.color}18`, color: user.color }}>
-              <i className="ti ti-star-filled" style={{ fontSize: 12, color: '#c9a020' }} aria-hidden="true" /> {user.points} Punkte
+              <i className="ti ti-star" style={{ fontSize: 12, color: '#c9a020' }} aria-hidden="true" /> {user.points} Punkte
             </div>
             <div className="text-sm font-sans" style={{ color: '#a09d99' }}>
               {doneTasks.length}/{tasks.length} erledigt · {pct}%
@@ -531,7 +533,7 @@ export default function UserPage() {
                           <p className="text-[10px] font-sans" style={{ color: '#f97316' }}>Abgelaufen · bis {t.due_time} Uhr · als Elternteil bestätigen</p>
                         </div>
                         <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#f97316' }}>
-                          <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                          <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                         </span>
                       </button>
                     );
@@ -548,7 +550,7 @@ export default function UserPage() {
                         <p className="text-[10px] font-sans" style={{ color: '#a09d99' }}>Abgelaufen · bis {t.due_time} Uhr</p>
                       </div>
                       <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#a09d99' }}>
-                        <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                        <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                       </span>
                     </div>
                   );
@@ -574,7 +576,7 @@ export default function UserPage() {
                         </p>
                       </div>
                       <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: `${user.color}80` }}>
-                        <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                        <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                       </span>
                     </div>
                   );
@@ -605,7 +607,7 @@ export default function UserPage() {
                       )}
                     </div>
                     <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: user.color }}>
-                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                      <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                     </span>
                   </button>
                 );
@@ -625,7 +627,7 @@ export default function UserPage() {
                     <p className="text-xs font-sans mt-0.5" style={{ color: '#f59e0b' }}>Wartet auf Bestätigung</p>
                   </div>
                   <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#f59e0b' }}>
-                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                    <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                   </span>
                 </div>
               ))}
@@ -640,7 +642,7 @@ export default function UserPage() {
                   </div>
                   <p className="flex-1 text-sm font-sans line-clamp-1 line-through" style={{ color: '#6b6760' }}>{t.title}</p>
                   <span className="text-xs font-sans font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#16a34a' }}>
-                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
+                    <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> +{t.points}
                   </span>
                 </div>
               ))}
@@ -684,7 +686,7 @@ export default function UserPage() {
           {/* Points summary */}
           <div className="rounded-2xl p-5" style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)' }}>
             <p className="text-[10px] font-sans font-semibold uppercase tracking-wider mb-2" style={{ color: '#a09d99' }}>
-              <i className="ti ti-star-filled" style={{ fontSize: 13, color: '#c9a020', verticalAlign: -1, marginRight: 4 }} />
+              <i className="ti ti-star" style={{ fontSize: 13, color: '#c9a020', verticalAlign: -1, marginRight: 4 }} />
               Punkte
             </p>
             <p className="text-4xl font-[Georgia]" style={{ color: user.color }}>{user.points}</p>
@@ -762,7 +764,7 @@ export default function UserPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-sans font-medium truncate" style={{ color: '#1a1814' }}>{r.title}</p>
                     <p className="text-xs font-sans mt-0.5 flex items-center gap-1" style={{ color: '#5cb85c' }}>
-                      <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.effective_cost ?? r.points_cost} Punkte · du hast genug!
+                      <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} aria-hidden="true" /> {r.effective_cost ?? r.points_cost} Punkte · du hast genug!
                     </p>
                   </div>
                   <span className="text-xs font-sans rounded-full px-3 py-1 font-medium flex-shrink-0" style={{ background: '#bbf7d0', color: '#15803d' }}>Einlösen</span>
@@ -783,7 +785,7 @@ export default function UserPage() {
                     </p>
                   </div>
                   <span className="text-xs font-sans font-semibold flex-shrink-0 flex items-center gap-1" style={{ color: '#a09d99' }}>
-                    <i className="ti ti-star-filled" style={{ fontSize: 9, color: '#c9a020' }} /> {r.effective_cost ?? r.points_cost}
+                    <i className="ti ti-star" style={{ fontSize: 9, color: '#c9a020' }} /> {r.effective_cost ?? r.points_cost}
                   </span>
                 </div>
               ))}

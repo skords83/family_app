@@ -267,7 +267,7 @@ export default function HomePage() {
                       {allDone && (
                         <div className="flex items-center gap-2 py-1">
                           <i
-                            className="ti ti-circle-check-filled"
+                            className="ti ti-circle-check"
                             style={{ fontSize: 20, color: user.color }}
                             aria-hidden="true"
                           />
@@ -307,7 +307,7 @@ export default function HomePage() {
                               className="font-sans flex-shrink-0 flex items-center gap-0.5"
                               style={{ fontSize: 12, color: '#a09d99' }}
                             >
-                              <i className="ti ti-star-filled" style={{ fontSize: 10, color: isLocked ? '#d8d4ce' : '#c9a020' }} aria-hidden="true" />
+                              <i className="ti ti-star" style={{ fontSize: 10, color: isLocked ? '#d8d4ce' : '#c9a020' }} aria-hidden="true" />
                               {task.points}
                             </span>
                           </div>
