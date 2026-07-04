@@ -26,6 +26,11 @@ import { sseHandler } from './sse';
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
+// Laeuft immer hinter genau einem Reverse-Proxy-Hop (Traefik) - ohne das hier sieht
+// jede IP-basierte Logik (z.B. express-rate-limit) fuer alle Clients dieselbe interne
+// Traefik-Adresse statt der echten Client-IP.
+app.set('trust proxy', 1);
+
 const corsOrigin = process.env.CORS_ORIGIN ?? '*';
 app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '10mb' }));

@@ -26,6 +26,16 @@ const authRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Die Login-Seite pollt alle 1,5s (siehe frontend POLL_INTERVAL_MS) - das sind
+// bereits 40 Requests/Minute ohne jede sensible Wirkung, deshalb eigener,
+// grosszuegiger Limiter statt des strengen authRateLimiter.
+const pollRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 function isValidDeviceKey(provided: string | undefined): boolean {
   const expected = process.env.ESP32_DEVICE_KEY;
   if (!expected || !provided) return false;
@@ -133,7 +143,7 @@ authRouter.post('/nfc-login', authRateLimiter, async (req: Request, res: Respons
  * GET /api/auth/nfc-login/poll
  * Von der /login-Seite gepollt, um auf ein per NFC ausgelöstes Login-Ticket zu warten.
  */
-authRouter.get('/nfc-login/poll', authRateLimiter, (_req: Request, res: Response) => {
+authRouter.get('/nfc-login/poll', pollRateLimiter, (_req: Request, res: Response) => {
   res.json({ pending: peekPending() });
 });
 
