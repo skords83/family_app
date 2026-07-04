@@ -61,12 +61,17 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
+
+      # ForwardAuth ersetzt Basic-Auth site-weit. /api/auth/* (inkl. nfc-login,
+      # poll, claim, login, verify selbst) ist über die Allowlist im verify-Handler
+      # öffentlich erreichbar — kein separater Bypass-Router mehr nötig.
       - "traefik.http.routers.family-backend.rule=Host(`family.skords.de`) && PathPrefix(`/api`)"
       - "traefik.http.routers.family-backend.entrypoints=websecure"
       - "traefik.http.routers.family-backend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.family-backend.middlewares=family-forwardauth"
       - "traefik.http.middlewares.family-forwardauth.forwardauth.address=http://backend:3001/api/auth/verify"
       - "traefik.http.middlewares.family-forwardauth.forwardauth.trustForwardHeader=true"
+
       - "traefik.http.services.family-backend.loadbalancer.server.port=3001"
       - "traefik.docker.network=proxy"
 
