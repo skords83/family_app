@@ -251,7 +251,18 @@ authRouter.get('/verify', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentifizierung erforderlich' });
   }
 
-  res.redirect(302, '/login');
+  // Absolute URL statt relativem Pfad: Traefiks ForwardAuth ruft diesen Endpunkt
+  // Container-intern auf (http://backend:3001/...), und Go's http.Client löst einen
+  // relativen Location-Header beim Weiterreichen gegen genau diese interne Request-URL
+  // auf (-> "http://backend:3001/login" statt "/login" beim Client). Deshalb hier
+  // explizit den öffentlichen Host aus den von Traefik gesetzten X-Forwarded-*-Headern
+  // zusammensetzen.
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const proto = typeof forwardedProto === 'string' ? forwardedProto.split(',')[0] : 'https';
+  const host = typeof forwardedHost === 'string' ? forwardedHost.split(',')[0] : req.headers.host;
+
+  res.redirect(302, `${proto}://${host}/login`);
 });
 
 /**
