@@ -128,7 +128,7 @@ authRouter.post('/nfc-login', authRateLimiter, async (req: Request, res: Respons
     const user = result.rows[0];
     emitSSE({ type: 'nfc_scan', data: { user } });
 
-    if (user.role === 'parent') {
+    if (user.role === 'parent' || user.role === 'admin') {
       createTicket(user.id);
     }
 
