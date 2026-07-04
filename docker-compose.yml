@@ -3,7 +3,7 @@ version: '3.9'
 networks:
   family_net:
     driver: bridge
-  traefik:
+  proxy:
     external: true
 
 volumes:
@@ -36,14 +36,18 @@ services:
       CALDAV_USER: ${CALDAV_USER}
       CALDAV_PASS: ${CALDAV_PASS}
       NORISH_URL: ${NORISH_URL}
+      NORISH_API_KEY: ${NORISH_API_KEY}
       IMMICH_URL: ${IMMICH_URL}
       IMMICH_API_KEY: ${IMMICH_API_KEY}
       IMMICH_SLIDESHOW_ALBUM_ID: ${IMMICH_SLIDESHOW_ALBUM_ID}
       WEATHER_LAT: ${WEATHER_LAT}
       WEATHER_LON: ${WEATHER_LON}
+      WASTE_ICAL_URL: ${WASTE_ICAL_URL}
       ADMIN_PIN: ${ADMIN_PIN}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-4h}
+      SITE_SESSION_EXPIRES_IN: ${SITE_SESSION_EXPIRES_IN:-30d}
+      ESP32_DEVICE_KEY: ${ESP32_DEVICE_KEY}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       HA_URL: ${HA_URL}
       HA_TOKEN: ${HA_TOKEN}
@@ -54,31 +58,38 @@ services:
         condition: service_healthy
     networks:
       - family_net
-      - traefik
+      - proxy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.family-backend.rule=Host(`family.skords.de`) && PathPrefix(`/api`)"
       - "traefik.http.routers.family-backend.entrypoints=websecure"
       - "traefik.http.routers.family-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.family-backend.middlewares=family-forwardauth"
+      - "traefik.http.middlewares.family-forwardauth.forwardauth.address=http://backend:3001/api/auth/verify"
+      - "traefik.http.middlewares.family-forwardauth.forwardauth.trustForwardHeader=true"
       - "traefik.http.services.family-backend.loadbalancer.server.port=3001"
-      - "traefik.docker.network=traefik"
+      - "traefik.docker.network=proxy"
 
   frontend:
     image: ghcr.io/skords83/family-frontend:latest
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: https://family.skords.de/api
+      NEXT_PUBLIC_API_URL: ""
+      BACKEND_URL: http://backend:3001
     ports:
       - "3000:3000"
     depends_on:
       - backend
     networks:
       - family_net
-      - traefik
+      - proxy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.family-frontend.rule=Host(`family.skords.de`)"
       - "traefik.http.routers.family-frontend.entrypoints=websecure"
       - "traefik.http.routers.family-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.family-frontend.middlewares=family-forwardauth"
+      - "traefik.http.middlewares.family-forwardauth.forwardauth.address=http://backend:3001/api/auth/verify"
+      - "traefik.http.middlewares.family-forwardauth.forwardauth.trustForwardHeader=true"
       - "traefik.http.services.family-frontend.loadbalancer.server.port=3000"
-      - "traefik.docker.network=traefik"
+      - "traefik.docker.network=proxy"

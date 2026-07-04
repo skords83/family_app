@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import Sidebar from '@/components/ui/Sidebar';
-import { BurnInProvider } from '@/components/burn-in';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import ChromeGate from '@/components/ui/ChromeGate';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -38,15 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
         }}
       >
-        <Sidebar />
-        <BurnInProvider>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100dvh', minWidth: 0 }}>
-            <OfflineBanner />
-            <main style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {children}
-            </main>
-          </div>
-        </BurnInProvider>
+        <ChromeGate>{children}</ChromeGate>
       </body>
     </html>
   );

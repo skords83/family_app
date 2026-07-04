@@ -1,6 +1,14 @@
 {
-  "/page": "app/page.js",
-  "/weather/page": "app/weather/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/calendar/page": "app/calendar/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/login/page": "app/login/page.js",
+  "/heating/page": "app/heating/page.js",
   "/meals/page": "app/meals/page.js",
-  "/members/page": "app/members/page.js"
+  "/members/page": "app/members/page.js",
+  "/page": "app/page.js",
+  "/shopping/page": "app/shopping/page.js",
+  "/timetable/page": "app/timetable/page.js",
+  "/weather/page": "app/weather/page.js",
+  "/user/[id]/page": "app/user/[id]/page.js"
 }
