@@ -4,6 +4,74 @@ import { getTodayInAppTz } from '../utils/date';
 import { dedupeByName, buildBirthdayWindow, type BirthdaySource } from '../lib/birthdays';
 import { BirthdaysResponseSchema } from '@family/shared';
 
+export interface ParsedContact {
+  uid: string;
+  name: string;
+  month: number;
+  day: number;
+  year: number | null;
+}
+
+// vCard erlaubt Zeilenumbruch-Fortsetzungen (Zeile beginnt mit Leerzeichen/Tab).
+function unfoldVCardLines(text: string): string {
+  return text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+}
+
+interface ParsedBday {
+  month: number;
+  day: number;
+  year: number | null;
+}
+
+/**
+ * Unterstuetzte BDAY-Formate (RFC 6350):
+ *   YYYYMMDD     - z.B. 19960415
+ *   YYYY-MM-DD   - z.B. 1996-04-15
+ *   --MMDD/--MM-DD - Jahr unbekannt, z.B. --0415 / --04-15
+ */
+function parseVCardBirthday(raw: string): ParsedBday | null {
+  const value = raw.trim();
+
+  const unknownYearMatch = value.match(/^--(\d{2})-?(\d{2})$/);
+  if (unknownYearMatch) {
+    return { month: Number(unknownYearMatch[1]), day: Number(unknownYearMatch[2]), year: null };
+  }
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return { year: Number(isoMatch[1]), month: Number(isoMatch[2]), day: Number(isoMatch[3]) };
+  }
+
+  const compactMatch = value.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactMatch) {
+    return { year: Number(compactMatch[1]), month: Number(compactMatch[2]), day: Number(compactMatch[3]) };
+  }
+
+  return null;
+}
+
+/** Extrahiert UID/FN/BDAY aus einem einzelnen BEGIN:VCARD...END:VCARD-Block. */
+export function parseVCard(vcardText: string): ParsedContact | null {
+  const unfolded = unfoldVCardLines(vcardText);
+
+  const uidMatch = unfolded.match(/^UID:(.+)$/mi);
+  const fnMatch = unfolded.match(/^FN:(.+)$/mi);
+  const bdayMatch = unfolded.match(/^BDAY(?:;[^:]*)?:(.+)$/mi);
+
+  if (!uidMatch || !fnMatch || !bdayMatch) return null;
+
+  const parsedBday = parseVCardBirthday(bdayMatch[1]);
+  if (!parsedBday) return null;
+
+  return {
+    uid: uidMatch[1].trim(),
+    name: fnMatch[1].trim(),
+    month: parsedBday.month,
+    day: parsedBday.day,
+    year: parsedBday.year,
+  };
+}
+
 export const birthdaysWidgetRouter = Router();
 
 /**
