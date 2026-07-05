@@ -23,6 +23,8 @@ import { homeassistantRouter } from './widgets/homeassistant';
 import { appliancesRouter } from './widgets/appliances';
 import { startDailyTaskCron, ensureTodayTasksGenerated } from './jobs/generateDailyTasks';
 import { startWasteCron } from './jobs/refreshWaste';
+import { fetchAndStoreContactBirthdays } from './widgets/contacts';
+import { startContactsCron } from './jobs/refreshContacts';
 import { sseHandler } from './sse';
 
 const app = express();
@@ -92,8 +94,15 @@ async function start(): Promise<void> {
       console.error('[waste] Initial fetch failed (non-fatal):', err),
     );
 
+    // Initialer Kontakte-Sync beim Start — füllt birthdays beim ersten Deploy.
+    // Danach übernimmt der Cronjob. Non-fatal: Server startet auch ohne CardDAV.
+    fetchAndStoreContactBirthdays().catch(err =>
+      console.error('[contacts] Initial fetch failed (non-fatal):', err),
+    );
+
     startDailyTaskCron();
     startWasteCron();
+    startContactsCron();
 
     app.listen(PORT, () => {
       console.log(`Family Organizer backend running on port ${PORT}`);
