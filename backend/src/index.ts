@@ -17,6 +17,7 @@ import { caldavRouter } from './widgets/caldav';
 import { norishRouter } from './widgets/norish';
 import { immichRouter } from './widgets/immich';
 import { wasteRouter, fetchAndStoreWasteEvents } from './widgets/waste';
+import { birthdaysWidgetRouter } from './widgets/contacts';
 import { homeassistantRouter } from './widgets/homeassistant';
 import { appliancesRouter } from './widgets/appliances';
 import { startDailyTaskCron, ensureTodayTasksGenerated } from './jobs/generateDailyTasks';
@@ -51,6 +52,7 @@ app.use('/api/widgets/calendar', caldavRouter);
 app.use('/api/widgets/meals', norishRouter);
 app.use('/api/widgets/immich', immichRouter);
 app.use('/api/widgets/waste', wasteRouter);
+app.use('/api/widgets/birthdays', birthdaysWidgetRouter);
 app.use('/api/widgets/homeassistant', homeassistantRouter);
 app.use('/api/widgets/appliances', appliancesRouter);
 
