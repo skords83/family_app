@@ -72,6 +72,180 @@ export function parseVCard(vcardText: string): ParsedContact | null {
   };
 }
 
+// PROPFIND: findet alle Adressbuch-Collections unterhalb der Basis-URL.
+async function discoverAddressbooks(baseUrl: string, auth: string): Promise<string[]> {
+  const propfindBody = `<?xml version="1.0" encoding="UTF-8"?>
+<D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:resourcetype/>
+    <D:displayname/>
+  </D:prop>
+</D:propfind>`;
+
+  const response = await fetch(baseUrl, {
+    method: 'PROPFIND',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/xml',
+      Depth: '1',
+    },
+    body: propfindBody,
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok && response.status !== 207) {
+    throw new Error(`PROPFIND failed with status ${response.status}`);
+  }
+
+  const xml = await response.text();
+  const addressbooks: string[] = [];
+  const basePath = new URL(baseUrl).pathname.replace(/\/?$/, '/');
+
+  const blocks = xml.match(/<D:response[\s\S]*?<\/D:response>/gi) ?? [];
+
+  for (const block of blocks) {
+    if (!block.match(/<[^>]*:?resourcetype[^>]*>[\s\S]*?addressbook/i)) continue;
+
+    const hrefMatch = block.match(/<D:href[^>]*>([^<]+)<\/D:href>/i);
+    if (!hrefMatch) continue;
+
+    const href = hrefMatch[1].trim();
+    const hrefPath = href.replace(/\/?$/, '/');
+    if (hrefPath === basePath) continue;
+
+    const fullUrl = href.startsWith('http') ? href : `${new URL(baseUrl).origin}${href}`;
+    addressbooks.push(fullUrl);
+  }
+
+  return addressbooks;
+}
+
+// REPORT: liefert rohe vCard-Bloecke aus einem einzelnen Adressbuch.
+async function fetchVCards(addressbookUrl: string, auth: string): Promise<string[]> {
+  const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
+<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <D:prop>
+    <D:getetag/>
+    <C:address-data/>
+  </D:prop>
+</C:addressbook-query>`;
+
+  const response = await fetch(addressbookUrl, {
+    method: 'REPORT',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/xml',
+      Depth: '1',
+    },
+    body: reportBody,
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok && response.status !== 207) return [];
+
+  const xml = await response.text();
+  const vcards: string[] = [];
+
+  const addressDataMatches = xml.match(/<[^>]*:?address-data[^>]*>([\s\S]*?)<\/[^>]*:?address-data>/gi) ?? [];
+  for (const match of addressDataMatches) {
+    const inner = match.match(/<[^>]*:?address-data[^>]*>([\s\S]*?)<\/[^>]*:?address-data>/i);
+    if (!inner?.[1]) continue;
+    const vcardMatches = inner[1].match(/BEGIN:VCARD[\s\S]*?END:VCARD/g);
+    if (vcardMatches) vcards.push(...vcardMatches);
+  }
+
+  return vcards;
+}
+
+/**
+ * Adressbuch-URL: CARDDAV_URL falls gesetzt, sonst aus CALDAV_URL abgeleitet
+ * (ersetzt "/calendars/" durch "/addressbooks/" - deckt Nextcloud/Baikal ab).
+ * Gibt null zurueck, wenn keine Ableitung moeglich ist.
+ */
+function resolveCarddavUrl(): string | null {
+  const explicit = process.env.CARDDAV_URL;
+  if (explicit) return explicit;
+
+  const caldavUrl = process.env.CALDAV_URL;
+  if (!caldavUrl || !caldavUrl.includes('/calendars/')) return null;
+  return caldavUrl.replace('/calendars/', '/addressbooks/');
+}
+
+/**
+ * Fetcht alle Adressbuecher, parst Kontakte mit BDAY und upserted sie nach
+ * `birthdays` (source='carddav'). Kontakte, die im aktuellen Durchlauf nicht
+ * mehr vorkommen, werden geloescht — AUSSER der Durchlauf lieferte 0 Kontakte
+ * (dann vermutlich ein transienter Fehler; bestehende Zeilen bleiben unangetastet,
+ * um nicht bei jedem Netzwerk-Hickser das ganze Adressbuch zu leeren).
+ */
+export async function fetchAndStoreContactBirthdays(): Promise<void> {
+  const carddavUrl = resolveCarddavUrl();
+  const caldavUser = process.env.CALDAV_USER;
+  const caldavPass = process.env.CALDAV_PASS;
+
+  if (!carddavUrl || !caldavUser || !caldavPass) {
+    console.warn('[contacts] CardDAV-Konfiguration unvollständig — Sync übersprungen');
+    return;
+  }
+
+  const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+
+  console.log('[contacts] Discovering addressbooks...');
+  const addressbooks = await discoverAddressbooks(carddavUrl, auth);
+  if (addressbooks.length === 0) {
+    console.warn('[contacts] Keine Adressbücher gefunden via PROPFIND');
+    return;
+  }
+
+  const contacts: ParsedContact[] = [];
+  for (const addressbookUrl of addressbooks) {
+    const vcards = await fetchVCards(addressbookUrl, auth);
+    for (const vcard of vcards) {
+      const parsed = parseVCard(vcard);
+      if (parsed) contacts.push(parsed);
+    }
+  }
+
+  console.log(`[contacts] ${contacts.length} Kontakte mit Geburtstag gefunden`);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    for (const contact of contacts) {
+      await client.query(`
+        INSERT INTO birthdays (name, birth_month, birth_day, birth_year, source, external_uid, fetched_at)
+        VALUES ($1, $2, $3, $4, 'carddav', $5, NOW())
+        ON CONFLICT (source, external_uid) DO UPDATE SET
+          name        = EXCLUDED.name,
+          birth_month = EXCLUDED.birth_month,
+          birth_day   = EXCLUDED.birth_day,
+          birth_year  = EXCLUDED.birth_year,
+          fetched_at  = NOW()
+      `, [contact.name, contact.month, contact.day, contact.year, contact.uid]);
+    }
+
+    if (contacts.length > 0) {
+      const seenUids = contacts.map(c => c.uid);
+      await client.query(`
+        DELETE FROM birthdays
+        WHERE source = 'carddav' AND NOT (external_uid = ANY($1::text[]))
+      `, [seenUids]);
+    } else {
+      console.warn('[contacts] Keine Kontakte gefunden — bestehende carddav-Einträge bleiben unangetastet');
+    }
+
+    await client.query('COMMIT');
+    console.log(`[contacts] Sync abgeschlossen. ${contacts.length} Kontakte gespeichert.`);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => { /* noop */ });
+    console.error('[contacts] Sync fehlgeschlagen:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export const birthdaysWidgetRouter = Router();
 
 /**
