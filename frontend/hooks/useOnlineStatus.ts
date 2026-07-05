@@ -9,7 +9,7 @@ export function useOnlineStatus() {
   useEffect(() => {
     const check = async () => {
       try {
-        await fetch('/api/widgets/weather', {
+        await fetch('/api/health', {
           method: 'HEAD',
           cache: 'no-store',
           signal: AbortSignal.timeout(3000),
