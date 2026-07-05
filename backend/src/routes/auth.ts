@@ -229,6 +229,11 @@ const PUBLIC_PATH_PREFIXES = [
   '/workbox-',
   '/icon-',
   '/favicon.ico',
+  // Screensaver-Fotos: rein lesend (Anzeige aus einem Immich-Album), müssen auch
+  // ohne family_session funktionieren, da der Screensaver client-seitig pollt und
+  // z.B. nach Ablauf/Fehlen der Session weiterlaufen soll wie vor dem NFC-Login.
+  '/api/widgets/immich/slideshow',
+  '/api/widgets/immich/proxy/',
 ];
 
 function isPublicPath(forwardedUri: string): boolean {
