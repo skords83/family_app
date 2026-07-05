@@ -135,3 +135,34 @@ export const WasteUpcomingResponseSchema = z.object({
   fetched_at: z.string().datetime(),
 });
 export type WasteUpcomingResponse = z.infer<typeof WasteUpcomingResponseSchema>;
+
+export const BirthdayTodaySchema = z.object({
+  name: z.string(),
+  age: z.number().int().nullable(),
+});
+export type BirthdayToday = z.infer<typeof BirthdayTodaySchema>;
+
+export const BirthdayUpcomingSchema = z.object({
+  name: z.string(),
+  age: z.number().int().nullable(),
+  daysUntil: z.number().int(),
+});
+export type BirthdayUpcoming = z.infer<typeof BirthdayUpcomingSchema>;
+
+export const BirthdaysResponseSchema = z.object({
+  today: BirthdayTodaySchema.nullable(),
+  upcoming: z.array(BirthdayUpcomingSchema),
+  fetched_at: z.string().datetime(),
+});
+export type BirthdaysResponse = z.infer<typeof BirthdaysResponseSchema>;
+
+export const BirthdayAdminEntrySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  birth_month: z.number().int().min(1).max(12),
+  birth_day: z.number().int().min(1).max(31),
+  birth_year: z.number().int().nullable(),
+  source: z.enum(['manual', 'carddav']),
+  active: z.boolean(),
+});
+export type BirthdayAdminEntry = z.infer<typeof BirthdayAdminEntrySchema>;
