@@ -20,8 +20,12 @@ async function fetchRandomPhoto(): Promise<ImmichWidgetData> {
   const baseUrl = immichUrl.replace(/\/$/, '');
   const apiBase = `${baseUrl}/api`;
 
-  const response = await fetch(`${apiBase}/assets/random?count=1`, {
-    headers: { 'x-api-key': apiKey, Accept: 'application/json' },
+  // Immich v3 hat GET /assets/random ersatzlos entfernt (siehe v3-migration guide) -
+  // POST /search/random ist der offizielle Nachfolger.
+  const response = await fetch(`${apiBase}/search/random`, {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ size: 1, withExif: true }),
     signal: AbortSignal.timeout(10000),
   });
 
@@ -139,8 +143,13 @@ immichRouter.get('/slideshow', async (_req: Request, res: Response) => {
   const apiBase = `${baseUrl}/api`;
 
   try {
-    const response = await fetch(`${apiBase}/albums/${albumId}`, {
-      headers: { 'x-api-key': apiKey, Accept: 'application/json' },
+    // Immich v3 hat das assets-Array aus GET /albums/{id} entfernt (siehe
+    // v3-migration guide) - POST /search/random mit albumIds liefert direkt eine
+    // bereits zufällig sortierte, album-gefilterte Auswahl.
+    const response = await fetch(`${apiBase}/search/random`, {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ albumIds: [albumId], size: 20 }),
       signal: AbortSignal.timeout(15000),
     });
 
@@ -148,20 +157,13 @@ immichRouter.get('/slideshow', async (_req: Request, res: Response) => {
       return res.status(502).json({ error: `Immich album fetch failed: ${response.status}` });
     }
 
-    const album = await response.json() as { assets?: unknown[] };
-    const rawAssets = album.assets ?? [];
+    const rawAssets = await response.json() as unknown[];
 
     const images = rawAssets
       .map(a => { try { return ImmichAssetSchema.parse(a); } catch { return null; } })
       .filter((a): a is NonNullable<typeof a> => a !== null && a.type === 'IMAGE');
 
-    // Fisher-Yates shuffle
-    for (let i = images.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [images[i], images[j]] = [images[j], images[i]];
-    }
-
-    const photos = images.slice(0, 20).map(a => ({ id: a.id }));
+    const photos = images.map(a => ({ id: a.id }));
     return res.json({ photos });
   } catch (err) {
     console.error('Error fetching slideshow album:', err);
