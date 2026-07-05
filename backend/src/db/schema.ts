@@ -342,4 +342,19 @@ DO $$ BEGIN
     ALTER TABLE task_instances ADD COLUMN reject_reason TEXT;
   END IF;
 END $$;
+-- Geburtstage von Personen ohne User-Account (CardDAV-Sync + manuelle Eintraege).
+-- Familienmitglieder-Geburtstage kommen direkt aus users.birthdate, keine Duplizierung hier.
+CREATE TABLE IF NOT EXISTS birthdays (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  birth_month SMALLINT NOT NULL CHECK (birth_month BETWEEN 1 AND 12),
+  birth_day SMALLINT NOT NULL CHECK (birth_day BETWEEN 1 AND 31),
+  birth_year SMALLINT,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'carddav')),
+  external_uid TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
+  fetched_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS birthdays_source_uid_uq
+  ON birthdays (source, external_uid) WHERE external_uid IS NOT NULL;
 `;
