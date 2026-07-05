@@ -7,6 +7,7 @@ import type { SSEEvent } from '@/hooks/useSSE';
 import CalendarWidget from '@/components/widgets/CalendarWidget';
 import MealsWidget from '@/components/widgets/MealsWidget';
 import WasteWidget from '@/components/widgets/WasteWidget';
+import BirthdayWidget from '@/components/widgets/BirthdayWidget';
 import PageHeader from '@/components/ui/PageHeader';
 import { ApplianceToastContainer, type ApplianceNotification } from '@/components/ui/ApplianceToast';
 import Link from 'next/link';
@@ -18,6 +19,11 @@ interface TaskInstance { id: string; title: string; points: number; assigned_to:
 interface CalendarEvent { id: string; title: string; start: string; end: string; allDay: boolean; color?: string; calendarName?: string; }
 type WasteType = 'bioabfall' | 'restmuell' | 'papier' | 'wertstoff';
 interface WasteTodayData { active: boolean; events: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; }[]; next: { id: string; source: string; type: WasteType; date: string; title: string; fetched_at: string; } | null; fetched_at: string; }
+interface BirthdaysData {
+  today: { name: string; age: number | null } | null;
+  upcoming: { name: string; age: number | null; daysUntil: number }[];
+  fetched_at: string;
+}
 
 const PASTELS: Record<string, string> = {
   '#e85d3a':'#fff5f3','#4a9eed':'#f0f7ff','#5cb85c':'#f2fbf2',
@@ -93,6 +99,7 @@ export default function HomePage() {
   const [calendar, setCalendar] = useState<{ events?: CalendarEvent[]; fetched_at?: string }>({});
   const [meals, setMeals] = useState<{ byDate?: Record<string, any>; fetched_at?: string }>({});
   const [waste, setWaste] = useState<WasteTodayData | undefined>();
+  const [birthdays, setBirthdays] = useState<BirthdaysData | undefined>();
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(nowHHMM);
   const [applianceToasts, setApplianceToasts] = useState<ApplianceNotification[]>([]);
@@ -100,18 +107,20 @@ export default function HomePage() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [ur, tr, cr, mr, wasteR] = await Promise.allSettled([
+      const [ur, tr, cr, mr, wasteR, birthdaysR] = await Promise.allSettled([
         fetch(`${API_BASE}/api/users`).then(r => r.json()),
         fetch(`${API_BASE}/api/tasks/today`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/calendar`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/meals?range=month`).then(r => r.json()),
         fetch(`${API_BASE}/api/widgets/waste/today`).then(r => r.json()),
+        fetch(`${API_BASE}/api/widgets/birthdays`).then(r => r.json()),
       ]);
       if (ur.status === 'fulfilled' && Array.isArray(ur.value)) setUsers(ur.value);
       if (tr.status === 'fulfilled' && Array.isArray(tr.value)) setTasks(tr.value);
       if (cr.status === 'fulfilled' && cr.value?.events) setCalendar({ events: cr.value.events, fetched_at: cr.value.fetched_at });
       if (mr.status === 'fulfilled' && mr.value?.byDate) setMeals({ byDate: mr.value.byDate, fetched_at: mr.value.fetched_at });
       if (wasteR.status === 'fulfilled' && wasteR.value?.fetched_at) setWaste(wasteR.value);
+      if (birthdaysR.status === 'fulfilled' && birthdaysR.value?.fetched_at) setBirthdays(birthdaysR.value);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -189,6 +198,7 @@ export default function HomePage() {
 
         {/* ── LINKS: HEUTE (Kalender + Essensplan + Müll) ── */}
         <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <BirthdayWidget data={birthdays} loading={loading} />
           <CalendarWidget
             events={calendar.events}
             fetched_at={calendar.fetched_at}
