@@ -222,16 +222,29 @@ export async function fetchAndStoreContactBirthdays(): Promise<void> {
   console.log(`[contacts] ${addressbooks.length} Adressbuch/-bücher gefunden`);
 
   const contacts: ParsedContact[] = [];
+  let missingUid = 0;
+  let missingFn = 0;
+  let missingOrUnparsableBday = 0;
   for (const addressbookUrl of addressbooks) {
     const vcards = await fetchVCards(addressbookUrl, auth);
     console.log(`[contacts] ${vcards.length} vCard(s) aus ${addressbookUrl}`);
     for (const vcard of vcards) {
       const parsed = parseVCard(vcard);
-      if (parsed) contacts.push(parsed);
+      if (parsed) {
+        contacts.push(parsed);
+        continue;
+      }
+      const unfolded = unfoldVCardLines(vcard);
+      if (!/^UID:(.+)$/mi.test(unfolded)) missingUid++;
+      else if (!/^FN:(.+)$/mi.test(unfolded)) missingFn++;
+      else missingOrUnparsableBday++;
     }
   }
 
   console.log(`[contacts] ${contacts.length} Kontakte mit Geburtstag gefunden`);
+  if (contacts.length === 0 && (missingUid || missingFn || missingOrUnparsableBday)) {
+    console.log(`[contacts] Debug: ${missingUid} ohne UID, ${missingFn} ohne FN, ${missingOrUnparsableBday} ohne/mit unparsbarem BDAY`);
+  }
 
   const client = await pool.connect();
   try {
