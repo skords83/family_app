@@ -136,12 +136,19 @@ async function discoverAddressbooks(baseUrl: string, auth: string): Promise<stri
 
 // REPORT: liefert rohe vCard-Bloecke aus einem einzelnen Adressbuch.
 async function fetchVCards(addressbookUrl: string, auth: string): Promise<string[]> {
+  // RFC 6352 verlangt ein <C:filter>-Kindelement in addressbook-query; ohne
+  // Filter antworten manche sabre/dav-basierten Server (Nextcloud, Baikal)
+  // mit einem leeren Ergebnis statt einem Fehler. UID ist bei jeder vCard
+  // Pflichtfeld, ein reiner Existenz-Test matcht also effektiv alle Kontakte.
   const reportBody = `<?xml version="1.0" encoding="UTF-8"?>
 <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
   <D:prop>
     <D:getetag/>
     <C:address-data/>
   </D:prop>
+  <C:filter test="anyof">
+    <C:prop-filter name="UID"/>
+  </C:filter>
 </C:addressbook-query>`;
 
   const response = await fetch(addressbookUrl, {
@@ -212,10 +219,12 @@ export async function fetchAndStoreContactBirthdays(): Promise<void> {
     console.warn('[contacts] Keine Adressbücher gefunden via PROPFIND');
     return;
   }
+  console.log(`[contacts] ${addressbooks.length} Adressbuch/-bücher gefunden`);
 
   const contacts: ParsedContact[] = [];
   for (const addressbookUrl of addressbooks) {
     const vcards = await fetchVCards(addressbookUrl, auth);
+    console.log(`[contacts] ${vcards.length} vCard(s) aus ${addressbookUrl}`);
     for (const vcard of vcards) {
       const parsed = parseVCard(vcard);
       if (parsed) contacts.push(parsed);
