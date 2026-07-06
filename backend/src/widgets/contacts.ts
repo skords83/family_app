@@ -224,7 +224,9 @@ export async function fetchAndStoreContactBirthdays(): Promise<void> {
   const contacts: ParsedContact[] = [];
   let missingUid = 0;
   let missingFn = 0;
-  let missingOrUnparsableBday = 0;
+  let noBdayLine = 0;
+  let unparsableBday = 0;
+  const unparsableSamples: string[] = [];
   for (const addressbookUrl of addressbooks) {
     const vcards = await fetchVCards(addressbookUrl, auth);
     console.log(`[contacts] ${vcards.length} vCard(s) aus ${addressbookUrl}`);
@@ -235,15 +237,30 @@ export async function fetchAndStoreContactBirthdays(): Promise<void> {
         continue;
       }
       const unfolded = unfoldVCardLines(vcard);
-      if (!/^UID:(.+)$/mi.test(unfolded)) missingUid++;
-      else if (!/^FN:(.+)$/mi.test(unfolded)) missingFn++;
-      else missingOrUnparsableBday++;
+      if (!/^UID:(.+)$/mi.test(unfolded)) {
+        missingUid++;
+        continue;
+      }
+      if (!/^FN:(.+)$/mi.test(unfolded)) {
+        missingFn++;
+        continue;
+      }
+      const bdayMatch = unfolded.match(/^BDAY(?:;[^:]*)?:(.+)$/mi);
+      if (!bdayMatch) {
+        noBdayLine++;
+        continue;
+      }
+      unparsableBday++;
+      if (unparsableSamples.length < 5) unparsableSamples.push(JSON.stringify(bdayMatch[0]));
     }
   }
 
   console.log(`[contacts] ${contacts.length} Kontakte mit Geburtstag gefunden`);
-  if (contacts.length === 0 && (missingUid || missingFn || missingOrUnparsableBday)) {
-    console.log(`[contacts] Debug: ${missingUid} ohne UID, ${missingFn} ohne FN, ${missingOrUnparsableBday} ohne/mit unparsbarem BDAY`);
+  if (contacts.length === 0 && (missingUid || missingFn || noBdayLine || unparsableBday)) {
+    console.log(`[contacts] Debug: ${missingUid} ohne UID, ${missingFn} ohne FN, ${noBdayLine} ohne BDAY-Zeile, ${unparsableBday} mit unparsbarem BDAY-Wert`);
+    if (unparsableSamples.length > 0) {
+      console.log(`[contacts] Debug BDAY-Rohwerte (Beispiele): ${unparsableSamples.join(' | ')}`);
+    }
   }
 
   const client = await pool.connect();
