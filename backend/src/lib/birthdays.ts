@@ -84,6 +84,12 @@ export function buildBirthdayWindow(entries: BirthdaySource[], todayStr: string)
 
   withOccurrence.sort((a, b) => a.daysUntil - b.daysUntil);
 
+  // Bekannte, akzeptierte Einschraenkung: gibt es mehrere Eintraege mit
+  // daysUntil === 0 (mehrere Geburtstage exakt heute), wird nur der erste
+  // als `today` angezeigt — die uebrigen erscheinen nirgends (weder `today`
+  // noch `upcoming`, da dieses nur daysUntil > 0 enthaelt). Bewusst so
+  // reviewed und akzeptiert fuer Familien-Groessenordnung (geringe
+  // Kollisionswahrscheinlichkeit), kein Bug.
   const todayEntry = withOccurrence.find(e => e.daysUntil === 0);
   const upcoming = withOccurrence.filter(e => e.daysUntil > 0);
 

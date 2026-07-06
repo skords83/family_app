@@ -32,19 +32,33 @@ interface ParsedBday {
 function parseVCardBirthday(raw: string): ParsedBday | null {
   const value = raw.trim();
 
+  // Unabhaengige Bereichspruefung je Feld (1-12 / 1-31) — bewusst KEINE
+  // Kalender-Validierung (z.B. 30. Februar), das ist ausserhalb des Scopes.
+  const inRange = (month: number, day: number): boolean =>
+    month >= 1 && month <= 12 && day >= 1 && day <= 31;
+
   const unknownYearMatch = value.match(/^--(\d{2})-?(\d{2})$/);
   if (unknownYearMatch) {
-    return { month: Number(unknownYearMatch[1]), day: Number(unknownYearMatch[2]), year: null };
+    const month = Number(unknownYearMatch[1]);
+    const day = Number(unknownYearMatch[2]);
+    if (!inRange(month, day)) return null;
+    return { month, day, year: null };
   }
 
   const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
-    return { year: Number(isoMatch[1]), month: Number(isoMatch[2]), day: Number(isoMatch[3]) };
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    if (!inRange(month, day)) return null;
+    return { year: Number(isoMatch[1]), month, day };
   }
 
   const compactMatch = value.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (compactMatch) {
-    return { year: Number(compactMatch[1]), month: Number(compactMatch[2]), day: Number(compactMatch[3]) };
+    const month = Number(compactMatch[2]);
+    const day = Number(compactMatch[3]);
+    if (!inRange(month, day)) return null;
+    return { year: Number(compactMatch[1]), month, day };
   }
 
   return null;
@@ -141,7 +155,9 @@ async function fetchVCards(addressbookUrl: string, auth: string): Promise<string
     signal: AbortSignal.timeout(15000),
   });
 
-  if (!response.ok && response.status !== 207) return [];
+  if (!response.ok && response.status !== 207) {
+    throw new Error(`REPORT failed with status ${response.status}`);
+  }
 
   const xml = await response.text();
   const vcards: string[] = [];
@@ -216,7 +232,7 @@ export async function fetchAndStoreContactBirthdays(): Promise<void> {
       await client.query(`
         INSERT INTO birthdays (name, birth_month, birth_day, birth_year, source, external_uid, fetched_at)
         VALUES ($1, $2, $3, $4, 'carddav', $5, NOW())
-        ON CONFLICT (source, external_uid) DO UPDATE SET
+        ON CONFLICT (source, external_uid) WHERE external_uid IS NOT NULL DO UPDATE SET
           name        = EXCLUDED.name,
           birth_month = EXCLUDED.birth_month,
           birth_day   = EXCLUDED.birth_day,
