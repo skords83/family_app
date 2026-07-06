@@ -17,6 +17,22 @@ function unfoldVCardLines(text: string): string {
   return text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
 }
 
+// Server wie Baikal/sabre-dav escapen eingebettete \r im address-data-Textknoten
+// XML-konform als Entity (&#13;), damit sie beim XML-Parsing nicht zu \n
+// normalisiert werden. Unser Parser liest den Rohtext ohne XML-Parser, daher
+// muessen Entities hier manuell dekodiert werden (&amp; zuletzt, sonst wuerde
+// z.B. "&amp;lt;" faelschlich zu "<" statt "&lt;").
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCharCode(Number(dec)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&');
+}
+
 interface ParsedBday {
   month: number;
   day: number;
@@ -174,7 +190,7 @@ async function fetchVCards(addressbookUrl: string, auth: string): Promise<string
     const inner = match.match(/<[^>]*:?address-data[^>]*>([\s\S]*?)<\/[^>]*:?address-data>/i);
     if (!inner?.[1]) continue;
     const vcardMatches = inner[1].match(/BEGIN:VCARD[\s\S]*?END:VCARD/g);
-    if (vcardMatches) vcards.push(...vcardMatches);
+    if (vcardMatches) vcards.push(...vcardMatches.map(decodeXmlEntities));
   }
 
   return vcards;
