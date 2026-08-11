@@ -87,10 +87,15 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
 
         const exdates = new Set<number>();
         if ((event as any).exdate) {
+          // node-ical liefert exdate als Array-artiges Objekt mit length 0 —
+          // die Date-Werte hängen unter benannten (Datums-)Keys statt Indizes,
+          // daher liefert Array.isArray() true, aber for..of über das "Array"
+          // findet nichts. Object.values() funktioniert für beide Formen.
+          // Gleicher TZID-Offset wie bei den Occurrences nötig, da EXDATE vom
+          // selben node-ical-Parsing-Bug betroffen ist (siehe tzOffsetMs oben).
           const ex = (event as any).exdate;
-          const exArr = Array.isArray(ex) ? ex : Object.values(ex);
-          for (const d of exArr) {
-            if (d instanceof Date) exdates.add(d.getTime());
+          for (const d of Object.values(ex) as unknown[]) {
+            if (d instanceof Date) exdates.add(d.getTime() + tzOffsetMs);
           }
         }
 
