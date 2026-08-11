@@ -48,6 +48,61 @@ function parseISODuration(iso: string): number {
   return sign === '-' ? -ms : ms;
 }
 
+// node-ical parsed TZID-Events falsch: DTSTART;TZID=Europe/Berlin:20260406T110000
+// wird zu 2026-04-06T09:00:00Z (zieht den TZ-Offset ab statt ihn zu ignorieren).
+// Betrifft neben DTSTART auch RECURRENCE-ID und die DTSTART/DTEND von
+// Override-VEVENTs, daher als wiederverwendbare Funktion.
+function computeTzOffsetMs(instant: Date, tzid: string | undefined): number {
+  if (!tzid) return 0;
+  try {
+    const fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tzid,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    });
+    const parts = fmt.formatToParts(instant);
+    const get = (t: string) => parseInt(parts.find(p => p.type === t)?.value ?? '0', 10);
+    const wallAsUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+    return wallAsUtc - instant.getTime();
+  } catch {
+    return 0;
+  }
+}
+
+// Baut ein CalendarEvent aus einem RECURRENCE-ID-Override (node-ical liefert
+// diese unter event.recurrences[<Originaldatum>] statt als eigenständige
+// VEVENTs — siehe Aufrufstelle in parseICSEvents).
+function buildOverrideCalendarEvent(
+  override: any,
+  masterUid: string,
+  masterSummary: string | undefined,
+  tzid: string | undefined,
+  allDay: boolean,
+  color: string,
+  calendarName: string
+): CalendarEvent {
+  const overrideStartRaw = new Date(override.start);
+  const overrideStart = new Date(overrideStartRaw.getTime() + computeTzOffsetMs(overrideStartRaw, tzid));
+
+  const overrideIsoDuration: string | undefined = override.duration;
+  const overrideDuration = overrideIsoDuration
+    ? parseISODuration(overrideIsoDuration)
+    : override.end
+      ? new Date(override.end).getTime() - overrideStartRaw.getTime()
+      : 0;
+
+  return CalendarEventSchema.parse({
+    id: `${masterUid}-${overrideStart.toISOString()}`,
+    title: decodeHtmlEntities(override.summary ?? masterSummary ?? '(no title)'),
+    start: overrideStart.toISOString(),
+    end: new Date(overrideStart.getTime() + overrideDuration).toISOString(),
+    allDay,
+    color,
+    calendarName,
+    recurring: true,
+  });
+}
+
 function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
@@ -83,25 +138,8 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
 
     // node-ical parsed TZID-Events falsch: DTSTART;TZID=Europe/Berlin:20260406T110000
     // wird zu 2026-04-06T09:00:00Z (zieht den TZ-Offset ab statt ihn zu ignorieren).
-    let tzOffsetMs = 0;
-    if (!allDay && (event as any).rrule) {
-      const tzid: string | undefined = (event.start as any).tz;
-      if (tzid) {
-        try {
-          const fmt = new Intl.DateTimeFormat('en-GB', {
-            timeZone: tzid,
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-          });
-          const parts = fmt.formatToParts(originalStart);
-          const get = (t: string) => parseInt(parts.find(p => p.type === t)?.value ?? '0', 10);
-          const wallAsUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-          tzOffsetMs = wallAsUtc - originalStart.getTime();
-        } catch {
-          tzOffsetMs = 0;
-        }
-      }
-    }
+    const tzid: string | undefined = !allDay && (event as any).rrule ? (event.start as any).tz : undefined;
+    const tzOffsetMs = computeTzOffsetMs(originalStart, tzid);
 
     // Wiederkehrende Termine per RRULE expandieren — recurring: true mitliefern
     if ((event as any).rrule) {
@@ -122,11 +160,37 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
           }
         }
 
+        // RECURRENCE-ID-Overrides ("nur dieser Termin"-Bearbeitungen): node-ical
+        // liefert sie nicht als eigene VEVENTs, sondern verschachtelt unter
+        // event.recurrences[<Originaldatum als YYYY-MM-DD>]. Nach dem
+        // Original-Occurrence-Zeitstempel (in ms) indizieren, damit wir sie beim
+        // Durchlauf der RRULE-Expansion der jeweils passenden Occurrence
+        // zuordnen können — die Master-Zeit wird dann durch die Override-Zeit
+        // ersetzt statt zusätzlich stehen zu bleiben.
+        const overridesByOriginalTime = new Map<number, any>();
+        if ((event as any).recurrences) {
+          for (const override of Object.values((event as any).recurrences) as any[]) {
+            const recurrenceId: Date | undefined = override.recurrenceid;
+            if (!(recurrenceId instanceof Date)) continue;
+            const originalTime = recurrenceId.getTime() + computeTzOffsetMs(recurrenceId, tzid);
+            overridesByOriginalTime.set(originalTime, override);
+          }
+        }
+        const handledOverrides = new Set<number>();
+
         const occurrences = rruleObj.between(rangeStart, futureLimit, true);
 
         for (const occ of occurrences) {
           const startDate = new Date(occ.getTime() + tzOffsetMs);
           if (exdates.has(startDate.getTime())) continue;
+
+          const override = overridesByOriginalTime.get(startDate.getTime());
+          if (override) {
+            handledOverrides.add(startDate.getTime());
+            events.push(buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, tzid, allDay, color, calendarName));
+            continue;
+          }
+
           const endDate = new Date(startDate.getTime() + duration);
           events.push(CalendarEventSchema.parse({
             id: `${event.uid ?? key}-${startDate.toISOString()}`,
@@ -138,6 +202,19 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
             calendarName,
             recurring: true,
           }));
+        }
+
+        // Verwaiste Overrides: die ursprüngliche Occurrence liegt außerhalb des
+        // von rruleObj.between() gelieferten Fensters (z.B. Verschiebung um
+        // mehrere Wochen nahe der Fenstergrenze), wurde also oben nicht
+        // getroffen. Trotzdem anzeigen, sofern die NEUE Zeit im Anzeigefenster liegt.
+        for (const [originalTime, override] of overridesByOriginalTime) {
+          if (handledOverrides.has(originalTime)) continue;
+          const overrideEvent = buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, tzid, allDay, color, calendarName);
+          const overrideStartMs = new Date(overrideEvent.start).getTime();
+          if (overrideStartMs >= rangeStart.getTime() && overrideStartMs <= futureLimit.getTime()) {
+            events.push(overrideEvent);
+          }
         }
       } catch (err) {
         console.warn(`[caldav] RRULE expansion failed for ${event.uid}:`, err);
