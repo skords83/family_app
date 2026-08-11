@@ -146,7 +146,19 @@ export function parseICSEvents(icsData: string, color: string, calendarName: str
     // (i.d.R. 1h) verschoben. Fix: pro Occurrence die Differenz zwischen dem
     // DTSTART-Offset und dem tatsächlichen Offset an diesem Occurrence-Datum
     // ausgleichen (siehe occOffsetMs weiter unten).
-    const tzid: string | undefined = !allDay && (event as any).rrule ? (event.start as any).tz : undefined;
+    //
+    // Manche Termine (z.B. "Harfen Unterricht") wurden ohne echtes TZID mit
+    // reinem UTC-DTSTART ("Z"-Suffix) angelegt — node-ical liefert dafür
+    // tz: 'Etc/UTC'. Rechnerisch korrekt hat 'Etc/UTC' nie einen DST-Offset,
+    // wodurch obige Korrektur wirkungslos bliebe. Die EXDATE-Einträge solcher
+    // Termine zeigen aber, dass client-seitig mit der lokalen Familien-Zeitzone
+    // gerechnet wurde (z.B. EXDATE 14:15Z im Sommer bei DTSTART 15:15Z im
+    // Winter — beides entspricht 16:15 Europe/Berlin). Ohne echtes TZID wird
+    // deshalb auf die Familien-Heimzeitzone zurückgefallen, damit Anzeige und
+    // EXDATE-Abgleich der tatsächlich gemeinten lokalen Uhrzeit folgen.
+    const HOME_TZID = 'Europe/Berlin';
+    const rawTzid: string | undefined = !allDay && (event as any).rrule ? (event.start as any).tz : undefined;
+    const tzid = rawTzid && rawTzid !== 'Etc/UTC' && rawTzid !== 'UTC' ? rawTzid : (rawTzid ? HOME_TZID : undefined);
     const tzOffsetMs = computeTzOffsetMs(originalStart, tzid);
 
     // Wiederkehrende Termine per RRULE expandieren — recurring: true mitliefern
@@ -490,34 +502,6 @@ caldavRouter.get('/calendars', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('Error fetching calendar list:', err);
     res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// TEMPORÄR zur Fehlersuche (Harfenunterricht DST-Bug) — nach Diagnose wieder entfernen.
-// GET /api/widgets/calendar/debug-raw?q=harfe
-caldavRouter.get('/debug-raw', async (req: Request, res: Response) => {
-  try {
-    const caldavUrl = process.env.CALDAV_URL;
-    const caldavUser = process.env.CALDAV_USER;
-    const caldavPass = process.env.CALDAV_PASS;
-    if (!caldavUrl || !caldavUser || !caldavPass) {
-      return res.status(503).json({ error: 'CalDAV configuration missing' });
-    }
-    const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
-    const q = String(req.query.q ?? '').toLowerCase();
-    const calendars = await discoverCalendars(caldavUrl, auth);
-    const out: Record<string, { vevents: string[]; vtimezones: string[] }> = {};
-    for (const cal of calendars) {
-      const { vevents, vtimezones } = await fetchCalendarEvents(cal.url, auth);
-      const matching = q ? vevents.filter(v => v.toLowerCase().includes(q)) : vevents;
-      if (matching.length > 0) {
-        out[cal.name] = { vevents: matching, vtimezones };
-      }
-    }
-    res.json(out);
-  } catch (err) {
-    console.error('Error in debug-raw:', err);
-    res.status(500).json({ error: String(err) });
   }
 });
 
