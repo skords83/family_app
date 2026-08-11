@@ -493,6 +493,34 @@ caldavRouter.get('/calendars', async (_req: Request, res: Response) => {
   }
 });
 
+// TEMPORÄR zur Fehlersuche (Harfenunterricht DST-Bug) — nach Diagnose wieder entfernen.
+// GET /api/widgets/calendar/debug-raw?q=harfe
+caldavRouter.get('/debug-raw', async (req: Request, res: Response) => {
+  try {
+    const caldavUrl = process.env.CALDAV_URL;
+    const caldavUser = process.env.CALDAV_USER;
+    const caldavPass = process.env.CALDAV_PASS;
+    if (!caldavUrl || !caldavUser || !caldavPass) {
+      return res.status(503).json({ error: 'CalDAV configuration missing' });
+    }
+    const auth = Buffer.from(`${caldavUser}:${caldavPass}`).toString('base64');
+    const q = String(req.query.q ?? '').toLowerCase();
+    const calendars = await discoverCalendars(caldavUrl, auth);
+    const out: Record<string, { vevents: string[]; vtimezones: string[] }> = {};
+    for (const cal of calendars) {
+      const { vevents, vtimezones } = await fetchCalendarEvents(cal.url, auth);
+      const matching = q ? vevents.filter(v => v.toLowerCase().includes(q)) : vevents;
+      if (matching.length > 0) {
+        out[cal.name] = { vevents: matching, vtimezones };
+      }
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('Error in debug-raw:', err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // POST /api/widgets/calendar/events
 caldavRouter.post('/events', async (req: Request, res: Response) => {
   const parsed = CalendarCreateInputSchema.safeParse(req.body);
