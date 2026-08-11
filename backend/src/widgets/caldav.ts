@@ -31,6 +31,23 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&apos;/g, "'");
 }
 
+// RFC-5545 erlaubt statt DTEND ein DURATION-Property (z.B. "PT30M"). node-ical
+// setzt in diesem Fall event.end == event.start (keine Addition der Dauer) und
+// legt den rohen ISO-8601-Duration-String separat unter event.duration ab.
+function parseISODuration(iso: string): number {
+  const match = /^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(iso);
+  if (!match) return 0;
+  const [, sign, weeks, days, hours, minutes, seconds] = match;
+  const ms =
+    (Number(weeks ?? 0) * 7 * 24 * 60 * 60 +
+      Number(days ?? 0) * 24 * 60 * 60 +
+      Number(hours ?? 0) * 60 * 60 +
+      Number(minutes ?? 0) * 60 +
+      Number(seconds ?? 0)) *
+    1000;
+  return sign === '-' ? -ms : ms;
+}
+
 function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
@@ -47,9 +64,15 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     if (!event.start) continue;
 
     const originalStart = new Date(event.start);
-    const duration = event.end
-      ? new Date(event.end).getTime() - originalStart.getTime()
-      : 0;
+    // RFC-5545: ein VEVENT hat entweder DTEND oder DURATION, nie beide.
+    // node-ical setzt bei DURATION event.end == event.start, daher hat
+    // DURATION Vorrang, wenn vorhanden.
+    const isoDuration: string | undefined = (event as any).duration;
+    const duration = isoDuration
+      ? parseISODuration(isoDuration)
+      : event.end
+        ? new Date(event.end).getTime() - originalStart.getTime()
+        : 0;
 
     const allDay =
       event.start instanceof Date &&
@@ -118,7 +141,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         }
       } catch (err) {
         console.warn(`[caldav] RRULE expansion failed for ${event.uid}:`, err);
-        const endDate = event.end ? new Date(event.end) : originalStart;
+        const endDate = new Date(originalStart.getTime() + duration);
         if (originalStart >= rangeStart && originalStart <= futureLimit) {
           events.push(CalendarEventSchema.parse({
             id: event.uid ?? key,
@@ -136,7 +159,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
     }
 
     // Einmalige Termine
-    const endDate = event.end ? new Date(event.end) : originalStart;
+    const endDate = new Date(originalStart.getTime() + duration);
     if (originalStart > futureLimit || endDate < rangeStart) continue;
 
     events.push(CalendarEventSchema.parse({
