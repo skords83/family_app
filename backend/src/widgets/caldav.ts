@@ -72,23 +72,24 @@ function computeTzOffsetMs(instant: Date, tzid: string | undefined): number {
 // Baut ein CalendarEvent aus einem RECURRENCE-ID-Override (node-ical liefert
 // diese unter event.recurrences[<Originaldatum>] statt als eigenständige
 // VEVENTs — siehe Aufrufstelle in parseICSEvents).
+// override.start/end sind bereits von node-ical korrekt (TZID-DST-bewusst)
+// nach UTC aufgelöst — hier KEINE zusätzliche tzOffsetMs-Korrektur anwenden,
+// sonst wird der Termin um eine volle Zeitzonenverschiebung zu spät angezeigt.
 function buildOverrideCalendarEvent(
   override: any,
   masterUid: string,
   masterSummary: string | undefined,
-  tzid: string | undefined,
   allDay: boolean,
   color: string,
   calendarName: string
 ): CalendarEvent {
-  const overrideStartRaw = new Date(override.start);
-  const overrideStart = new Date(overrideStartRaw.getTime() + computeTzOffsetMs(overrideStartRaw, tzid));
+  const overrideStart = new Date(override.start);
 
   const overrideIsoDuration: string | undefined = override.duration;
   const overrideDuration = overrideIsoDuration
     ? parseISODuration(overrideIsoDuration)
     : override.end
-      ? new Date(override.end).getTime() - overrideStartRaw.getTime()
+      ? new Date(override.end).getTime() - overrideStart.getTime()
       : 0;
 
   return CalendarEventSchema.parse({
@@ -103,7 +104,7 @@ function buildOverrideCalendarEvent(
   });
 }
 
-function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
+export function parseICSEvents(icsData: string, color: string, calendarName: string, weeksAhead = 26): CalendarEvent[] {
   const parsed = ical.sync.parseICS(icsData);
   const events: CalendarEvent[] = [];
 
@@ -136,8 +137,15 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
       event.start.getSeconds() === 0 &&
       (event as any).datetype === 'date';
 
-    // node-ical parsed TZID-Events falsch: DTSTART;TZID=Europe/Berlin:20260406T110000
-    // wird zu 2026-04-06T09:00:00Z (zieht den TZ-Offset ab statt ihn zu ignorieren).
+    // node-ical löst DTSTART (und EXDATE/RECURRENCE-ID) korrekt DST-bewusst nach
+    // UTC auf. Das eigentliche Problem sitzt in RRULE: rrule.between() wiederholt
+    // nur die rohen UTC-Uhrzeit-Felder von DTSTART (reine Tages-Arithmetik) und
+    // berücksichtigt keinen Zeitzonenwechsel zwischen DTSTART-Datum und dem
+    // jeweiligen Occurrence-Datum. Liegt DTSTART z.B. vor der Sommerzeitumstellung
+    // und die Occurrence danach, ist die rohe RRULE-Occurrence um die DST-Differenz
+    // (i.d.R. 1h) verschoben. Fix: pro Occurrence die Differenz zwischen dem
+    // DTSTART-Offset und dem tatsächlichen Offset an diesem Occurrence-Datum
+    // ausgleichen (siehe occOffsetMs weiter unten).
     const tzid: string | undefined = !allDay && (event as any).rrule ? (event.start as any).tz : undefined;
     const tzOffsetMs = computeTzOffsetMs(originalStart, tzid);
 
@@ -152,11 +160,12 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
           // die Date-Werte hängen unter benannten (Datums-)Keys statt Indizes,
           // daher liefert Array.isArray() true, aber for..of über das "Array"
           // findet nichts. Object.values() funktioniert für beide Formen.
-          // Gleicher TZID-Offset wie bei den Occurrences nötig, da EXDATE vom
-          // selben node-ical-Parsing-Bug betroffen ist (siehe tzOffsetMs oben).
+          // EXDATE wird von node-ical bereits korrekt DST-bewusst aufgelöst
+          // (wie DTSTART) — keine zusätzliche Offset-Korrektur nötig. Muss gegen
+          // die per-Occurrence korrigierte startDate unten verglichen werden.
           const ex = (event as any).exdate;
           for (const d of Object.values(ex) as unknown[]) {
-            if (d instanceof Date) exdates.add(d.getTime() + tzOffsetMs);
+            if (d instanceof Date) exdates.add(d.getTime());
           }
         }
 
@@ -167,13 +176,14 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         // Durchlauf der RRULE-Expansion der jeweils passenden Occurrence
         // zuordnen können — die Master-Zeit wird dann durch die Override-Zeit
         // ersetzt statt zusätzlich stehen zu bleiben.
+        // RECURRENCE-ID wird von node-ical ebenfalls bereits korrekt DST-bewusst
+        // aufgelöst (wie DTSTART/EXDATE) — keine zusätzliche Offset-Korrektur.
         const overridesByOriginalTime = new Map<number, any>();
         if ((event as any).recurrences) {
           for (const override of Object.values((event as any).recurrences) as any[]) {
             const recurrenceId: Date | undefined = override.recurrenceid;
             if (!(recurrenceId instanceof Date)) continue;
-            const originalTime = recurrenceId.getTime() + computeTzOffsetMs(recurrenceId, tzid);
-            overridesByOriginalTime.set(originalTime, override);
+            overridesByOriginalTime.set(recurrenceId.getTime(), override);
           }
         }
         const handledOverrides = new Set<number>();
@@ -181,13 +191,16 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         const occurrences = rruleObj.between(rangeStart, futureLimit, true);
 
         for (const occ of occurrences) {
-          const startDate = new Date(occ.getTime() + tzOffsetMs);
+          // occ trägt noch DTSTARTs DST-Zustand (siehe Kommentar oben) — pro
+          // Occurrence auf den tatsächlichen Offset an diesem Datum umrechnen.
+          const occOffsetMs = computeTzOffsetMs(occ, tzid);
+          const startDate = new Date(occ.getTime() + tzOffsetMs - occOffsetMs);
           if (exdates.has(startDate.getTime())) continue;
 
           const override = overridesByOriginalTime.get(startDate.getTime());
           if (override) {
             handledOverrides.add(startDate.getTime());
-            events.push(buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, tzid, allDay, color, calendarName));
+            events.push(buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, allDay, color, calendarName));
             continue;
           }
 
@@ -210,7 +223,7 @@ function parseICSEvents(icsData: string, color: string, calendarName: string, we
         // getroffen. Trotzdem anzeigen, sofern die NEUE Zeit im Anzeigefenster liegt.
         for (const [originalTime, override] of overridesByOriginalTime) {
           if (handledOverrides.has(originalTime)) continue;
-          const overrideEvent = buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, tzid, allDay, color, calendarName);
+          const overrideEvent = buildOverrideCalendarEvent(override, event.uid ?? key, event.summary, allDay, color, calendarName);
           const overrideStartMs = new Date(overrideEvent.start).getTime();
           if (overrideStartMs >= rangeStart.getTime() && overrideStartMs <= futureLimit.getTime()) {
             events.push(overrideEvent);
