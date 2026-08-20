@@ -31,6 +31,7 @@ interface User {
   points: number;
   role: string;
   nfc_uid?: string | null;
+  birthdate?: string | null;
 }
 
 interface TaskTemplate {
@@ -189,6 +190,8 @@ export default function AdminPage() {
   const [newUser, setNewUser] = useState({ name: '', avatar: '👤', color: '#6366f1', role: 'child' as 'child' | 'parent', pin: '', birthdate: '' });
   const [nfcEditingUserId, setNfcEditingUserId] = useState<string | null>(null);
   const [nfcUidInput, setNfcUidInput] = useState('');
+  const [birthdateEditingUserId, setBirthdateEditingUserId] = useState<string | null>(null);
+  const [birthdateInput, setBirthdateInput] = useState('');
 
   const showNotification = (text: string) => {
     setNotification(text);
@@ -638,6 +641,23 @@ export default function AdminPage() {
       setNfcEditingUserId(null);
       setNfcUidInput('');
       showNotification(uid ? 'NFC-Tag gespeichert!' : 'NFC-Tag entfernt.');
+      fetchUsers();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showNotification(`Fehler: ${err.error ?? res.status}`);
+    }
+  };
+
+  const handleSaveBirthdate = async (userId: string, birthdate: string | null) => {
+    const res = await fetch(`${API_BASE}/api/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ birthdate }),
+    });
+    if (res.ok) {
+      setBirthdateEditingUserId(null);
+      setBirthdateInput('');
+      showNotification(birthdate ? 'Geburtstag gespeichert!' : 'Geburtstag entfernt.');
       fetchUsers();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -1639,6 +1659,11 @@ export default function AdminPage() {
                           <Icon name="nfc" />&nbsp;<span className="font-mono">{user.nfc_uid}</span>
                         </p>
                       )}
+                      {user.birthdate && birthdateEditingUserId !== user.id && (
+                        <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: '#d97706' }}>
+                          <Icon name="cake" />&nbsp;{formatDateDe(user.birthdate.slice(0, 10))}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <div className="text-right">
@@ -1647,6 +1672,26 @@ export default function AdminPage() {
                         </p>
                         <p className="text-xs" style={{ color: 'var(--family-text3)' }}>Punkte</p>
                       </div>
+                      <button
+                        onClick={() => {
+                          if (birthdateEditingUserId === user.id) {
+                            setBirthdateEditingUserId(null);
+                            setBirthdateInput('');
+                          } else {
+                            setBirthdateEditingUserId(user.id);
+                            setBirthdateInput(user.birthdate?.slice(0, 10) ?? '');
+                          }
+                        }}
+                        className="min-h-[36px] w-9 flex items-center justify-center rounded-lg text-sm transition-colors active:scale-95"
+                        style={
+                          birthdateEditingUserId === user.id
+                            ? { background: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d' }
+                            : { background: user.birthdate ? '#fef3c7' : 'var(--family-surface2)', color: user.birthdate ? '#b45309' : 'var(--family-text2)', border: '1px solid #d8d4cf' }
+                        }
+                        title="Geburtstag verwalten"
+                      >
+                        <Icon name="cake" />
+                      </button>
                       <button
                         onClick={() => {
                           if (nfcEditingUserId === user.id) {
@@ -1705,6 +1750,40 @@ export default function AdminPage() {
                       <p className="text-[10px] mt-1.5" style={{ color: '#6366f1' }}>
                         UID wird vom ESP32 gemeldet oder steht auf dem Tag. Leer lassen zum Entfernen.
                       </p>
+                    </div>
+                  )}
+
+                  {birthdateEditingUserId === user.id && (
+                    <div className="px-4 pb-3 border-t" style={{ borderColor: '#e8e4de', background: '#fffbeb' }}>
+                      <p className="text-xs font-semibold mt-2 mb-1.5 flex items-center gap-1" style={{ color: '#b45309' }}>
+                        <Icon name="cake" />&nbsp;Geburtstag
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          value={birthdateInput}
+                          onChange={(e) => setBirthdateInput(e.target.value)}
+                          className="flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 border"
+                          style={{ background: '#fff', borderColor: '#fcd34d', color: 'var(--family-text)' }}
+                        />
+                        <button
+                          onClick={() => handleSaveBirthdate(user.id, birthdateInput || null)}
+                          className="px-3 py-2 rounded-xl text-sm font-semibold text-white transition-colors active:scale-95"
+                          style={{ background: '#b45309' }}
+                        >
+                          <Icon name="check" />
+                        </button>
+                        {user.birthdate && (
+                          <button
+                            onClick={() => handleSaveBirthdate(user.id, null)}
+                            className="px-3 py-2 rounded-xl text-sm font-semibold transition-colors active:scale-95"
+                            style={{ background: '#fee2e2', color: '#dc2626' }}
+                            title="Geburtstag entfernen"
+                          >
+                            <Icon name="trash" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
